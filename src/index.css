@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Prevent text selection during map interaction */
+.map-canvas {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+/* Custom scrollbar for panels */
+.panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
