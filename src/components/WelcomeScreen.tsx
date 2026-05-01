@@ -12,11 +12,12 @@ import type { MapConfig, MapType } from '../types'
 
 interface Props {
   onProjectLoaded: () => void
+  onAbout: () => void
 }
 
 type Step = 'landing' | 'new-project'
 
-export function WelcomeScreen({ onProjectLoaded }: Props) {
+export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
   const [step, setStep] = useState<Step>('landing')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -128,6 +129,13 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
 
         {error && <p className="text-red-500 text-sm">{error}</p>}
         {loading && <p className="text-gray-400 text-sm">Loading…</p>}
+
+        <button
+          onClick={onAbout}
+          className="text-xs text-gray-400 hover:text-orange-600 transition-colors"
+        >
+          About xcorso
+        </button>
 
         <input
           ref={openFileRef}

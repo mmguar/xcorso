@@ -3,19 +3,22 @@ import './index.css'
 import { useStore } from './store'
 import { WelcomeScreen } from './components/WelcomeScreen'
 import { EditorScreen } from './components/EditorScreen'
+import { AboutPage } from './components/AboutPage'
 import { loadSession } from './lib/persistence'
+
+type Screen = 'home' | 'editor' | 'about'
 
 export default function App() {
   const project = useStore(s => s.project)
   const loadProject = useStore(s => s.loadProject)
-  const [inEditor, setInEditor] = useState(false)
+  const [screen, setScreen] = useState<Screen>('home')
   const [restoring, setRestoring] = useState(true)
 
   useEffect(() => {
     loadSession().then(saved => {
       if (saved?.project) {
         loadProject(saved.project, saved.mapFileData)
-        setInEditor(true)
+        setScreen('editor')
       }
     }).finally(() => setRestoring(false))
   }, [loadProject])
@@ -28,9 +31,13 @@ export default function App() {
     )
   }
 
-  if (!project || !inEditor) {
-    return <WelcomeScreen onProjectLoaded={() => setInEditor(true)} />
+  if (screen === 'about') {
+    return <AboutPage onBack={() => setScreen('home')} />
   }
 
-  return <EditorScreen onGoHome={() => setInEditor(false)} />
+  if (!project || screen !== 'editor') {
+    return <WelcomeScreen onProjectLoaded={() => setScreen('editor')} onAbout={() => setScreen('about')} />
+  }
+
+  return <EditorScreen onGoHome={() => setScreen('home')} />
 }
