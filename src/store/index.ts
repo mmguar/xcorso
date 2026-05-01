@@ -5,6 +5,7 @@ import type {
   Annotation, AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
+import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
 
 const MAX_UNDO = 100
 
@@ -84,6 +85,9 @@ interface AppActions {
   setSelectedCourse: (id: string | null) => void
   setViewport: (viewport: Viewport) => void
   setMapSaturation: (saturation: number) => void
+
+  // Session
+  clearSession: () => void
 
   // Undo/redo
   undo: () => void
@@ -486,6 +490,13 @@ export const useStore = create<Store>((set, get) => {
       set(state => ({ editor: { ...state.editor, mapSaturation: saturation } }))
     },
 
+    // ── Session ──────────────────────────────────────────────────────────
+
+    clearSession: () => {
+      clearPersistedSession()
+      set({ project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
+    },
+
     // ── Undo / Redo ───────────────────────────────────────────────────────
 
     undo: () => {
@@ -509,5 +520,11 @@ export const useStore = create<Store>((set, get) => {
         undoStack: [...undoStack, structuredClone(project)],
       })
     },
+  }
+})
+
+useStore.subscribe((state, prev) => {
+  if (state.project && state.project !== prev.project) {
+    debouncedSave(state.project, state.mapFileData)
   }
 })

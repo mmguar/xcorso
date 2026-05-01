@@ -5,7 +5,9 @@ import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
 import { PdfExportDialog } from '../PdfExportDialog'
 
-export function Header() {
+interface Props { onGoHome: () => void }
+
+export function Header({ onGoHome }: Props) {
   const project = useStore(s => s.project!)
   const mapFileData = useStore(s => s.mapFileData)
   const updateProjectName = useStore(s => s.updateProjectName)
@@ -39,11 +41,15 @@ export function Header() {
   }
 
   return (
-    <header className="flex items-center gap-3 px-4 py-2 bg-white border-b border-gray-200 z-10 shrink-0">
-      <div className="flex items-center gap-2 text-orange-700">
+    <header className="flex items-center gap-3 px-4 h-12 bg-white border-b border-gray-200 z-10 shrink-0">
+      <button
+        onClick={onGoHome}
+        className="flex items-center gap-2 text-orange-700 hover:text-orange-900 transition-colors"
+        title="Back to home"
+      >
         <Map size={20} />
         <span className="font-semibold text-sm hidden sm:inline">xcorso</span>
-      </div>
+      </button>
 
       <div className="w-px h-5 bg-gray-200" />
 

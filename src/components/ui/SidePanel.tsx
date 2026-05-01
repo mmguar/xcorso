@@ -139,26 +139,18 @@ function MobileBottomSheet({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
 
   return (
     <div className={`
-      md:hidden fixed bottom-0 left-0 right-0 z-30
-      bg-white border-t border-gray-200 shadow-2xl
-      transition-all duration-300 ease-out
-      ${expanded ? 'h-[60vh]' : 'h-16'}
+      md:hidden fixed top-12 left-0 right-0 z-30
+      bg-white border-b border-gray-200 shadow-2xl
+      transition-all duration-300 ease-out overflow-hidden
+      ${expanded ? 'h-[60vh]' : 'h-10'}
     `}>
-      {/* Handle + tabs row */}
-      <div className="flex items-center gap-0 h-16 px-4 shrink-0">
-        <button
-          onClick={() => setExpanded(e => !e)}
-          className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 mr-2"
-          aria-label={expanded ? 'Collapse panel' : 'Expand panel'}
-        >
-          <div className={`w-5 h-0.5 bg-gray-400 transition-transform ${expanded ? '' : 'rotate-180'}`} />
-        </button>
-
+      {/* Tabs row */}
+      <div className="flex items-center gap-0 h-10 px-4 shrink-0">
         {(['controls', 'courses'] as Tab[]).map(t => (
           <button
             key={t}
-            onClick={() => { setTab(t); setExpanded(true) }}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-colors capitalize ${
+            onClick={() => { setTab(t); setExpanded(e => t === tab ? !e : true) }}
+            className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-lg transition-colors capitalize ${
               tab === t && expanded
                 ? 'bg-orange-100 text-orange-700'
                 : 'text-gray-500 hover:text-gray-700'
@@ -168,11 +160,21 @@ function MobileBottomSheet({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             {t}
           </button>
         ))}
+
+        {expanded && (
+          <button
+            onClick={() => setExpanded(false)}
+            className="ml-auto flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100"
+            aria-label="Collapse panel"
+          >
+            <div className="w-5 h-0.5 bg-gray-400" />
+          </button>
+        )}
       </div>
 
       {/* Content */}
       {expanded && (
-        <div className="flex-1 overflow-y-auto panel-scroll h-[calc(100%-4rem)]">
+        <div className="overflow-y-auto panel-scroll h-[calc(100%-2.5rem)]">
           {tab === 'controls' ? <ControlsPanel /> : <CoursesPanel />}
         </div>
       )}

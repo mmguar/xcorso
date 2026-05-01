@@ -127,6 +127,12 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragOffset: { dx: number; dy: number } | null = null
     let dragStarted = false
 
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null
+    let longPressFired = false
+    function clearLongPress() {
+      if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null }
+    }
+
     // ── Wheel ────────────────────────────────────────────────────────────────
     function onWheel(e: WheelEvent) {
       e.preventDefault()
@@ -153,6 +159,29 @@ export function MapCanvas({ loadedMap }: Props) {
         pinchDist = Math.hypot(b.x - a.x, b.y - a.y)
       }
 
+      longPressFired = false
+      if (e.pointerType === 'touch' && pos.size === 1) {
+        const { selectedCourseId: cid } = useStore.getState().editor
+        if (cid) {
+          const rect = div.getBoundingClientRect()
+          const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top)
+          if (hit) {
+            longPressTimer = setTimeout(() => {
+              longPressTimer = null
+              longPressFired = true
+              const course = useStore.getState().project?.courses.find(c => c.id === cid)
+              if (!course) return
+              for (let i = course.controls.length - 1; i >= 0; i--) {
+                if (course.controls[i].controlId === hit.id) {
+                  removeControlFromCourse(cid, course.controls[i].id)
+                  return
+                }
+              }
+            }, 500)
+          }
+        }
+      }
+
       const { activeTool } = useStore.getState().editor
       if (activeTool === 'select' && pos.size === 1) {
         const rect = div.getBoundingClientRect()
@@ -173,6 +202,13 @@ export function MapCanvas({ loadedMap }: Props) {
       if (!pos.has(e.pointerId)) return
       const prev = pos.get(e.pointerId)!
       pos.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+      if (longPressTimer) {
+        const start = down.get(e.pointerId)
+        if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) {
+          clearLongPress()
+        }
+      }
 
       if (dragControlId && pos.size === 1) {
         if (!dragStarted) {
@@ -212,9 +248,12 @@ export function MapCanvas({ loadedMap }: Props) {
 
     // ── Pointer up / tap ──────────────────────────────────────────────────────
     function onUp(e: PointerEvent) {
+      clearLongPress()
       const start = down.get(e.pointerId)
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
+
+      if (longPressFired) { longPressFired = false; return }
 
       // End control drag
       if (dragControlId && dragStarted) {
@@ -292,6 +331,7 @@ export function MapCanvas({ loadedMap }: Props) {
     }
 
     function onCancel(e: PointerEvent) {
+      clearLongPress()
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
     }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, GripVertical, X, List } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, GripVertical, X, List, ArrowUp, ArrowDown } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances, formatDistance } from '../../lib/distance'
 import { defaultControlLabel, buildSequenceMap } from '../../lib/courseUtils'
@@ -25,7 +25,6 @@ function CourseEditor({ course }: { course: Course }) {
   const [nameVal, setNameVal] = useState(course.name)
   const [showDescriptions, setShowDescriptions] = useState(false)
 
-  // Simple drag-to-reorder (touch & mouse)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [overIdx, setOverIdx] = useState<number | null>(null)
 
@@ -38,6 +37,13 @@ function CourseEditor({ course }: { course: Course }) {
     reordered.splice(overIdx, 0, item)
     reorderCourseControls(course.id, reordered)
     setDragIdx(null); setOverIdx(null)
+  }
+
+  function moveControl(from: number, to: number) {
+    const reordered = [...course.controls]
+    const [item] = reordered.splice(from, 1)
+    reordered.splice(to, 0, item)
+    reorderCourseControls(course.id, reordered)
   }
 
   return (
@@ -110,7 +116,25 @@ function CourseEditor({ course }: { course: Course }) {
                   overIdx === idx && dragIdx !== idx ? 'bg-orange-50' : 'bg-white'
                 }`}
               >
-                <GripVertical size={12} className="text-gray-300 cursor-grab" />
+                {/* Desktop: drag handle */}
+                <GripVertical size={12} className="text-gray-300 cursor-grab hidden md:block" />
+                {/* Mobile: up/down buttons */}
+                <div className="flex flex-col md:hidden -my-1">
+                  <button
+                    onClick={() => idx > 0 && moveControl(idx, idx - 1)}
+                    disabled={idx === 0}
+                    className="text-gray-300 hover:text-orange-600 disabled:opacity-20 transition-colors"
+                  >
+                    <ArrowUp size={10} />
+                  </button>
+                  <button
+                    onClick={() => idx < course.controls.length - 1 && moveControl(idx, idx + 1)}
+                    disabled={idx === course.controls.length - 1}
+                    className="text-gray-300 hover:text-orange-600 disabled:opacity-20 transition-colors"
+                  >
+                    <ArrowDown size={10} />
+                  </button>
+                </div>
                 <span className="text-gray-400 text-xs w-5 text-right">{idx + 1}</span>
                 <span className={`font-mono text-xs w-8 font-medium ${
                   ctrl?.type === 'start' ? 'text-green-600' :

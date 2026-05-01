@@ -92,7 +92,8 @@ export function Toolbar() {
           style={{ background: selectedCourse?.color ?? '#7B2FBE' }}
         />
         <span className="text-sm text-gray-700">
-          Click controls to add · right-click to remove
+          <span className="hidden md:inline">Click controls to add · right-click to remove</span>
+          <span className="md:hidden">Tap to add · long-press to remove</span>
         </span>
         <button
           onClick={() => setSelectedCourse(null)}
