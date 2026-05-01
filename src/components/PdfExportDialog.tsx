@@ -5,27 +5,41 @@ import {
   suggestFitScale, coursePreviewMm, ALL_CONTROLS_ID,
 } from '../lib/pdfExport'
 import type { PdfExportOptions, CoursePreview } from '../lib/pdfExport'
-import { descriptionSheetPageCount } from '../lib/pdfDescriptionSheet'
+import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
 import { downloadBlob } from '../lib/projectFile'
 
 // ── Print frame preview ────────────────────────────────────────────────────
 
 function PrintPreview({
   preview,
+  pageW,
+  pageH,
   printableW,
   printableH,
   offsetX,
   offsetY,
   onOffsetChange,
+  sheetW,
+  sheetH,
+  sheetX,
+  sheetY,
+  onSheetChange,
 }: {
   preview: CoursePreview
+  pageW: number
+  pageH: number
   printableW: number
   printableH: number
   offsetX: number
   offsetY: number
   onOffsetChange: (x: number, y: number) => void
+  sheetW?: number
+  sheetH?: number
+  sheetX?: number
+  sheetY?: number
+  onSheetChange?: (x: number, y: number) => void
 }) {
-  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
+  const dragRef = useRef<{ target: 'map' | 'sheet'; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
   const { positions, centerX, centerY } = preview
 
@@ -49,16 +63,47 @@ function PrintPreview({
   const frameX = pcx + offsetX * mmScale - frameW / 2
   const frameY = pcy + offsetY * mmScale - frameH / 2
 
+  // Page outline (full page including margins)
+  const fullW = pageW * mmScale
+  const fullH = pageH * mmScale
+  const fullX = frameX - MARGIN * mmScale
+  const fullY = frameY - MARGIN * mmScale
+
+  // Sheet rectangle in page coordinates
+  const hasSheet = sheetW != null && sheetH != null && sheetX != null && sheetY != null && onSheetChange != null
+  const sRectW = hasSheet ? sheetW! * mmScale : 0
+  const sRectH = hasSheet ? sheetH! * mmScale : 0
+  const sRectX = hasSheet ? fullX + sheetX! * mmScale : 0
+  const sRectY = hasSheet ? fullY + sheetY! * mmScale : 0
+
   function handlePointerDown(e: React.PointerEvent) {
+    const svg = e.currentTarget as SVGSVGElement
+    const pt = svg.createSVGPoint()
+    pt.x = e.clientX; pt.y = e.clientY
+    const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse())
+
+    if (hasSheet &&
+      svgPt.x >= sRectX && svgPt.x <= sRectX + sRectW &&
+      svgPt.y >= sRectY && svgPt.y <= sRectY + sRectH
+    ) {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      dragRef.current = { target: 'sheet', sx: e.clientX, sy: e.clientY, ox: sheetX!, oy: sheetY! }
+      return
+    }
+
     e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: offsetX, oy: offsetY }
+    dragRef.current = { target: 'map', sx: e.clientX, sy: e.clientY, ox: offsetX, oy: offsetY }
   }
 
   function handlePointerMove(e: React.PointerEvent) {
     if (!dragRef.current) return
     const dx = (e.clientX - dragRef.current.sx) / mmScale
     const dy = (e.clientY - dragRef.current.sy) / mmScale
-    onOffsetChange(dragRef.current.ox + dx, dragRef.current.oy + dy)
+    if (dragRef.current.target === 'sheet' && onSheetChange) {
+      onSheetChange(dragRef.current.ox + dx, dragRef.current.oy + dy)
+    } else {
+      onOffsetChange(dragRef.current.ox + dx, dragRef.current.oy + dy)
+    }
   }
 
   function handlePointerUp() {
@@ -69,16 +114,20 @@ function PrintPreview({
     <svg
       viewBox={`0 0 ${PREVIEW_W} ${PREVIEW_H}`}
       className="w-full border border-gray-200 rounded-xl bg-gray-100 select-none touch-none cursor-grab active:cursor-grabbing"
-      style={{ maxHeight: 180 }}
+      style={{ maxHeight: 220 }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Page frame */}
+      {/* Page background */}
+      <rect x={fullX} y={fullY} width={fullW} height={fullH} fill="white" stroke="#d1d5db" strokeWidth={1} />
+      {/* Map tint */}
+      <rect x={frameX} y={frameY} width={frameW} height={frameH} fill="#f3e8ff" opacity={0.5} />
+      {/* Page frame (printable area) */}
       <rect
         x={frameX} y={frameY}
         width={frameW} height={frameH}
-        fill="white"
+        fill="none"
         stroke="#7c3aed"
         strokeWidth={1.5}
         strokeDasharray="4 3"
@@ -94,6 +143,27 @@ function PrintPreview({
           opacity={0.7}
         />
       ))}
+      {/* Description sheet */}
+      {hasSheet && (
+        <rect
+          x={sRectX} y={sRectY}
+          width={sRectW} height={sRectH}
+          fill="white" fillOpacity={0.85}
+          stroke="#ea580c"
+          strokeWidth={1.5}
+          rx={1}
+          style={{ cursor: 'move' }}
+        />
+      )}
+      {hasSheet && (
+        <text
+          x={sRectX + sRectW / 2} y={sRectY + sRectH / 2 + 3}
+          textAnchor="middle" fontSize={8} fill="#ea580c" opacity={0.8}
+          style={{ pointerEvents: 'none' }}
+        >
+          Descriptions
+        </text>
+      )}
     </svg>
   )
 }
@@ -116,6 +186,9 @@ export function PdfExportDialog({ onClose }: Props) {
   )
   const [allControls, setAllControls] = useState(false)
   const [includeDescriptions, setIncludeDescriptions] = useState(false)
+  const [descriptionOnMap, setDescriptionOnMap] = useState(false)
+  const [sheetX, setSheetX] = useState(MARGIN)
+  const [sheetY, setSheetY] = useState(MARGIN)
   const [tiling, setTiling] = useState(false)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
@@ -128,7 +201,10 @@ export function PdfExportDialog({ onClose }: Props) {
     printScale,
     courseIds: [...selectedIds],
     allControls,
-    includeDescriptions,
+    includeDescriptions: includeDescriptions || descriptionOnMap,
+    descriptionOnMap,
+    sheetX,
+    sheetY,
     tiling,
     offsetX,
     offsetY,
@@ -146,7 +222,7 @@ export function PdfExportDialog({ onClose }: Props) {
   const tileInfo = checkTiling(project, options)
   const hasSelection = selectedIds.size > 0 || allControls
   const anyOverflow = fitInfo.some(f => !f.fits)
-  const descPages = includeDescriptions
+  const descPages = (includeDescriptions && !descriptionOnMap)
     ? project.courses
         .filter(c => selectedIds.has(c.id))
         .reduce((sum, c) => sum + descriptionSheetPageCount(c, project.controls, ph), 0)
@@ -159,6 +235,13 @@ export function PdfExportDialog({ onClose }: Props) {
   const previewId = allControls ? ALL_CONTROLS_ID : [...selectedIds][0]
   const preview = previewId
     ? coursePreviewMm(project, previewId, printScale)
+    : null
+
+  const previewCourse = descriptionOnMap && !allControls
+    ? project.courses.find(c => c.id === [...selectedIds][0])
+    : null
+  const sheetSize = previewCourse
+    ? descriptionSheetSize(previewCourse, project.controls)
     : null
 
   const hasOffset = offsetX !== 0 || offsetY !== 0
@@ -320,11 +403,20 @@ export function PdfExportDialog({ onClose }: Props) {
             </div>
             <PrintPreview
               preview={preview}
+              pageW={pw}
+              pageH={ph}
               printableW={printableW}
               printableH={printableH}
               offsetX={offsetX}
               offsetY={offsetY}
               onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y) }}
+              {...(sheetSize ? {
+                sheetW: sheetSize.width,
+                sheetH: sheetSize.height,
+                sheetX,
+                sheetY,
+                onSheetChange: (x: number, y: number) => { setSheetX(x); setSheetY(y) },
+              } : {})}
             />
           </div>
         )}
@@ -428,15 +520,29 @@ export function PdfExportDialog({ onClose }: Props) {
 
         {/* Description sheets */}
         {selectedIds.size > 0 && (
-          <label className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeDescriptions}
-              onChange={e => setIncludeDescriptions(e.target.checked)}
-              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
-            />
-            <span className="text-sm font-medium text-gray-700">Include control description sheets</span>
-          </label>
+          <div className="flex flex-col gap-2 bg-gray-50 rounded-xl px-4 py-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeDescriptions}
+                onChange={e => { setIncludeDescriptions(e.target.checked); if (!e.target.checked) setDescriptionOnMap(false) }}
+                className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+              />
+              <span className="text-sm font-medium text-gray-700">Include control description sheets</span>
+            </label>
+            {includeDescriptions && (
+              <label className="flex items-center gap-3 cursor-pointer ml-6">
+                <input
+                  type="checkbox"
+                  checked={descriptionOnMap}
+                  onChange={e => setDescriptionOnMap(e.target.checked)}
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+                />
+                <span className="text-sm text-gray-600">Print on map page</span>
+                <span className="text-xs text-gray-400">— drag to position</span>
+              </label>
+            )}
+          </div>
         )}
 
         {anyOverflow && !tiling && hasSelection && (

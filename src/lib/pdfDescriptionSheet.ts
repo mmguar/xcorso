@@ -167,7 +167,123 @@ function drawFinishSymbol(doc: jsPDF, cx: number, cy: number) {
   doc.circle(cx, cy, CELL * 0.17, 'S')
 }
 
-// ── Main export ─────────────────────────────────────────────────────────────
+// ── Size calculation ────────────────────────────────────────────────────────
+
+export function descriptionSheetSize(
+  course: Course,
+  controls: Control[],
+): { width: number; height: number } {
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const rowCount = course.controls.filter(cc => controlMap.has(cc.controlId)).length
+  if (rowCount === 0) return { width: 0, height: 0 }
+  const height = CELL + COL_HEADER_H + rowCount * CELL
+  return { width: GRID_W, height }
+}
+
+// ── Draw overlay on existing page ───────────────────────────────────────────
+
+export function drawDescriptionSheetOverlay(
+  doc: jsPDF,
+  course: Course,
+  controls: Control[],
+  mapScale: number,
+  originX: number,
+  originY: number,
+) {
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const resolved = course.controls
+    .map(cc => controlMap.get(cc.controlId))
+    .filter((c): c is Control => c != null)
+
+  if (resolved.length === 0) return
+
+  const { width, height } = descriptionSheetSize(course, controls)
+
+  // White background
+  doc.setFillColor(255, 255, 255)
+  doc.rect(originX, originY, width, height, 'F')
+
+  const gridX = originX
+  let y = originY
+  let seq = 0
+
+  // Course header
+  doc.setDrawColor(0, 0, 0)
+  doc.setLineWidth(LINE_W)
+  doc.rect(gridX, y, GRID_W, CELL, 'S')
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(0, 0, 0)
+  const label = mapScale > 0
+    ? `${course.name}    1:${mapScale.toLocaleString()}`
+    : course.name
+  doc.text(label, gridX + GRID_W / 2, y + CELL / 2 + 1, { align: 'center' })
+  y += CELL
+
+  // Column headers
+  const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
+  doc.setFontSize(5.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(120, 120, 120)
+  doc.setDrawColor(0, 0, 0)
+  doc.setLineWidth(LINE_W)
+  for (let c = 0; c < COLS; c++) {
+    const cx = gridX + c * CELL
+    doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
+    doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+  }
+  y += COL_HEADER_H
+
+  // Control rows
+  for (const ctrl of resolved) {
+    if (ctrl.type === 'control') seq++
+    const desc = ctrl.description ?? {}
+
+    doc.setDrawColor(0, 0, 0)
+    doc.setLineWidth(LINE_W)
+    for (let c = 0; c < COLS; c++) {
+      doc.rect(gridX + c * CELL, y, CELL, CELL, 'S')
+    }
+
+    const aCx = gridX + CELL / 2
+    const aCy = y + CELL / 2
+    if (ctrl.type === 'start') {
+      drawStartSymbol(doc, aCx, aCy)
+    } else if (ctrl.type === 'finish') {
+      drawFinishSymbol(doc, aCx, aCy)
+    } else {
+      doc.setFontSize(7)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0, 0, 0)
+      doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
+    }
+
+    const bCx = gridX + CELL + CELL / 2
+    const bCy = y + CELL / 2
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 0, 0)
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
+      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    doc.text(code, bCx, bCy + 1, { align: 'center' })
+
+    for (let ci = 0; ci < COL_IDS.length; ci++) {
+      const colId = COL_IDS[ci]
+      const field = columnFields[colId]
+      const symCode = (desc as any)[field]
+      if (!symCode) continue
+      const sym = getSymbol(symCode)
+      if (!sym) continue
+      const cellCx = gridX + (ci + 2) * CELL + CELL / 2
+      const cellCy = y + CELL / 2
+      drawIofSymbol(doc, sym, cellCx, cellCy)
+    }
+
+    y += CELL
+  }
+}
+
+// ── Main export (separate pages) ────────────────────────────────────────────
 
 export function drawDescriptionSheet(
   doc: jsPDF,
