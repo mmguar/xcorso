@@ -43,7 +43,7 @@ export function Header({ onGoHome }: Props) {
   }
 
   return (
-    <header className="flex items-center gap-3 px-4 h-12 bg-white border-b border-gray-200 z-10 shrink-0">
+    <header className="flex items-center gap-3 px-4 h-12 bg-white border-b border-gray-200 z-40 shrink-0 relative">
       <button
         onClick={onGoHome}
         className="flex items-center gap-2 text-orange-700 hover:text-orange-900 transition-colors"
