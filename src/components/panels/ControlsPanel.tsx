@@ -39,7 +39,7 @@ export function ControlsPanel() {
 
     return (
       <div className="flex flex-col gap-1 p-2">
-        <div className="px-3 py-2 mb-1 text-xs text-gray-500 bg-purple-50 rounded-lg border border-purple-100">
+        <div className="px-3 py-2 mb-1 text-xs text-gray-500 bg-orange-50 rounded-lg border border-orange-100">
           Click <Plus size={10} className="inline" /> to add a control to <strong>{selectedCourse.name}</strong>.
           Click <Minus size={10} className="inline" /> to remove the last instance.
         </div>
@@ -50,13 +50,13 @@ export function ControlsPanel() {
               key={control.id}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
                 count > 0
-                  ? 'bg-purple-50 border-purple-200'
+                  ? 'bg-orange-50 border-orange-200'
                   : 'border-transparent hover:bg-gray-50'
               }`}
             >
               <MapPin size={14} className={
                 control.type === 'start' ? 'text-green-600' :
-                control.type === 'finish' ? 'text-red-600' : 'text-purple-600'
+                control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
               } />
               <span className="text-xs uppercase font-medium text-gray-500 w-14 shrink-0">
                 {control.type}
@@ -65,14 +65,14 @@ export function ControlsPanel() {
                 {control.label ?? defaultControlLabel(control)}
               </span>
               {count > 0 && (
-                <span className="text-xs text-purple-600 font-medium">
+                <span className="text-xs text-orange-600 font-medium">
                   ×{count}
                 </span>
               )}
               <div className="ml-auto flex items-center gap-1">
                 <button
                   onClick={() => addControlToCourse(selectedCourse.id, control.id)}
-                  className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-purple-600 hover:bg-purple-100 transition-colors"
+                  className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-orange-600 hover:bg-orange-100 transition-colors"
                   title="Add to course"
                 >
                   <Plus size={14} />
@@ -108,7 +108,7 @@ export function ControlsPanel() {
           type="checkbox"
           checked={showPoints}
           onChange={e => setShowPoints(e.target.checked)}
-          className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+          className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
         />
         Points
       </label>
@@ -118,13 +118,13 @@ export function ControlsPanel() {
           onClick={() => setSelectedControl(control.id === selectedControlId ? null : control.id)}
           className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
             control.id === selectedControlId
-              ? 'bg-purple-100 border border-purple-300'
+              ? 'bg-orange-100 border border-orange-300'
               : 'hover:bg-gray-50 border border-transparent'
           }`}
         >
           <MapPin size={14} className={
             control.type === 'start' ? 'text-green-600' :
-            control.type === 'finish' ? 'text-red-600' : 'text-purple-600'
+            control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
           } />
 
           <span className="text-xs uppercase font-medium text-gray-500 w-12">
@@ -140,7 +140,7 @@ export function ControlsPanel() {
                 const v = parseInt(e.target.value)
                 if (!isNaN(v)) updateControlCode(control.id, v)
               }}
-              className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
             />
           ) : (
             <input
@@ -148,7 +148,7 @@ export function ControlsPanel() {
               value={control.label ?? defaultControlLabel(control)}
               onClick={e => e.stopPropagation()}
               onChange={e => updateControlLabel(control.id, e.target.value)}
-              className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
             />
           )}
 
@@ -162,7 +162,7 @@ export function ControlsPanel() {
                 const v = e.target.value === '' ? undefined : parseInt(e.target.value)
                 updateControlPoints(control.id, v != null && !isNaN(v) ? v : undefined)
               }}
-              className="w-14 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="w-14 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
             />
           )}
 

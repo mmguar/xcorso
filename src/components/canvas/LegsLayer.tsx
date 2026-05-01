@@ -3,30 +3,31 @@
  * Lines are clipped at the edge of each control symbol so they don't overlap.
  */
 
-import type { Course, Control } from '../../types'
+import type { Course, Control, MapConfig } from '../../types'
+import { unitsPerMm } from '../../lib/courseUtils'
 
 interface Props {
   course: Course | null
   controls: Control[]
-  mapType: 'ocad' | 'pdf' | 'bitmap'
+  map: MapConfig
 }
 
-function symbolRadius(mapType: string): number {
-  return mapType === 'ocad' ? 250 : 12
-}
+const CIRCLE_R_MM  = 2.5
+const TRIANGLE_MM  = 6.0
+const SW_MM        = 0.35
 
-function clipRadius(control: Control, mapType: string): number {
-  const r = symbolRadius(mapType)
+function clipRadius(control: Control, upm: number): number {
+  const r = CIRCLE_R_MM * upm
   if (control.type === 'start') {
-    const side = mapType === 'ocad' ? 600 : r * 2.4
+    const side = TRIANGLE_MM * upm
     return side * Math.sqrt(3) / 2 * 2 / 3
   }
   return r
 }
 
-function renderLegs(course: Course, controlMap: Map<string, Control>, mapType: string, opacity = 1): React.ReactNode[] {
+function renderLegs(course: Course, controlMap: Map<string, Control>, upm: number, opacity = 1): React.ReactNode[] {
   if (course.controls.length < 2 || course.type === 'score') return []
-  const strokeWidth = mapType === 'ocad' ? 35 : 1.7
+  const strokeWidth = SW_MM * upm
   const legs: React.ReactNode[] = []
 
   for (let i = 0; i < course.controls.length - 1; i++) {
@@ -45,8 +46,8 @@ function renderLegs(course: Course, controlMap: Map<string, Control>, mapType: s
     const ux = dx / len
     const uy = dy / len
 
-    const fromR = clipRadius(fromControl, mapType)
-    const toR = clipRadius(toControl, mapType)
+    const fromR = clipRadius(fromControl, upm)
+    const toR = clipRadius(toControl, upm)
     const startX = x1 + ux * fromR
     const startY = y1 + uy * fromR
     const endX = x2 - ux * toR
@@ -66,10 +67,11 @@ function renderLegs(course: Course, controlMap: Map<string, Control>, mapType: s
   return legs
 }
 
-export function LegsLayer({ course, controls, mapType }: Props) {
+export function LegsLayer({ course, controls, map }: Props) {
   if (!course) return null
   const controlMap = new Map(controls.map(c => [c.id, c]))
-  const legs = renderLegs(course, controlMap, mapType)
+  const upm = unitsPerMm(map)
+  const legs = renderLegs(course, controlMap, upm)
   if (legs.length === 0) return null
   return <g style={{ pointerEvents: 'none' }}>{legs}</g>
 }

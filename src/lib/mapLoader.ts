@@ -27,6 +27,8 @@ export interface LoadedMap {
   detectedScale?: number
   /** For PDF: render upscale factor (coordinates are in upscaled pixels, not PDF points) */
   renderScale?: number
+  /** For OCAD: pre-rasterized image URL for fast pan/zoom */
+  rasterUrl?: string
 }
 
 export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
@@ -64,83 +66,66 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     if (scalePar?.[0]?.m) detectedScale = scalePar[0].m
   }
 
-  // ocad2geojson has a bug: debug red circles with no renderOrder corrupt the
-  // global sort, scrambling z-order for the entire map. Fix by removing them
-  // and re-sorting elements by their color's renderOrder.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fixSvgRenderOrder(svgEl, ocadFile as any)
+  // The patched ocad2geojson (see patches/) removes debug red circles that
+  // corrupted the library's z-order sort and adds data-order attributes.
+  // This is a defensive cleanup in case any stray debug circles remain.
+  cleanupSvg(svgEl)
 
-  return { type: 'svg', content: svgEl, bounds, detectedScale }
+  const rasterUrl = await rasterizeSvg(svgEl, bounds)
+
+  return { type: 'svg', content: svgEl, bounds, detectedScale, rasterUrl }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function fixSvgRenderOrder(svgEl: SVGElement, ocadFile: any) {
-  const colorDefs = ocadFile.parameterStrings[9] || []
-  const rgbToOrder = new Map<string, number>()
-  for (let i = 0; i < colorDefs.length; i++) {
-    const colorNum = Number(colorDefs[i].n)
-    const color = ocadFile.colors[colorNum]
-    if (color && !rgbToOrder.has(color.rgb)) {
-      rgbToOrder.set(color.rgb, color.renderOrder ?? i)
-    }
-  }
-
-  // symNum → renderOrder for pattern-fill elements (hatch/struct fills)
-  const symToOrder = new Map<number, number>()
-  for (const sym of (ocadFile.symbols || [])) {
-    const colorIdx = sym.hatchMode ? sym.hatchColor
-      : sym.elements?.length ? Math.min(...sym.elements.map((e: { color: number }) => e.color))
-      : sym.fillColor
-    if (colorIdx != null) {
-      const colorObj = ocadFile.colors[colorIdx]
-      if (colorObj) symToOrder.set(sym.symNum, colorObj.renderOrder)
-    }
-  }
-
+function cleanupSvg(svgEl: SVGElement) {
   const innerG = Array.from(svgEl.childNodes).find(
     n => n instanceof Element && n.tagName === 'g',
   ) as Element | undefined
   if (!innerG) return
 
-  const children: Element[] = []
   for (let i = innerG.childNodes.length - 1; i >= 0; i--) {
     const node = innerG.childNodes[i]
-    if (!(node instanceof Element)) continue
-    if (node.tagName === 'circle' && node.getAttribute('fill') === 'red') {
+    if (node instanceof Element && node.tagName === 'circle' && node.getAttribute('fill') === 'red') {
       innerG.removeChild(node)
-      continue
     }
-    children.unshift(node)
   }
+}
 
-  function getOrder(el: Element): number {
-    const style = el.getAttribute('style') || ''
-    const patternMatch = style.match(/url\(#(?:struct|hatch)-fill-(\d+)/)
-    if (patternMatch) {
-      const symNum = parseInt(patternMatch[1])
-      if (symToOrder.has(symNum)) return symToOrder.get(symNum)!
-    }
-    const fillMatch = style.match(/(?:^|;\s*)fill:\s*(rgb\([^)]+\))/)
-    const strokeMatch = style.match(/stroke:\s*(rgb\([^)]+\))/)
-    const rgb = fillMatch?.[1] || strokeMatch?.[1]
-      || el.getAttribute('fill') || el.getAttribute('stroke')
-    if (rgb && rgbToOrder.has(rgb)) return rgbToOrder.get(rgb)!
-    return -1
-  }
+const MAX_RASTER_DIM = 8192
 
-  const entries = children.map((node, origIdx) => ({
-    node,
-    order: getOrder(node),
-    origIdx,
-  }))
+async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<string | undefined> {
+  try {
+    const clone = svgEl.cloneNode(true) as SVGElement
+    clone.setAttribute('width', String(bounds.width))
+    clone.setAttribute('height', String(bounds.height))
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
 
-  entries.sort((a, b) => {
-    if (a.order !== b.order) return b.order - a.order
-    return a.origIdx - b.origIdx
-  })
+    const xml = new XMLSerializer().serializeToString(clone)
+    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
 
-  for (const { node } of entries) {
-    innerG.appendChild(node)
+    const scale = Math.min(1, MAX_RASTER_DIM / Math.max(bounds.width, bounds.height))
+    const w = Math.round(bounds.width * scale)
+    const h = Math.round(bounds.height * scale)
+
+    return await new Promise<string | undefined>((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, w, h)
+        URL.revokeObjectURL(url)
+        resolve(canvas.toDataURL('image/png'))
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(undefined)
+      }
+      img.src = url
+    })
+  } catch {
+    return undefined
   }
 }
 

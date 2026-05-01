@@ -78,7 +78,7 @@ export function ControlDescriptionGrid({ course }: GridProps) {
                   return (
                     <td
                       key={col.id}
-                      className={`${BORDER} text-center cursor-pointer hover:bg-purple-50 ${isActive ? 'bg-purple-100' : ''}`}
+                      className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
                       style={{ width: CELL, height: CELL, padding: 0 }}
                       onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
                     >
@@ -139,7 +139,7 @@ function SymbolPicker({
           placeholder="Search..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+          className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
           autoFocus
         />
         {current && (
@@ -180,8 +180,8 @@ function SymbolGrid({ symbols, current, onSelect }: {
           title={`${sym.name} (${sym.code})`}
           className={`flex items-center justify-center rounded border transition-colors ${
             sym.code === current
-              ? 'border-purple-500 bg-purple-100'
-              : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+              ? 'border-orange-500 bg-orange-100'
+              : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
           }`}
           style={{ width: 36, height: 36 }}
         >

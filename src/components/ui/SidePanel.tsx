@@ -56,7 +56,7 @@ export function SidePanel() {
                   onClick={() => setTab(t)}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors capitalize ${
                     tab === t
-                      ? 'border-b-2 border-purple-600 text-purple-700 bg-purple-50/50'
+                      ? 'border-b-2 border-orange-600 text-orange-700 bg-orange-50/50'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -102,7 +102,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
     <div className="flex flex-col items-center pt-2 gap-3">
       <button
         onClick={onExpand}
-        className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+        className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
         title="Open Course Panel"
       >
         <PanelRight size={22} />
@@ -119,7 +119,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
                 title={isActive ? `${course.name} (click to deselect)` : course.name}
                 className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 ${
                   isActive
-                    ? 'ring-2 ring-purple-500 ring-offset-1 scale-110'
+                    ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
                     : 'hover:scale-105 opacity-70 hover:opacity-100'
                 }`}
                 style={{ background: course.color, color: 'white' }}
@@ -160,7 +160,7 @@ function MobileBottomSheet({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
             onClick={() => { setTab(t); setExpanded(true) }}
             className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-colors capitalize ${
               tab === t && expanded
-                ? 'bg-purple-100 text-purple-700'
+                ? 'bg-orange-100 text-orange-700'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >

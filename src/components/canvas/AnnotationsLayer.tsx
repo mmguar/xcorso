@@ -6,37 +6,29 @@
  */
 
 import { useId } from 'react'
-import type { Annotation, MapPoint } from '../../types'
+import type { Annotation, MapConfig, MapPoint } from '../../types'
+import { unitsPerMm } from '../../lib/courseUtils'
 
 interface Props {
   annotations: Annotation[]
   pendingPoints: MapPoint[]
   pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | null
-  mapType: 'ocad' | 'pdf' | 'bitmap'
+  map: MapConfig
 }
 
-// ISOM 2017-2 dimensions (mm on paper at print scale)
-// Bitmap/PDF: ~4px per mm based on our control circle radius (12px ≈ 3mm)
-// OCAD: 100 units per mm
-
-function dims(mapType: string) {
-  const ocad = mapType === 'ocad'
+// ISOM 2017-2 dimensions in mm on paper
+function dims(upm: number) {
   return {
-    // 711 Out-of-bounds route
-    routeLineW:  ocad ? 35  : 1.5,   // 0.35mm connecting line
-    routeXArm:   ocad ? 150 : 6,     // 1.5mm half-arm of each X (3mm total)
-    routeXW:     ocad ? 35  : 1.5,   // 0.35mm X stroke
-    routeXSpace: ocad ? 500 : 20,    // 5mm center-to-center spacing
-
-    // 710 Crossing point
-    crossW:      ocad ? 60  : 2.5,   // 0.6mm line width
-    crossHalf:   ocad ? 150 : 6,     // 1.5mm half-width (3mm total)
-    crossH:      ocad ? 150 : 6,     // 1.5mm half-height
-
-    // 709 Out-of-bounds area
-    hatchSpace:  ocad ? 80  : 3.2,   // ~0.8mm line spacing
-    hatchW:      ocad ? 25  : 1,     // 0.25mm hatch line width
-    boundaryW:   ocad ? 70  : 2.8,   // 0.7mm boundary line (same as 708)
+    routeLineW:  0.35 * upm,
+    routeXArm:   1.5  * upm,
+    routeXW:     0.35 * upm,
+    routeXSpace: 5.0  * upm,
+    crossW:      0.6  * upm,
+    crossHalf:   1.5  * upm,
+    crossH:      1.5  * upm,
+    hatchSpace:  0.8  * upm,
+    hatchW:      0.25 * upm,
+    boundaryW:   0.7  * upm,
   }
 }
 
@@ -80,11 +72,11 @@ function walkPath(points: MapPoint[], spacing: number): { x: number; y: number; 
   return marks
 }
 
-function ForbiddenRoute({ points, mapType, color }: {
-  points: MapPoint[]; mapType: string; color: string
+function ForbiddenRoute({ points, upm, color }: {
+  points: MapPoint[]; upm: number; color: string
 }) {
   if (points.length < 2) return null
-  const d = dims(mapType)
+  const d = dims(upm)
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
   const marks = walkPath(points, d.routeXSpace)
 
@@ -118,11 +110,11 @@ function ForbiddenRoute({ points, mapType, color }: {
 // ── 710 Crossing point ───────────────────────────────────────────────────────
 // Two outward-curving arcs like )( marking a mandatory crossing.
 
-function CrossingPoint({ center, mapType, rotation, color }: {
-  center: MapPoint; mapType: string; rotation: number; color: string
+function CrossingPoint({ center, upm, rotation, color }: {
+  center: MapPoint; upm: number; rotation: number; color: string
 }) {
   const { x, y } = center
-  const d = dims(mapType)
+  const d = dims(upm)
   const hw = d.crossHalf
   const hh = d.crossH
 
@@ -140,13 +132,13 @@ function CrossingPoint({ center, mapType, rotation, color }: {
 }
 
 // ── 709 Out-of-bounds area ───────────────────────────────────────────────────
-// Crosshatched with 45° diagonal purple lines, with a boundary line.
+// Crosshatched with 45° diagonal lines, with a boundary line.
 
-function OutOfBoundsArea({ points, mapType, color, patternId }: {
-  points: MapPoint[]; mapType: string; color: string; patternId: string
+function OutOfBoundsArea({ points, upm, color, patternId }: {
+  points: MapPoint[]; upm: number; color: string; patternId: string
 }) {
   if (points.length < 3) return null
-  const d = dims(mapType)
+  const d = dims(upm)
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
   const sp = d.hatchSpace
 
@@ -167,9 +159,10 @@ function OutOfBoundsArea({ points, mapType, color, patternId }: {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function AnnotationsLayer({ annotations, pendingPoints, pendingType, mapType }: Props) {
+export function AnnotationsLayer({ annotations, pendingPoints, pendingType, map }: Props) {
   const color = '#cc0000'
   const baseId = useId()
+  const upm = unitsPerMm(map)
 
   return (
     <g style={{ pointerEvents: 'none' }}>
@@ -177,7 +170,7 @@ export function AnnotationsLayer({ annotations, pendingPoints, pendingType, mapT
         if (ann.type === 'crossing_point' && ann.points[0]) {
           return (
             <g key={ann.id}>
-              <CrossingPoint center={ann.points[0]} mapType={mapType}
+              <CrossingPoint center={ann.points[0]} upm={upm}
                 rotation={ann.rotation ?? 0} color={color} />
             </g>
           )
@@ -185,14 +178,14 @@ export function AnnotationsLayer({ annotations, pendingPoints, pendingType, mapT
         if (ann.type === 'forbidden_route') {
           return (
             <g key={ann.id}>
-              <ForbiddenRoute points={ann.points} mapType={mapType} color={color} />
+              <ForbiddenRoute points={ann.points} upm={upm} color={color} />
             </g>
           )
         }
         if (ann.type === 'out_of_bounds') {
           return (
             <g key={ann.id}>
-              <OutOfBoundsArea points={ann.points} mapType={mapType} color={color}
+              <OutOfBoundsArea points={ann.points} upm={upm} color={color}
                 patternId={`${baseId}-oob-${idx}`} />
             </g>
           )
@@ -200,21 +193,20 @@ export function AnnotationsLayer({ annotations, pendingPoints, pendingType, mapT
         return null
       })}
 
-      {/* In-progress annotation preview */}
       {pendingPoints.length > 0 && pendingType === 'forbidden_route' && (
         <g opacity={0.5}>
-          <ForbiddenRoute points={pendingPoints} mapType={mapType} color={color} />
+          <ForbiddenRoute points={pendingPoints} upm={upm} color={color} />
         </g>
       )}
       {pendingPoints.length > 0 && pendingType === 'crossing_point' && (
         <g opacity={0.5}>
-          <CrossingPoint center={pendingPoints[0]} mapType={mapType}
+          <CrossingPoint center={pendingPoints[0]} upm={upm}
             rotation={0} color={color} />
         </g>
       )}
       {pendingPoints.length >= 2 && pendingType === 'out_of_bounds' && (
         <g opacity={0.5}>
-          <OutOfBoundsArea points={pendingPoints} mapType={mapType} color={color}
+          <OutOfBoundsArea points={pendingPoints} upm={upm} color={color}
             patternId={`${baseId}-oob-pending`} />
         </g>
       )}

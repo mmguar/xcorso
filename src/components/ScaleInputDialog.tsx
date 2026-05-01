@@ -35,7 +35,7 @@ export function ScaleInputDialog({ onConfirm, onCancel }: Props) {
             value={value}
             onChange={e => setValue(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             placeholder="e.g. 100"
           />
         </label>
@@ -49,7 +49,7 @@ export function ScaleInputDialog({ onConfirm, onCancel }: Props) {
           <button
             onClick={handleSubmit}
             disabled={!value || isNaN(parseFloat(value)) || parseFloat(value) <= 0}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Set scale
           </button>

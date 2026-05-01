@@ -60,6 +60,7 @@ export interface PdfExportOptions {
   tiling?: boolean
   offsetX?: number
   offsetY?: number
+  mapOpacity?: number
 }
 
 export interface CourseFitInfo {
@@ -105,7 +106,7 @@ export function canExportPdf(map: MapConfig): boolean {
 
 // ── Map rasterization ──────────────────────────────────────────────────────
 
-async function rasterizeMap(loadedMap: LoadedMap): Promise<string> {
+async function rasterizeMap(loadedMap: LoadedMap, opacity = 1): Promise<string> {
   if (loadedMap.type === 'svg') {
     const svgEl = loadedMap.content as SVGElement
     const clone = svgEl.cloneNode(true) as SVGElement
@@ -135,6 +136,7 @@ async function rasterizeMap(loadedMap: LoadedMap): Promise<string> {
       const ctx = canvas.getContext('2d')!
       ctx.fillStyle = 'white'
       ctx.fillRect(0, 0, canvasW, canvasH)
+      ctx.globalAlpha = opacity
       ctx.drawImage(img, 0, 0, canvasW, canvasH)
       return canvas.toDataURL('image/jpeg', 0.92)
     } finally {
@@ -152,6 +154,9 @@ async function rasterizeMap(loadedMap: LoadedMap): Promise<string> {
   canvas.width = img.naturalWidth
   canvas.height = img.naturalHeight
   const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.globalAlpha = opacity
   ctx.drawImage(img, 0, 0)
   return canvas.toDataURL('image/jpeg', 0.92)
 }
@@ -629,7 +634,7 @@ export async function exportCoursePdf(
 
   let mapDataUrl: string | null = null
   if (loadedMap) {
-    try { mapDataUrl = await rasterizeMap(loadedMap) } catch { /* fall back to no map */ }
+    try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
   }
 
   let pageIndex = 0

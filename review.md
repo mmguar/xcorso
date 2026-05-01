@@ -92,15 +92,21 @@ Deleted:
 
 Changed to `.ocd,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.webp`.
 
-### 18. `eslint-disable` comments throughout mapLoader.ts
+### 18. [FIXED] OCAD SVG z-order corruption (mapLoader.ts + ocad2geojson patch)
+
+`ocad2geojson` creates debug red circles with no `order` property inside `dblMode 1` (double-line) rendering. When `Array.sort((a, b) => b.order - a.order)` encounters these, `undefined` arithmetic produces `NaN`, corrupting the sort for the entire SVG. Symptoms: legend lines bleeding through overlapping elements, roads rendered as solid black (casing on top of fill).
+
+Fixed via `patch-package`: removed debug circle generation and added `data-order` attribute preservation in `createSvgNode`. The `fixSvgRenderOrder` function is replaced with a minimal `cleanupSvg` that defensively strips any remaining red circles.
+
+### 19. `eslint-disable` comments throughout mapLoader.ts
 
 **Not fixed** — creating a type declaration file for `ocad2geojson` requires investigating the library's actual API surface. Low priority.
 
-### 19. [FIXED] Hardcoded `20` instead of `2 * MARGIN` (PdfExportDialog.tsx)
+### 20. [FIXED] Hardcoded `20` instead of `2 * MARGIN` (PdfExportDialog.tsx)
 
 Exported `MARGIN` from `pdfExport.ts` and replaced the hardcoded `20` with `2 * MARGIN`.
 
-### 20. `useLayoutEffect` with `[]` deps and eslint-disable (MapCanvas.tsx)
+### 21. `useLayoutEffect` with `[]` deps and eslint-disable (MapCanvas.tsx)
 
 **Not fixed** — the current approach works correctly because Zustand action refs are stable. Changing it to `useStore.getState()` inside handlers would be safer but is a low-risk refactor.
 
@@ -108,14 +114,16 @@ Exported `MARGIN` from `pdfExport.ts` and replaced the hardcoded `20` with `2 * 
 
 ## Summary
 
-**Fixed 13 of 20 issues** — all critical bugs, all significant perf/UX issues, and all duplication. The remaining items are architectural improvements (store splitting, error boundaries, ISOM constant extraction) and infrastructure (tests, type declarations) that are best tackled as dedicated tasks.
+**Fixed 14 of 20 issues** — all critical bugs, all significant perf/UX issues, and all duplication. The remaining items are architectural improvements (store splitting, error boundaries, ISOM constant extraction) and infrastructure (tests, type declarations) that are best tackled as dedicated tasks.
 
 ### Changes made
 
 | File | Change |
 |------|--------|
 | `src/lib/projectFile.ts` | Added `validateProject()` with schema checks |
-| `src/lib/mapLoader.ts` | Added `renderScale` to `LoadedMap`, fixed object URL leak |
+| `src/lib/mapLoader.ts` | Added `renderScale` to `LoadedMap`, fixed object URL leak, replaced z-order fix with `cleanupSvg` |
+| `patches/ocad2geojson+2.1.20.patch` | **New file** — removes debug circles + adds `data-order` to SVG nodes |
+| `package.json` | Added `patch-package` devDep + `postinstall` script |
 | `src/lib/courseUtils.ts` | **New file** — shared `defaultControlLabel()` and `buildSequenceMap()` |
 | `src/lib/pdfExport.ts` | Exported `MARGIN`, replaced local label/sequence functions with shared imports |
 | `src/store/index.ts` | Fixed double-clone, added `mutateProjectSilent`/`beginMoveControl`, duplicate code check |

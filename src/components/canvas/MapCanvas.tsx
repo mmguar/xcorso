@@ -6,7 +6,7 @@ import { LegsLayer } from './LegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import type { AnnotationType, Control, MapPoint, Viewport } from '../../types'
+import type { Annotation, AnnotationType, Control, MapPoint, Viewport } from '../../types'
 
 const TAP_PX    = 8
 const HIT_PX    = 20
@@ -40,6 +40,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const setMapScaleMeasurement   = useStore(s => s.setMapScaleMeasurement)
   const setActiveTool            = useStore(s => s.setActiveTool)
 
+  const [useRaster, setUseRaster] = useState(true)
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
@@ -94,6 +95,38 @@ export function MapCanvas({ loadedMap }: Props) {
       return best
     }
 
+    function distToSegment(p: MapPoint, a: MapPoint, b: MapPoint): number {
+      const dx = b.x - a.x, dy = b.y - a.y
+      const lenSq = dx * dx + dy * dy
+      if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y)
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq))
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    function findAnnotationAt(screenX: number, screenY: number): Annotation | null {
+      const annotations = useStore.getState().project?.annotations ?? []
+      const mapPt = screenToMap(screenX, screenY)
+      const hitR = HIT_PX / vpRef.current.scale
+      for (const ann of annotations) {
+        if (ann.type === 'crossing_point') {
+          const p = ann.points[0]
+          if (p && Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < hitR) return ann
+        } else {
+          for (let i = 1; i < ann.points.length; i++) {
+            if (distToSegment(mapPt, ann.points[i - 1], ann.points[i]) < hitR) return ann
+          }
+          if (ann.type === 'out_of_bounds' && ann.points.length >= 3) {
+            if (distToSegment(mapPt, ann.points[ann.points.length - 1], ann.points[0]) < hitR) return ann
+          }
+        }
+      }
+      return null
+    }
+
+    let dragControlId: string | null = null
+    let dragOffset: { dx: number; dy: number } | null = null
+    let dragStarted = false
+
     // ── Wheel ────────────────────────────────────────────────────────────────
     function onWheel(e: WheelEvent) {
       e.preventDefault()
@@ -111,13 +144,27 @@ export function MapCanvas({ loadedMap }: Props) {
 
     // ── Pointer down ─────────────────────────────────────────────────────────
     function onDown(e: PointerEvent) {
-      if (e.target instanceof HTMLInputElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return
       div.setPointerCapture(e.pointerId)
       pos.set(e.pointerId, { x: e.clientX, y: e.clientY })
       down.set(e.pointerId, { x: e.clientX, y: e.clientY })
       if (pos.size === 2) {
         const [a, b] = [...pos.values()]
         pinchDist = Math.hypot(b.x - a.x, b.y - a.y)
+      }
+
+      const { activeTool } = useStore.getState().editor
+      if (activeTool === 'select' && pos.size === 1) {
+        const rect = div.getBoundingClientRect()
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+        const hit = findControlAt(sx, sy)
+        if (hit) {
+          const mapPt = screenToMap(sx, sy)
+          dragControlId = hit.id
+          dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
+          dragStarted = false
+        }
       }
     }
 
@@ -126,6 +173,21 @@ export function MapCanvas({ loadedMap }: Props) {
       if (!pos.has(e.pointerId)) return
       const prev = pos.get(e.pointerId)!
       pos.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+      if (dragControlId && pos.size === 1) {
+        if (!dragStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveControl()
+          dragStarted = true
+        }
+        const rect = div.getBoundingClientRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        useStore.getState().moveControl(dragControlId, {
+          x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy,
+        })
+        return
+      }
 
       if (pos.size === 1) {
         const dx = e.clientX - prev.x
@@ -154,6 +216,17 @@ export function MapCanvas({ loadedMap }: Props) {
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
 
+      // End control drag
+      if (dragControlId && dragStarted) {
+        dragControlId = null
+        dragOffset = null
+        dragStarted = false
+        return
+      }
+      dragControlId = null
+      dragOffset = null
+      dragStarted = false
+
       if (!start) return
       if (e.pointerType === 'mouse' && e.button !== 0) return
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) return
@@ -166,6 +239,17 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool, selectedCourseId } = useStore.getState().editor
       const ms = measureStartRef.current
       const hitControl = findControlAt(sx, sy)
+
+      // Delete tool
+      if (activeTool === 'delete') {
+        if (hitControl) {
+          useStore.getState().deleteControl(hitControl.id)
+        } else {
+          const hitAnn = findAnnotationAt(sx, sy)
+          if (hitAnn) useStore.getState().deleteAnnotation(hitAnn.id)
+        }
+        return
+      }
 
       // Control hit always takes priority
       if (hitControl) {
@@ -270,7 +354,10 @@ export function MapCanvas({ loadedMap }: Props) {
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const selectedCourse = project.courses.find(c => c.id === editor.selectedCourseId) ?? null
   const isCourseMode = !!editor.selectedCourseId
-  const cursor = isCourseMode ? 'default' : editor.activeTool === 'select' ? 'grab' : 'crosshair'
+  const cursor = isCourseMode ? 'default'
+    : editor.activeTool === 'select' ? 'grab'
+    : editor.activeTool === 'delete' ? 'crosshair'
+    : 'crosshair'
 
   return (
     <div
@@ -289,7 +376,7 @@ export function MapCanvas({ loadedMap }: Props) {
         }}
       >
         <g transform={`translate(${vp.x},${vp.y}) scale(${vp.scale})`}>
-          <MapLayer loadedMap={loadedMap} />
+          <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
       </svg>
       {/* Overlay layers — controls, legs, annotations (no filter) */}
@@ -298,23 +385,21 @@ export function MapCanvas({ loadedMap }: Props) {
           <LegsLayer
             course={selectedCourse}
             controls={project.controls}
-            mapType={project.map.type}
+            map={project.map}
           />
           <AnnotationsLayer
             annotations={project.annotations}
             pendingPoints={editor.pendingAnnotationPoints}
             pendingType={getAnnotationType()}
-            mapType={project.map.type}
+            map={project.map}
           />
           <ControlsLayer
             controls={project.controls}
-            scale={project.map.scale}
-            mapType={project.map.type}
           />
         </g>
       </svg>
 
-      {/* Saturation slider */}
+      {/* Saturation slider + HD toggle */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
         <span className="text-[10px] text-gray-400 select-none">Map</span>
         <input
@@ -324,8 +409,22 @@ export function MapCanvas({ loadedMap }: Props) {
           step={0.05}
           value={mapSaturation}
           onChange={e => useStore.getState().setMapSaturation(parseFloat(e.target.value))}
-          className="w-16 h-1 accent-purple-600"
+          className="w-16 h-1 accent-orange-600"
         />
+        {loadedMap.type === 'svg' && loadedMap.rasterUrl && (
+          <>
+            <div className="w-px h-4 bg-gray-300" />
+            <button
+              onClick={() => setUseRaster(r => !r)}
+              title={useRaster ? 'Switch to full-quality SVG (slower)' : 'Switch to raster (faster)'}
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors ${
+                useRaster ? 'text-gray-400' : 'text-orange-600 bg-orange-50'
+              }`}
+            >
+              HD
+            </button>
+          </>
+        )}
       </div>
 
       {measureStart && !scaleDialogPoints && (

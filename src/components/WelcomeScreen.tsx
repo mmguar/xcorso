@@ -78,7 +78,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-8 gap-8">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg">
             <Map size={32} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">xcorso</h1>
@@ -91,9 +91,9 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
           <button
             onClick={() => setStep('new-project')}
-            className="flex-1 flex flex-col items-center gap-2 p-6 bg-white border-2 border-purple-200 hover:border-purple-400 rounded-2xl transition-all cursor-pointer shadow-sm hover:shadow-md"
+            className="flex-1 flex flex-col items-center gap-2 p-6 bg-white border-2 border-orange-200 hover:border-orange-400 rounded-2xl transition-all cursor-pointer shadow-sm hover:shadow-md"
           >
-            <FileUp size={24} className="text-purple-600" />
+            <FileUp size={24} className="text-orange-600" />
             <span className="font-semibold text-gray-800">New Project</span>
             <span className="text-xs text-gray-400 text-center">Open a map file and start planning</span>
           </button>
@@ -132,7 +132,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
           <input
             type="text" value={projectName}
             onChange={e => setProjectName(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
           />
         </div>
 
@@ -141,7 +141,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
           <label className="text-xs font-medium text-gray-500">Map file</label>
           <button
             onClick={() => mapFileRef.current?.click()}
-            className="border-2 border-dashed border-gray-200 hover:border-purple-300 rounded-xl px-4 py-5 text-sm text-gray-400 hover:text-purple-600 transition-colors text-center"
+            className="border-2 border-dashed border-gray-200 hover:border-orange-300 rounded-xl px-4 py-5 text-sm text-gray-400 hover:text-orange-600 transition-colors text-center"
           >
             {mapFile ? (
               <span className="text-gray-700 font-medium">{mapFile.name}</span>
@@ -168,7 +168,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
                 onClick={() => setStorageMode(mode)}
                 className={`flex-1 border rounded-xl px-3 py-2.5 text-xs text-left transition-colors ${
                   storageMode === mode
-                    ? 'border-purple-400 bg-purple-50 text-purple-700'
+                    ? 'border-orange-400 bg-orange-50 text-orange-700'
                     : 'border-gray-200 text-gray-500 hover:border-gray-300'
                 }`}
               >
@@ -195,7 +195,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
           <button
             onClick={handleCreateProject}
             disabled={!mapFile || loading}
-            className="flex-1 bg-purple-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 bg-orange-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Loading map…' : 'Create Project'}
           </button>

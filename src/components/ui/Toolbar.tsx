@@ -6,7 +6,7 @@
 
 import { useEffect } from 'react'
 import {
-  MousePointer2, Triangle, Target, Slash, X, Ruler, Undo2, Redo2, Circle, Ban,
+  MousePointer2, Triangle, Target, Slash, X, Ruler, Undo2, Redo2, Circle, Ban, Trash2,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
@@ -19,6 +19,7 @@ const tools: { tool: ActiveTool; icon: React.ReactNode; label: string; shortcut?
   { tool: 'forbidden-route', icon: <Slash size={18} />, label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
   { tool: 'crossing-point', icon: <X size={18} />, label: 'Crossing Point', shortcut: 'P' },
   { tool: 'out-of-bounds', icon: <Ban size={18} />, label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
+  { tool: 'delete', icon: <Trash2 size={18} />, label: 'Delete (click control or annotation)', shortcut: 'D' },
   { tool: 'measure-scale', icon: <Ruler size={18} />, label: 'Measure Scale', shortcut: 'M' },
 ]
 
@@ -41,6 +42,10 @@ export function Toolbar() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return }
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const sel = useStore.getState().editor.selectedControlId
+        if (sel) { e.preventDefault(); useStore.getState().deleteControl(sel); return }
+      }
       if (selectedCourseId) {
         if (e.key === 'Escape') setSelectedCourse(null)
         return
@@ -78,7 +83,7 @@ export function Toolbar() {
       <div className="
         absolute bottom-4 left-1/2 -translate-x-1/2
         flex items-center gap-2
-        bg-white/95 backdrop-blur border border-purple-300 shadow-lg
+        bg-white/95 backdrop-blur border border-orange-300 shadow-lg
         rounded-2xl px-4 py-2
         z-20
       ">
@@ -117,7 +122,7 @@ export function Toolbar() {
           className={`
             w-9 h-9 flex items-center justify-center rounded-xl transition-all
             ${activeTool === tool
-              ? 'bg-purple-600 text-white shadow-inner'
+              ? 'bg-orange-600 text-white shadow-inner'
               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}
           `}
         >

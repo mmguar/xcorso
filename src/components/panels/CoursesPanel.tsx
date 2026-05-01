@@ -41,9 +41,9 @@ function CourseEditor({ course }: { course: Course }) {
   }
 
   return (
-    <div className="border border-purple-200 rounded-xl overflow-hidden mb-2">
+    <div className="border border-orange-200 rounded-xl overflow-hidden mb-2">
       {/* Course header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-purple-50">
+      <div className="flex items-center gap-2 px-3 py-2 bg-orange-50">
         <input
           type="color"
           value={course.color}
@@ -54,7 +54,7 @@ function CourseEditor({ course }: { course: Course }) {
         {editingName ? (
           <input
             autoFocus
-            className="flex-1 text-sm font-semibold bg-white border rounded px-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+            className="flex-1 text-sm font-semibold bg-white border rounded px-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
             value={nameVal}
             onChange={e => setNameVal(e.target.value)}
             onBlur={() => { updateCourseName(course.id, nameVal); setEditingName(false) }}
@@ -83,7 +83,7 @@ function CourseEditor({ course }: { course: Course }) {
             type="checkbox"
             checked={course.showPoints ?? false}
             onChange={e => updateCourseShowPoints(course.id, e.target.checked)}
-            className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+            className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
           />
           Show points on map
         </label>
@@ -107,14 +107,14 @@ function CourseEditor({ course }: { course: Course }) {
                 onDragEnter={() => setOverIdx(idx)}
                 onDragEnd={commitReorder}
                 className={`flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
-                  overIdx === idx && dragIdx !== idx ? 'bg-purple-50' : 'bg-white'
+                  overIdx === idx && dragIdx !== idx ? 'bg-orange-50' : 'bg-white'
                 }`}
               >
                 <GripVertical size={12} className="text-gray-300 cursor-grab" />
                 <span className="text-gray-400 text-xs w-5 text-right">{idx + 1}</span>
                 <span className={`font-mono text-xs w-8 font-medium ${
                   ctrl?.type === 'start' ? 'text-green-600' :
-                  ctrl?.type === 'finish' ? 'text-red-600' : 'text-purple-700'
+                  ctrl?.type === 'finish' ? 'text-red-600' : 'text-orange-700'
                 }`}>
                   {ctrl ? (
                     ctrl.type === 'control' && seqMap
@@ -132,7 +132,7 @@ function CourseEditor({ course }: { course: Course }) {
                     value={cc.scorePoints ?? ''}
                     placeholder="pts"
                     onChange={e => updateScorePoints(course.id, cc.id, parseInt(e.target.value) || 0)}
-                    className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
                   />
                 )}
                 <button
@@ -161,7 +161,7 @@ function CourseEditor({ course }: { course: Course }) {
         <div className="border-t border-gray-100">
           <button
             onClick={() => setShowDescriptions(d => !d)}
-            className="flex items-center gap-1.5 w-full px-3 py-1.5 text-xs text-gray-500 hover:text-purple-600 transition-colors"
+            className="flex items-center gap-1.5 w-full px-3 py-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors"
           >
             <List size={12} />
             Control descriptions
@@ -192,7 +192,7 @@ function ClassesSection() {
     return (
       <button
         onClick={() => setShowClasses(true)}
-        className="flex items-center gap-1 text-xs text-gray-400 hover:text-purple-600 px-3 py-2 transition-colors"
+        className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-600 px-3 py-2 transition-colors"
       >
         <Plus size={12} /> Add race classes
       </button>
@@ -205,7 +205,7 @@ function ClassesSection() {
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Classes</span>
         <button
           onClick={() => addClass(`Class ${project.classes.length + 1}`, project.courses[0].id)}
-          className="text-xs text-purple-600 hover:text-purple-800 font-medium transition-colors"
+          className="text-xs text-orange-600 hover:text-orange-800 font-medium transition-colors"
         >
           + Add
         </button>
@@ -222,13 +222,13 @@ function ClassesSection() {
                 type="text"
                 value={rc.name}
                 onChange={e => updateClassName(rc.id, e.target.value)}
-                className="flex-1 min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                className="flex-1 min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
                 placeholder="Class name"
               />
               <select
                 value={rc.courseId}
                 onChange={e => updateClassCourse(rc.id, e.target.value)}
-                className="text-xs border border-gray-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 max-w-[7rem]"
+                className="text-xs border border-gray-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 max-w-[7rem]"
               >
                 {project.courses.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -261,7 +261,7 @@ export function CoursesPanel() {
       <div className="flex gap-2 p-2 border-b border-gray-100">
         <button
           onClick={() => { const c = addCourse(`Course ${project.courses.length + 1}`); setExpanded(p => new Set([...p, c.id])) }}
-          className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-purple-600 text-white rounded-lg px-3 py-1.5 hover:bg-purple-700 transition-colors"
+          className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors"
         >
           <Plus size={13} /> Linear course
         </button>
@@ -280,11 +280,11 @@ export function CoursesPanel() {
             onClick={() => setSelectedCourse(null)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer mb-1 transition-colors ${
               isAllControls
-                ? 'bg-purple-100'
+                ? 'bg-orange-100'
                 : 'hover:bg-gray-50'
             }`}
           >
-            <div className="w-3 h-3 rounded-full bg-purple-600" />
+            <div className="w-3 h-3 rounded-full bg-orange-600" />
             <span className="text-sm font-medium flex-1">All controls</span>
             <span className="text-xs text-gray-400">{project.controls.length} controls</span>
           </div>
@@ -301,7 +301,7 @@ export function CoursesPanel() {
               <div
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-1 transition-colors ${
                   course.id === selectedCourseId
-                    ? 'bg-purple-100'
+                    ? 'bg-orange-100'
                     : 'hover:bg-gray-50'
                 }`}
               >
@@ -314,7 +314,7 @@ export function CoursesPanel() {
                       return next
                     })
                   }}
-                  className="text-gray-400 hover:text-purple-600 transition-colors shrink-0"
+                  className="text-gray-400 hover:text-orange-600 transition-colors shrink-0"
                 >
                   {expanded.has(course.id)
                     ? <ChevronDown size={14} />

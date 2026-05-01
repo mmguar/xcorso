@@ -119,6 +119,7 @@ export function PdfExportDialog({ onClose }: Props) {
   const [tiling, setTiling] = useState(false)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
+  const [mapOpacity, setMapOpacity] = useState(1)
   const [exporting, setExporting] = useState(false)
 
   const options: PdfExportOptions = {
@@ -131,6 +132,7 @@ export function PdfExportDialog({ onClose }: Props) {
     tiling,
     offsetX,
     offsetY,
+    mapOpacity,
   }
 
   const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
@@ -205,7 +207,7 @@ export function PdfExportDialog({ onClose }: Props) {
             <select
               value={pageSize}
               onChange={e => setPageSize(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             >
               {Object.entries(PAGE_SIZES).map(([k, v]) => (
                 <option key={k} value={k}>{v.label}</option>
@@ -221,7 +223,7 @@ export function PdfExportDialog({ onClose }: Props) {
                   onClick={() => setOrientation(o)}
                   className={`px-3 text-sm transition-colors ${
                     orientation === o
-                      ? 'bg-purple-600 text-white'
+                      ? 'bg-orange-600 text-white'
                       : 'bg-white text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -245,12 +247,12 @@ export function PdfExportDialog({ onClose }: Props) {
                 const v = parseInt(e.target.value)
                 if (!isNaN(v) && v > 0) setPrintScale(v)
               }}
-              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
             {printScale !== project.map.scale && (
               <button
                 onClick={() => setPrintScale(project.map.scale)}
-                className="text-xs text-purple-600 hover:text-purple-800"
+                className="text-xs text-orange-600 hover:text-orange-800"
               >
                 Reset to 1:{project.map.scale.toLocaleString()}
               </button>
@@ -258,12 +260,29 @@ export function PdfExportDialog({ onClose }: Props) {
             {fitScale && fitScale !== printScale && (
               <button
                 onClick={() => setPrintScale(fitScale)}
-                className="text-xs text-purple-600 hover:text-purple-800"
+                className="text-xs text-orange-600 hover:text-orange-800"
               >
                 Fit to page (1:{fitScale.toLocaleString()})
               </button>
             )}
           </div>
+        </div>
+
+        {/* Map opacity */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-gray-500">
+            Map opacity
+            <span className="text-gray-400 font-normal"> — {Math.round(mapOpacity * 100)}%</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={mapOpacity}
+            onChange={e => setMapOpacity(parseFloat(e.target.value))}
+            className="w-full accent-orange-600"
+          />
         </div>
 
         {/* Tiling */}
@@ -273,7 +292,7 @@ export function PdfExportDialog({ onClose }: Props) {
               type="checkbox"
               checked={tiling}
               onChange={e => setTiling(e.target.checked)}
-              className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
             />
             <div className="flex-1">
               <span className="text-sm font-medium text-gray-700">Tile across multiple pages</span>
@@ -293,7 +312,7 @@ export function PdfExportDialog({ onClose }: Props) {
               {hasOffset && (
                 <button
                   onClick={() => { setOffsetX(0); setOffsetY(0) }}
-                  className="text-xs text-purple-600 hover:text-purple-800"
+                  className="text-xs text-orange-600 hover:text-orange-800"
                 >
                   Re-center
                 </button>
@@ -324,7 +343,7 @@ export function PdfExportDialog({ onClose }: Props) {
             <div className="flex gap-2">
               <button
                 onClick={() => setSelectedIds(new Set(project.courses.map(c => c.id)))}
-                className="text-xs text-purple-600 hover:text-purple-800"
+                className="text-xs text-orange-600 hover:text-orange-800"
               >All</button>
               <button
                 onClick={() => setSelectedIds(new Set())}
@@ -340,9 +359,9 @@ export function PdfExportDialog({ onClose }: Props) {
                   type="checkbox"
                   checked={allControls}
                   onChange={e => setAllControls(e.target.checked)}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
                 />
-                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-purple-600" />
+                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-orange-600" />
                 <span className="text-sm flex-1 truncate">All controls</span>
                 {allControls && (() => {
                   const fit = fitInfo.find(f => f.courseId === ALL_CONTROLS_ID)
@@ -380,7 +399,7 @@ export function PdfExportDialog({ onClose }: Props) {
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleCourse(course.id)}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
                     />
                     <div
                       className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -414,7 +433,7 @@ export function PdfExportDialog({ onClose }: Props) {
               type="checkbox"
               checked={includeDescriptions}
               onChange={e => setIncludeDescriptions(e.target.checked)}
-              className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
             />
             <span className="text-sm font-medium text-gray-700">Include control description sheets</span>
           </label>
@@ -439,7 +458,7 @@ export function PdfExportDialog({ onClose }: Props) {
           <button
             onClick={handleExport}
             disabled={!hasSelection || !scalable || exporting}
-            className="flex-1 bg-purple-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 bg-orange-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {exporting ? 'Exporting…' : 'Export PDF'}
           </button>

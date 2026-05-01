@@ -1,6 +1,6 @@
 /**
  * Renders the base map inside the SVG viewport.
- * OCAD → inline SVG element via foreignObject trick or direct g-embed.
+ * OCAD → rasterized image (fast) or inline SVG (full quality).
  * Bitmap / PDF → <image> element.
  */
 
@@ -9,27 +9,43 @@ import type { LoadedMap } from '../../lib/mapLoader'
 
 interface Props {
   loadedMap: LoadedMap
+  useRaster?: boolean
 }
 
-export function MapLayer({ loadedMap }: Props) {
+export function MapLayer({ loadedMap, useRaster = true }: Props) {
   const gRef = useRef<SVGGElement>(null)
 
   useEffect(() => {
     if (loadedMap.type !== 'svg') return
+    if (useRaster && loadedMap.rasterUrl) return
     const g = gRef.current
     if (!g) return
-    // Clear previous content
     while (g.firstChild) g.removeChild(g.firstChild)
     const svgEl = loadedMap.content as SVGElement
-    // Move all children from the ocad SVG into our g element
-    // We want to inherit the coordinate space (viewBox is already applied by parent)
     const children = Array.from(svgEl.childNodes)
     children.forEach(child => g.appendChild(child.cloneNode(true)))
-  }, [loadedMap])
+  }, [loadedMap, useRaster])
 
   const { bounds } = loadedMap
 
   if (loadedMap.type === 'svg') {
+    if (useRaster && loadedMap.rasterUrl) {
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <rect
+            x={bounds.minX} y={bounds.minY}
+            width={bounds.width} height={bounds.height}
+            fill="white"
+          />
+          <image
+            href={loadedMap.rasterUrl}
+            x={bounds.minX} y={bounds.minY}
+            width={bounds.width} height={bounds.height}
+            preserveAspectRatio="none"
+          />
+        </g>
+      )
+    }
     return (
       <g style={{ pointerEvents: 'none' }}>
         <rect

@@ -129,6 +129,7 @@ export type ActiveTool =
   | 'crossing-point'
   | 'out-of-bounds'
   | 'measure-scale'
+  | 'delete'
 
 export interface Viewport {
   x: number       // pan offset x (screen px)
