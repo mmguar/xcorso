@@ -13,6 +13,8 @@ export function Header({ onGoHome }: Props) {
   const updateProjectName = useStore(s => s.updateProjectName)
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
+  const mapSaturation = useStore(s => s.editor.mapSaturation)
+  const setMapSaturation = useStore(s => s.setMapSaturation)
   const [exportOpen, setExportOpen] = useState(false)
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -73,7 +75,21 @@ export function Header({ onGoHome }: Props) {
         </span>
       )}
 
-      <div className="ml-auto flex items-center gap-2">
+      {/* Mobile saturation slider */}
+      <div className="md:hidden flex items-center gap-1 ml-auto mr-2">
+        <span className="text-[10px] text-gray-400 select-none">Map</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={mapSaturation}
+          onChange={e => setMapSaturation(parseFloat(e.target.value))}
+          className="w-14 h-1 accent-orange-600"
+        />
+      </div>
+
+      <div className="flex items-center gap-2 md:ml-auto">
         {/* Save .oco */}
         <button
           onClick={handleSaveProject}

@@ -79,8 +79,8 @@ export function SidePanel() {
         )}
       </aside>
 
-      {/* Mobile/tablet: bottom sheet (collapsed by default, tap to expand) */}
-      <MobileBottomSheet tab={tab} setTab={setTab} />
+      {/* Mobile/tablet: top bar */}
+      <MobileTopBar tab={tab} setTab={setTab} />
     </>
   )
 }
@@ -134,8 +134,11 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
   )
 }
 
-function MobileBottomSheet({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const [expanded, setExpanded] = useState(false)
+  const courses = useStore(s => s.project?.courses ?? [])
+  const selectedCourseId = useStore(s => s.editor.selectedCourseId)
+  const setSelectedCourse = useStore(s => s.setSelectedCourse)
 
   return (
     <div className={`
@@ -144,27 +147,52 @@ function MobileBottomSheet({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void
       transition-all duration-300 ease-out overflow-hidden
       ${expanded ? 'h-[60vh]' : 'h-10'}
     `}>
-      {/* Tabs row */}
-      <div className="flex items-center gap-0 h-10 px-4 shrink-0">
+      {/* Icon tabs + course chips */}
+      <div className="flex items-center gap-1.5 h-10 px-2 shrink-0">
         {(['controls', 'courses'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => { setTab(t); setExpanded(e => t === tab ? !e : true) }}
-            className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-lg transition-colors capitalize ${
+            title={t}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
               tab === t && expanded
                 ? 'bg-orange-100 text-orange-700'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-gray-400 hover:text-gray-600'
             }`}
           >
-            {t === 'controls' ? <MapPin size={13} /> : <Navigation size={13} />}
-            {t}
+            {t === 'controls' ? <MapPin size={15} /> : <Navigation size={15} />}
           </button>
         ))}
+
+        {courses.length > 0 && (
+          <>
+            <div className="w-px h-5 bg-gray-200 mx-0.5" />
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {courses.map(course => {
+                const isActive = course.id === selectedCourseId
+                return (
+                  <button
+                    key={course.id}
+                    onClick={() => setSelectedCourse(isActive ? null : course.id)}
+                    className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
+                      isActive
+                        ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
+                        : 'opacity-60 hover:opacity-100'
+                    }`}
+                    style={{ background: course.color, color: 'white' }}
+                  >
+                    {courseChipLabel(course.name)}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
 
         {expanded && (
           <button
             onClick={() => setExpanded(false)}
-            className="ml-auto flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100"
+            className="ml-auto flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 shrink-0"
             aria-label="Collapse panel"
           >
             <div className="w-5 h-0.5 bg-gray-400" />
