@@ -3,10 +3,11 @@
  */
 
 import { useRef, useState } from 'react'
-import { Map, FolderOpen, FileUp } from 'lucide-react'
+import { Map, FolderOpen, FileUp, ArrowRight } from 'lucide-react'
 import { useStore } from '../store'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
+import { clearSession } from '../lib/persistence'
 import type { MapConfig, MapType } from '../types'
 
 interface Props {
@@ -20,6 +21,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const existingProject = useStore(s => s.project)
   const createProject = useStore(s => s.createProject)
   const loadProject = useStore(s => s.loadProject)
 
@@ -34,6 +36,7 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
   async function handleOpenProject(file: File) {
     setLoading(true); setError(null)
     try {
+      await clearSession()
       const { project, mapData } = await loadProjectFile(file)
       loadProject(project, mapData)
       onProjectLoaded()
@@ -87,6 +90,21 @@ export function WelcomeScreen({ onProjectLoaded }: Props) {
             Open an OCAD, PDF, or image map to get started.
           </p>
         </div>
+
+        {existingProject && (
+          <button
+            onClick={onProjectLoaded}
+            className="flex items-center gap-3 w-full max-w-sm p-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl transition-colors shadow-md"
+          >
+            <ArrowRight size={20} />
+            <div className="text-left">
+              <div className="font-semibold text-sm">Return to "{existingProject.meta.name}"</div>
+              <div className="text-xs text-orange-200">
+                {existingProject.controls.length} controls · {existingProject.courses.length} courses
+              </div>
+            </div>
+          </button>
+        )}
 
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
           <button

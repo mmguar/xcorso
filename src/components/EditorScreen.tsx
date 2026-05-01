@@ -10,7 +10,9 @@ import { Header } from './ui/Header'
 import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
 
-export function EditorScreen() {
+interface Props { onGoHome: () => void }
+
+export function EditorScreen({ onGoHome }: Props) {
   const project = useStore(s => s.project!)
   const mapFileData = useStore(s => s.mapFileData)
   const loadedMap = useStore(s => s.loadedMap)
@@ -53,7 +55,7 @@ export function EditorScreen() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header />
+      <Header onGoHome={onGoHome} />
       <div className="flex flex-1 overflow-hidden relative">
         <div className="flex-1 relative overflow-hidden">
           <MapCanvas loadedMap={loadedMap} />
