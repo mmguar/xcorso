@@ -11,17 +11,29 @@ import {
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
 
-const tools: { tool: ActiveTool; icon: React.ReactNode; label: string; shortcut?: string }[] = [
-  { tool: 'select', icon: <MousePointer2 size={18} />, label: 'Select / Pan', shortcut: 'V' },
-  { tool: 'place-start', icon: <Triangle size={18} />, label: 'Place Start', shortcut: 'S' },
-  { tool: 'place-finish', icon: <Target size={18} />, label: 'Place Finish', shortcut: 'F' },
-  { tool: 'place-control', icon: <Circle size={18} />, label: 'Place Control', shortcut: 'C' },
-  { tool: 'forbidden-route', icon: <Slash size={18} />, label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
-  { tool: 'crossing-point', icon: <X size={18} />, label: 'Crossing Point', shortcut: 'P' },
-  { tool: 'out-of-bounds', icon: <Ban size={18} />, label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
-  { tool: 'delete', icon: <Trash2 size={18} />, label: 'Delete (click control or annotation)', shortcut: 'D' },
-  { tool: 'measure-scale', icon: <Ruler size={18} />, label: 'Measure Scale', shortcut: 'M' },
+const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
+  { tool: 'select', label: 'Select / Pan', shortcut: 'V' },
+  { tool: 'place-start', label: 'Place Start', shortcut: 'S' },
+  { tool: 'place-finish', label: 'Place Finish', shortcut: 'F' },
+  { tool: 'place-control', label: 'Place Control', shortcut: 'C' },
+  { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
+  { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
+  { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
+  { tool: 'delete', label: 'Delete (click control or annotation)', shortcut: 'D' },
+  { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
 ]
+
+const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
+  'select': s => <MousePointer2 size={s} />,
+  'place-start': s => <Triangle size={s} />,
+  'place-finish': s => <Target size={s} />,
+  'place-control': s => <Circle size={s} />,
+  'forbidden-route': s => <Slash size={s} />,
+  'crossing-point': s => <X size={s} />,
+  'out-of-bounds': s => <Ban size={s} />,
+  'delete': s => <Trash2 size={s} />,
+  'measure-scale': s => <Ruler size={s} />,
+}
 
 export function Toolbar() {
   const activeTool = useStore(s => s.editor.activeTool)
@@ -57,21 +69,17 @@ export function Toolbar() {
     return () => window.removeEventListener('keydown', onKey)
   }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse])
 
+  const btnClass = "w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all"
+
   const undoRedo = (
     <>
-      <button
-        onClick={undo}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-        className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"
+        className={`${btnClass} text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed`}
       >
         <Undo2 size={18} />
       </button>
-      <button
-        onClick={redo}
-        disabled={!canRedo}
-        title="Redo (Ctrl+Y)"
-        className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"
+        className={`${btnClass} text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed`}
       >
         <Redo2 size={18} />
       </button>
@@ -82,26 +90,26 @@ export function Toolbar() {
     return (
       <div className="
         absolute bottom-4 left-1/2 -translate-x-1/2
-        flex items-center gap-2
+        flex items-center gap-1.5 md:gap-2
         bg-white/95 backdrop-blur border border-orange-300 shadow-lg
-        rounded-2xl px-4 py-2
+        rounded-2xl px-3 py-1.5 md:px-4 md:py-2
         z-20
       ">
         <div
           className="w-3 h-3 rounded-full shrink-0"
           style={{ background: selectedCourse?.color ?? '#7B2FBE' }}
         />
-        <span className="text-sm text-gray-700">
+        <span className="text-xs md:text-sm text-gray-700">
           <span className="hidden md:inline">Click controls to add · right-click to remove</span>
-          <span className="md:hidden">Tap to add · long-press to remove</span>
+          <span className="md:hidden">Tap to add · hold to remove</span>
         </span>
         <button
           onClick={() => setSelectedCourse(null)}
-          className="ml-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg px-3 py-1.5 transition-colors"
+          className="ml-1 md:ml-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg px-2.5 py-1 md:px-3 md:py-1.5 transition-colors"
         >
           Done
         </button>
-        <div className="w-px h-6 bg-gray-200 mx-1" />
+        <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
         {undoRedo}
       </div>
     )
@@ -110,28 +118,28 @@ export function Toolbar() {
   return (
     <div className="
       absolute bottom-4 left-1/2 -translate-x-1/2
-      flex items-center gap-1
+      flex items-center gap-0.5 md:gap-1
       bg-white/95 backdrop-blur border border-gray-200 shadow-lg
-      rounded-2xl px-2 py-1.5
+      rounded-2xl px-1.5 py-1 md:px-2 md:py-1.5
       z-20
     ">
-      {tools.map(({ tool, icon, label, shortcut }) => (
+      {tools.map(({ tool, label, shortcut }) => (
         <button
           key={tool}
           onClick={() => setActiveTool(tool)}
           title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
           className={`
-            w-9 h-9 flex items-center justify-center rounded-xl transition-all
+            ${btnClass}
             ${activeTool === tool
               ? 'bg-orange-600 text-white shadow-inner'
               : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}
           `}
         >
-          {icon}
+          {toolIcons[tool](16)}
         </button>
       ))}
 
-      <div className="w-px h-6 bg-gray-200 mx-1" />
+      <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
       {undoRedo}
     </div>
   )
