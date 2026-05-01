@@ -83,7 +83,7 @@ interface Bounds {
 
 // ── Coordinate conversion ───────────────────────────────────────────────────
 
-function mapToMm(point: MapPoint, map: MapConfig, printScale: number): Pos {
+export function mapToMm(point: MapPoint, map: MapConfig, printScale: number): Pos {
   if (map.type === 'ocad') {
     const factor = map.scale / (100 * printScale)
     return { x: point.x * factor, y: point.y * factor }
