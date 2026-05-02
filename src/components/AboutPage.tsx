@@ -13,7 +13,7 @@ export function AboutPage({ onBack }: Props) {
       </div>
 
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        {/* Populate this section with your content */}
+        {xcorso makes course planning easy and accessible}
       </div>
 
       <button
