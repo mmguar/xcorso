@@ -439,8 +439,8 @@ export function MapCanvas({ loadedMap }: Props) {
         </g>
       </svg>
 
-      {/* Saturation slider + HD toggle */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
+      {/* Saturation slider + HD toggle (hidden on mobile — slider is in Header) */}
+      <div className="absolute bottom-2 left-2 hidden md:flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
         <span className="text-[10px] text-gray-400 select-none">Map</span>
         <input
           type="range"

@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig } from '../types'
 import type { LoadedMap } from './mapLoader'
-import { drawDescriptionSheet } from './pdfDescriptionSheet'
+import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
 
 // ── ISOM 2017-2 symbol dimensions (mm on paper) ────────────────────────────
@@ -57,6 +57,9 @@ export interface PdfExportOptions {
   courseIds: string[]
   allControls?: boolean
   includeDescriptions?: boolean
+  descriptionOnMap?: boolean
+  sheetX?: number
+  sheetY?: number
   tiling?: boolean
   offsetX?: number
   offsetY?: number
@@ -83,7 +86,7 @@ interface Bounds {
 
 // ── Coordinate conversion ───────────────────────────────────────────────────
 
-function mapToMm(point: MapPoint, map: MapConfig, printScale: number): Pos {
+export function mapToMm(point: MapPoint, map: MapConfig, printScale: number): Pos {
   if (map.type === 'ocad') {
     const factor = map.scale / (100 * printScale)
     return { x: point.x * factor, y: point.y * factor }
@@ -791,6 +794,13 @@ export async function exportCoursePdf(
           drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type)
         }
 
+        // Description sheet overlay on map
+        if (options.descriptionOnMap && course.controls.length > 0) {
+          const sx = options.sheetX ?? MARGIN
+          const sy = options.sheetY ?? MARGIN
+          drawDescriptionSheetOverlay(doc, course, project.controls, options.printScale, sx, sy)
+        }
+
         // Header line
         doc.setFontSize(8)
         doc.setFont('helvetica', 'normal')
@@ -802,8 +812,8 @@ export async function exportCoursePdf(
       }
     }
 
-    // Description sheet after this course's map page(s)
-    if (options.includeDescriptions && course.controls.length > 0) {
+    // Description sheet on separate page(s)
+    if (options.includeDescriptions && !options.descriptionOnMap && course.controls.length > 0) {
       doc.addPage([pw, ph], orient)
       pageIndex++
       drawDescriptionSheet(doc, course, project.controls, options.printScale, pw, ph)
