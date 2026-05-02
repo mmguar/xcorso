@@ -1,12 +1,36 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import {
   exportCoursePdf, checkFit, checkTiling, canExportPdf, PAGE_SIZES, MARGIN,
-  suggestFitScale, coursePreviewMm, ALL_CONTROLS_ID,
+  suggestFitScale, coursePreviewMm, mapToMm, ALL_CONTROLS_ID,
 } from '../lib/pdfExport'
 import type { PdfExportOptions, CoursePreview } from '../lib/pdfExport'
+import type { LoadedMap } from '../lib/mapLoader'
+import type { MapConfig } from '../types'
 import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
 import { downloadBlob } from '../lib/projectFile'
+
+// ── Map image bounds (mm on paper) ────────────────────────────────────────
+
+interface MapImageInfo {
+  url: string; x: number; y: number; w: number; h: number
+}
+
+function useMapPreviewBounds(
+  loadedMap: LoadedMap | null,
+  map: MapConfig,
+  printScale: number,
+): MapImageInfo | null {
+  return useMemo(() => {
+    if (!loadedMap) return null
+    const url = loadedMap.rasterUrl ?? (typeof loadedMap.content === 'string' ? loadedMap.content : null)
+    if (!url) return null
+    const { bounds } = loadedMap
+    const tl = mapToMm({ x: bounds.minX, y: bounds.minY }, map, printScale)
+    const br = mapToMm({ x: bounds.maxX, y: bounds.maxY }, map, printScale)
+    return { url, x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }
+  }, [loadedMap, map, printScale])
+}
 
 // ── Print frame preview ────────────────────────────────────────────────────
 
@@ -24,6 +48,7 @@ function PrintPreview({
   sheetX,
   sheetY,
   onSheetChange,
+  mapImage,
 }: {
   preview: CoursePreview
   pageW: number
@@ -38,6 +63,7 @@ function PrintPreview({
   sheetX?: number
   sheetY?: number
   onSheetChange?: (x: number, y: number) => void
+  mapImage: MapImageInfo | null
 }) {
   const dragRef = useRef<{ target: 'map' | 'sheet'; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
@@ -121,8 +147,24 @@ function PrintPreview({
     >
       {/* Page background */}
       <rect x={fullX} y={fullY} width={fullW} height={fullH} fill="white" stroke="#d1d5db" strokeWidth={1} />
-      {/* Map tint */}
-      <rect x={frameX} y={frameY} width={frameW} height={frameH} fill="#f3e8ff" opacity={0.5} />
+      {/* Map image or tint fallback (clipped to printable area) */}
+      <clipPath id="printable-clip">
+        <rect x={frameX} y={frameY} width={frameW} height={frameH} />
+      </clipPath>
+      {mapImage ? (
+        <image
+          href={mapImage.url}
+          x={pcx + (mapImage.x - centerX) * mmScale}
+          y={pcy + (mapImage.y - centerY) * mmScale}
+          width={mapImage.w * mmScale}
+          height={mapImage.h * mmScale}
+          preserveAspectRatio="none"
+          clipPath="url(#printable-clip)"
+          opacity={0.5}
+        />
+      ) : (
+        <rect x={frameX} y={frameY} width={frameW} height={frameH} fill="#f3e8ff" opacity={0.5} />
+      )}
       {/* Page frame (printable area) */}
       <rect
         x={frameX} y={frameY}
@@ -236,6 +278,7 @@ export function PdfExportDialog({ onClose }: Props) {
   const preview = previewId
     ? coursePreviewMm(project, previewId, printScale)
     : null
+  const mapImage = useMapPreviewBounds(loadedMap, project.map, printScale)
 
   const previewCourse = descriptionOnMap && !allControls
     ? project.courses.find(c => c.id === [...selectedIds][0])
@@ -410,6 +453,7 @@ export function PdfExportDialog({ onClose }: Props) {
               offsetX={offsetX}
               offsetY={offsetY}
               onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y) }}
+              mapImage={mapImage}
               {...(sheetSize ? {
                 sheetW: sheetSize.width,
                 sheetH: sheetSize.height,
