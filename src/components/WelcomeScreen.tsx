@@ -16,6 +16,7 @@ interface Props {
 }
 
 type Step = 'landing' | 'new-project'
+const MAP_FILE_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
 export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
   const [step, setStep] = useState<Step>('landing')
@@ -52,8 +53,12 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
     if (!mapFile) return
     setLoading(true); setError(null)
     try {
-      const data = await mapFile.arrayBuffer()
       const ext = mapFile.name.split('.').pop()?.toLowerCase() ?? ''
+      if (!MAP_FILE_EXTENSIONS.has(ext)) {
+        throw new Error('Unsupported map format. Please select an OCAD, PDF, or image file.')
+      }
+
+      const data = await mapFile.arrayBuffer()
       const mapType: MapType = ext === 'ocd' ? 'ocad' : ext === 'pdf' ? 'pdf' : 'bitmap'
 
       // Load a COPY for scale detection — PDF.js transfers the ArrayBuffer to its
@@ -178,9 +183,13 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
           <input
             ref={mapFileRef}
             type="file"
-            accept=".ocd,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.webp"
+            accept=".ocd,.pdf,image/*,*/*"
             className="hidden"
-            onChange={e => setMapFile(e.target.files?.[0] ?? null)}
+            onChange={e => {
+              const selectedFile = e.target.files?.[0] ?? null
+              setMapFile(selectedFile)
+              setError(null)
+            }}
           />
         </div>
 
