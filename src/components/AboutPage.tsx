@@ -13,7 +13,7 @@ export function AboutPage({ onBack }: Props) {
       </div>
 
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-      {What is xcorso? \n xcorso is my attempt to make course planning for orienteering easy and accessible. }
+      {What is xcorso? \n xcorso is my attempt to make course planning for orienteering easy and accessible. }}
       </div>
 
       <button
