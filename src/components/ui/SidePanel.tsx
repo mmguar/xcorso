@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useLayoutEffect, useState } from 'react'
-import { MapPin, Navigation, PanelRightClose, PanelRight } from 'lucide-react'
+import { MapPin, Navigation, PanelRightClose, PanelRight, Plus } from 'lucide-react'
 import { useStore } from '../../store'
 import { ControlsPanel } from '../panels/ControlsPanel'
 import { CoursesPanel } from '../panels/CoursesPanel'
@@ -97,6 +97,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
+  const addCourse = useStore(s => s.addCourse)
 
   return (
     <div className="flex flex-col items-center pt-2 gap-3">
@@ -128,6 +129,13 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
               </button>
             )
           })}
+          {/* Create new course button */}
+          <button
+            onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setSelectedCourse(c.id) }}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
+          >
+            <Plus size={13} />
+          </button>
         </div>
       )}
     </div>
@@ -188,6 +196,14 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
             </div>
           </>
         )}
+
+        {/* Create new course button */}
+        <button
+            onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setSelectedCourse(c.id) }}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
+          >
+            <Plus size={13} />
+        </button>
 
         {expanded && (
           <button
