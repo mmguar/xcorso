@@ -149,10 +149,12 @@ function OutOfBoundsArea({ points, upm, color, patternId }: {
           patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1={0} y1={0} x2={0} y2={sp}
             stroke={color} strokeWidth={d.hatchW} />
+          <line x1={0} y1={0} x2={sp} y2={0}
+            stroke={color} strokeWidth={d.hatchW} />
         </pattern>
       </defs>
       <path d={pathD} fill={`url(#${patternId})`}
-        stroke={color} strokeWidth={d.boundaryW} strokeLinejoin="round" />
+        stroke={color} strokeWidth={0} strokeLinejoin="round" />
     </g>
   )
 }
@@ -160,7 +162,7 @@ function OutOfBoundsArea({ points, upm, color, patternId }: {
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function AnnotationsLayer({ annotations, pendingPoints, pendingType, map }: Props) {
-  const color = '#cc0000'
+  const color = '#a626ff'
   const baseId = useId()
   const upm = unitsPerMm(map)
 
