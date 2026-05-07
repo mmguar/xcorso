@@ -42,8 +42,8 @@ export function SidePanel() {
       <aside className={`
         hidden md:flex flex-col
         shrink-0 border-l border-gray-200 bg-white
-        overflow-hidden transition-[width] duration-200
-        ${collapsed ? 'w-12' : 'w-72'}
+        transition-[width] duration-200
+        ${collapsed ? 'w-12' : 'w-72 overflow-hidden'}
       `}>
         {collapsed ? (
           <CollapsedSidebar onExpand={() => setCollapsed(false)} />
@@ -98,6 +98,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const addCourse = useStore(s => s.addCourse)
+  const [showNewMenu, setShowNewMenu] = useState(false)
 
   return (
     <div className="flex flex-col items-center pt-2 gap-3">
@@ -129,13 +130,31 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
               </button>
             )
           })}
-          {/* Create new course button */}
-          <button
-            onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setSelectedCourse(c.id) }}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
-          >
-            <Plus size={13} />
-          </button>
+          {/* Create new course button with dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNewMenu(m => !m)}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
+            >
+              <Plus size={13} />
+            </button>
+            {showNewMenu && (
+              <div className="absolute right-full top-0 mr-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-28 z-50">
+                <button
+                  onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
+                >
+                  Linear
+                </button>
+                <button
+                  onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
+                >
+                  Score-O
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -144,6 +163,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
 
 function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const [expanded, setExpanded] = useState(false)
+  const [showNewMenu, setShowNewMenu] = useState(false)
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
@@ -199,12 +219,30 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         )}
 
         {/* Create new course button */}
-        <button
-            onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setSelectedCourse(c.id) }}
+        <div className="relative">
+          <button
+            onClick={() => setShowNewMenu(m => !m)}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
           >
             <Plus size={13} />
-        </button>
+          </button>
+          {showNewMenu && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-28 z-50">
+              <button
+                onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
+              >
+                Linear
+              </button>
+              <button
+                onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
+              >
+                Score-O
+              </button>
+            </div>
+          )}
+        </div>
 
         {expanded && (
           <button

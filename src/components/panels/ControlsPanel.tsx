@@ -1,7 +1,86 @@
-import { useState } from 'react'
-import { Trash2, MapPin, Plus, Minus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Trash2, MapPin, Plus, Minus, Palette } from 'lucide-react'
 import { useStore } from '../../store'
 import { defaultControlLabel } from '../../lib/courseUtils'
+import { AppearancePanel } from './AppearancePanel'
+import type { Control } from '../../types'
+
+function ControlCodeInput({ control }: { control: Control }) {
+  const updateControlCode = useStore(s => s.updateControlCode)
+  const [val, setVal] = useState(String(control.code))
+
+  function commit() {
+    const n = parseInt(val)
+    if (!isNaN(n) && n > 0) {
+      updateControlCode(control.id, n)
+    }
+    setVal(String(control.code))
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={val}
+      onClick={e => e.stopPropagation()}
+      onChange={e => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+    />
+  )
+}
+
+function ControlLabelInput({ control }: { control: Control }) {
+  const updateControlLabel = useStore(s => s.updateControlLabel)
+  const [val, setVal] = useState(control.label ?? defaultControlLabel(control))
+
+  function commit() {
+    updateControlLabel(control.id, val)
+  }
+
+  return (
+    <input
+      type="text"
+      value={val}
+      onClick={e => e.stopPropagation()}
+      onChange={e => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+    />
+  )
+}
+
+function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLButtonElement | null> }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (panelRef.current?.contains(e.target as Node)) return
+      if (anchorRef.current?.contains(e.target as Node)) return
+      onClose()
+    }
+    document.addEventListener('pointerdown', onClick)
+    return () => document.removeEventListener('pointerdown', onClick)
+  }, [open, onClose, anchorRef])
+
+  if (!open) return null
+
+  return (
+    <div
+      ref={panelRef}
+      className="absolute bottom-full mb-2 right-0 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
+    >
+      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+        <span className="text-xs font-semibold text-gray-700">Appearance</span>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+      </div>
+      <AppearancePanel />
+    </div>
+  )
+}
 
 export function ControlsPanel() {
   const project = useStore(s => s.project!)
@@ -9,8 +88,6 @@ export function ControlsPanel() {
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedControl = useStore(s => s.setSelectedControl)
   const deleteControl = useStore(s => s.deleteControl)
-  const updateControlCode = useStore(s => s.updateControlCode)
-  const updateControlLabel = useStore(s => s.updateControlLabel)
   const updateControlPoints = useStore(s => s.updateControlPoints)
   const addControlToCourse = useStore(s => s.addControlToCourse)
   const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
@@ -18,17 +95,40 @@ export function ControlsPanel() {
   const [showPoints, setShowPoints] = useState(() =>
     project.controls.some(c => c.points != null)
   )
+  const [showAppearance, setShowAppearance] = useState(false)
+  const appearanceBtnRef = useRef<HTMLButtonElement>(null)
 
   const controls = project.controls
   const selectedCourse = selectedCourseId
     ? project.courses.find(c => c.id === selectedCourseId) ?? null
     : null
 
+  const appearanceButton = (
+    <div className="relative p-2 border-t border-gray-100">
+      <button
+        ref={appearanceBtnRef}
+        onClick={() => setShowAppearance(v => !v)}
+        className={`flex items-center gap-1.5 px-3 py-2 w-full rounded-lg text-xs font-medium transition-colors ${
+          showAppearance
+            ? 'bg-orange-100 text-orange-700'
+            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        <Palette size={13} />
+        Appearance
+      </button>
+      <AppearancePopover open={showAppearance} onClose={() => setShowAppearance(false)} anchorRef={appearanceBtnRef} />
+    </div>
+  )
+
   if (controls.length === 0) {
     return (
-      <div className="p-4 text-sm text-gray-400 text-center">
-        No controls placed yet.<br />
-        Use the toolbar to add start, finish, or controls.
+      <div className="flex flex-col h-full">
+        <div className="flex-1 p-4 text-sm text-gray-400 text-center">
+          No controls placed yet.<br />
+          Use the toolbar to add start, finish, or controls.
+        </div>
+        {appearanceButton}
       </div>
     )
   }
@@ -38,142 +138,133 @@ export function ControlsPanel() {
       selectedCourse.controls.filter(cc => cc.controlId === controlId).length
 
     return (
-      <div className="flex flex-col gap-1 p-2">
-        <div className="px-3 py-2 mb-1 text-xs text-gray-500 bg-orange-50 rounded-lg border border-orange-100">
-          Click <Plus size={10} className="inline" /> to add a control to <strong>{selectedCourse.name}</strong>.
-          Click <Minus size={10} className="inline" /> to remove the last instance.
-        </div>
-        {controls.map(control => {
-          const count = countInCourse(control.id)
-          return (
-            <div
-              key={control.id}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
-                count > 0
-                  ? 'bg-orange-50 border-orange-200'
-                  : 'border-transparent hover:bg-gray-50'
-              }`}
-            >
-              <MapPin size={14} className={
-                control.type === 'start' ? 'text-green-600' :
-                control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
-              } />
-              <span className="text-xs uppercase font-medium text-gray-500 w-14 shrink-0">
-                {control.type}
-              </span>
-              <span className="text-xs font-mono font-semibold text-gray-700">
-                {control.label ?? defaultControlLabel(control)}
-              </span>
-              {count > 0 && (
-                <span className="text-xs text-orange-600 font-medium">
-                  ×{count}
+      <div className="flex flex-col h-full">
+        <div className="flex-1 flex flex-col gap-1 p-2 overflow-y-auto">
+          <div className="px-3 py-2 mb-1 text-xs text-gray-500 bg-orange-50 rounded-lg border border-orange-100">
+            Click <Plus size={10} className="inline" /> to add a control to <strong>{selectedCourse.name}</strong>.
+            Click <Minus size={10} className="inline" /> to remove the last instance.
+          </div>
+          {controls.map(control => {
+            const count = countInCourse(control.id)
+            return (
+              <div
+                key={control.id}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
+                  count > 0
+                    ? 'bg-orange-50 border-orange-200'
+                    : 'border-transparent hover:bg-gray-50'
+                }`}
+              >
+                <MapPin size={14} className={
+                  control.type === 'start' ? 'text-green-600' :
+                  control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
+                } />
+                <span className="text-xs uppercase font-medium text-gray-500 w-14 shrink-0">
+                  {control.type}
                 </span>
-              )}
-              <div className="ml-auto flex items-center gap-1">
-                <button
-                  onClick={() => addControlToCourse(selectedCourse.id, control.id)}
-                  className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-orange-600 hover:bg-orange-100 transition-colors"
-                  title="Add to course"
-                >
-                  <Plus size={14} />
-                </button>
+                <span className="text-xs font-mono font-semibold text-gray-700">
+                  {control.label ?? defaultControlLabel(control)}
+                </span>
                 {count > 0 && (
-                  <button
-                    onClick={() => {
-                      for (let i = selectedCourse.controls.length - 1; i >= 0; i--) {
-                        if (selectedCourse.controls[i].controlId === control.id) {
-                          removeControlFromCourse(selectedCourse.id, selectedCourse.controls[i].id)
-                          return
-                        }
-                      }
-                    }}
-                    className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    title="Remove last instance from course"
-                  >
-                    <Minus size={14} />
-                  </button>
+                  <span className="text-xs text-orange-600 font-medium">
+                    ×{count}
+                  </span>
                 )}
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    onClick={() => addControlToCourse(selectedCourse.id, control.id)}
+                    className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-orange-600 hover:bg-orange-100 transition-colors"
+                    title="Add to course"
+                  >
+                    <Plus size={14} />
+                  </button>
+                  {count > 0 && (
+                    <button
+                      onClick={() => {
+                        for (let i = selectedCourse.controls.length - 1; i >= 0; i--) {
+                          if (selectedCourse.controls[i].controlId === control.id) {
+                            removeControlFromCourse(selectedCourse.id, selectedCourse.controls[i].id)
+                            return
+                          }
+                        }
+                      }}
+                      className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      title="Remove last instance from course"
+                    >
+                      <Minus size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
+        {appearanceButton}
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-1 p-2">
-      <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
-        <input
-          type="checkbox"
-          checked={showPoints}
-          onChange={e => setShowPoints(e.target.checked)}
-          className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
-        />
-        Points
-      </label>
-      {controls.map(control => (
-        <div
-          key={control.id}
-          onClick={() => setSelectedControl(control.id === selectedControlId ? null : control.id)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-            control.id === selectedControlId
-              ? 'bg-orange-100 border border-orange-300'
-              : 'hover:bg-gray-50 border border-transparent'
-          }`}
-        >
-          <MapPin size={14} className={
-            control.type === 'start' ? 'text-green-600' :
-            control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
-          } />
-
-          <span className="text-xs uppercase font-medium text-gray-500 w-12">
-            {control.type}
-          </span>
-
-          {control.type === 'control' ? (
-            <input
-              type="number"
-              value={control.code}
-              onClick={e => e.stopPropagation()}
-              onChange={e => {
-                const v = parseInt(e.target.value)
-                if (!isNaN(v)) updateControlCode(control.id, v)
-              }}
-              className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-            />
-          ) : (
-            <input
-              type="text"
-              value={control.label ?? defaultControlLabel(control)}
-              onClick={e => e.stopPropagation()}
-              onChange={e => updateControlLabel(control.id, e.target.value)}
-              className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-            />
-          )}
-
-          {showPoints && (
-            <input
-              type="number"
-              value={control.points ?? ''}
-              placeholder="pts"
-              onClick={e => e.stopPropagation()}
-              onChange={e => {
-                const v = e.target.value === '' ? undefined : parseInt(e.target.value)
-                updateControlPoints(control.id, v != null && !isNaN(v) ? v : undefined)
-              }}
-              className="w-14 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
-            />
-          )}
-
-          <button
-            onClick={e => { e.stopPropagation(); deleteControl(control.id) }}
-            className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
+    <div className="flex flex-col h-full">
+      <div className="flex-1 flex flex-col gap-1 p-2 overflow-y-auto">
+        <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showPoints}
+            onChange={e => setShowPoints(e.target.checked)}
+            className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+          />
+          Points
+        </label>
+        {controls.map(control => (
+          <div
+            key={control.id}
+            onClick={() => setSelectedControl(control.id === selectedControlId ? null : control.id)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+              control.id === selectedControlId
+                ? 'bg-orange-100 border border-orange-300'
+                : 'hover:bg-gray-50 border border-transparent'
+            }`}
           >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      ))}
+            <MapPin size={14} className={
+              control.type === 'start' ? 'text-green-600' :
+              control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
+            } />
+
+            <span className="text-xs uppercase font-medium text-gray-500 w-12">
+              {control.type}
+            </span>
+
+            {control.type === 'control' ? (
+              <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
+            ) : (
+              <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />
+            )}
+
+            {showPoints && (
+              <input
+                type="number"
+                value={control.points ?? ''}
+                placeholder="pts"
+                onClick={e => e.stopPropagation()}
+                onChange={e => {
+                  const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+                  updateControlPoints(control.id, v != null && !isNaN(v) ? v : undefined)
+                }}
+                className="w-14 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+            )}
+
+            <button
+              onClick={e => { e.stopPropagation(); deleteControl(control.id) }}
+              className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {appearanceButton}
     </div>
   )
 }

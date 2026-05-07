@@ -28,6 +28,10 @@ export interface MapConfig {
   filename: string
   storage: MapStorage
   scale: number                        // denominator: 10000 → 1:10000
+  /** Native map width in map units (matches LoadedMap.bounds.width). */
+  width: number
+  /** Native map height in map units (matches LoadedMap.bounds.height). */
+  height: number
   scaleSource: 'ocad' | 'manual'
   scaleMeasurement?: ScaleMeasurement  // present when scaleSource === 'manual'
 }
@@ -46,6 +50,11 @@ export interface ControlDescription {
   otherInfo?: string        // col H
 }
 
+export interface CircleGap {
+  startAngle: number         // degrees, 0 = right, clockwise
+  endAngle: number
+}
+
 export interface Control {
   id: string
   type: ControlType
@@ -54,16 +63,24 @@ export interface Control {
   points?: number            // point value for Score-O
   position: MapPoint
   description?: ControlDescription
+  gaps?: CircleGap[]         // angular gaps in the control circle/triangle/finish
 }
 
 // ─── Courses ────────────────────────────────────────────────────────────────
 
 export type CourseType = 'linear' | 'score'
 
+export interface LegGap {
+  start: number              // normalized position along leg (0–1)
+  end: number
+}
+
 export interface CourseControl {
   id: string                 // UUID — unique per course-control instance (allows reuse)
   controlId: string          // references Control.id
   scorePoints?: number       // score-O only
+  legGaps?: LegGap[]         // gaps on the leg leading TO this control
+  legBendPoints?: MapPoint[] // intermediate waypoints on the leg leading TO this control
   // Phase 3 placeholder:
   // branchId?: string
 }
@@ -118,6 +135,17 @@ export interface Project {
   annotations: Annotation[]
 }
 
+// ─── Appearance ──────────���──────────────────────���───────────────────────────
+
+export interface AppearanceSettings {
+  controlScale: number       // multiplier for control symbol size (1 = standard)
+  lineWidth: number          // multiplier for stroke width (1 = standard 0.35mm)
+  color: string              // override color (empty = use course/default color)
+  outlineEnabled: boolean
+  outlineColor: string
+  outlineWidth: number       // mm on paper
+}
+
 // ─── Editor UI ──────────────────────────────────────────────────────────────
 
 export type ActiveTool =
@@ -130,6 +158,8 @@ export type ActiveTool =
   | 'out-of-bounds'
   | 'measure-scale'
   | 'delete'
+  | 'gap'
+  | 'bend'
 
 export interface Viewport {
   x: number       // pan offset x (screen px)

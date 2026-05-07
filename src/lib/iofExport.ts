@@ -2,12 +2,16 @@
  * Export project as IOF XML v3.0 CourseData.
  * Produces a string that can be saved as .xml and opened in Condes / Purple Pen.
  *
- * Spec: https://orienteering.sport/iof/it/data-standard-3-0/
- * Controls use MapPosition (map units, not georeferenced) since we don't have
- * a coordinate projection. Condes and Purple Pen both handle this gracefully.
+ * Structure follows IOF.xsd strictly:
+ * - Control: Id (child element), MapPosition (child element), type (attribute)
+ * - Course: Name (child element), CourseControl (child elements)
+ * - CourseControl: Control (child element = code string), type (attribute), Score (child element)
+ * - Map: Scale (child element), MapPositionTopLeft, MapPositionBottomRight (children)
+ * - MapPosition: x, y (attributes, doubles), unit (attribute, optional)
  */
 
-import type { Project, Control } from '../types'
+import type { Project, Control, ControlType, MapType } from '../types'
+import { computeCourseDistances } from './distance'
 
 function xmlEscape(s: string): string {
   return s
@@ -17,95 +21,138 @@ function xmlEscape(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function tag(name: string, attrs: Record<string, string | number>, children?: string): string {
-  const attrStr = Object.entries(attrs)
-    .map(([k, v]) => ` ${k}="${xmlEscape(String(v))}"`)
-    .join('')
-  if (children === undefined) return `<${name}${attrStr}/>`
-  return `<${name}${attrStr}>${children}</${name}>`
+
+function iofControlType(type: ControlType): string {
+  switch (type) {
+    case 'start': return 'Start'
+    case 'finish': return 'Finish'
+    case 'control': return 'Control'
+  }
 }
 
-function mapPositionTag(x: number, y: number): string {
-  return tag('MapPosition', { x: Math.round(x), y: Math.round(y) })
+function controlCode(c: Control): string {
+  return String(c.code)
 }
 
-function controlTypeToIof(control: Control, isFirstInCourse: boolean, isLastInCourse: boolean): string {
-  if (control.type === 'start' || isFirstInCourse) return 'Start'
-  if (control.type === 'finish' || isLastInCourse) return 'Finish'
-  return 'Control'
+function mapPositionUnit(mapType: MapType): string {
+  if (mapType === 'bitmap' || mapType === 'pdf') return 'px'
+  return 'mm'
 }
 
 export function exportIofXml(project: Project): string {
   const controlMap = new Map<string, Control>(project.controls.map(c => [c.id, c]))
+  const unit = mapPositionUnit(project.map.type)
+  const unitAttr = unit === 'mm' ? '' : ` unit="${unit}"`
 
-  // Build <Control> elements — one per unique physical control
+  function mapPos(x: number, y: number): string {
+    return `<MapPosition x="${x}" y="${y}"${unitAttr}/>`
+  }
+
+  // <Map> element: Scale + corners
+  const mapXml = [
+    '    <Map>',
+    `      <Scale>${project.map.scale}</Scale>`,
+    `      <MapPositionTopLeft x="0" y="0"${unitAttr}/>`,
+    `      <MapPositionBottomRight x="${project.map.width}" y="${project.map.height}"${unitAttr}/>`,
+    '    </Map>',
+  ].join('\n')
+
+  // <Control> elements
   const controlsXml = project.controls.map(c => {
-    const typeAttr = c.type === 'start' ? 'Start' : c.type === 'finish' ? 'Finish' : 'Control'
-    return tag('Control', { id: String(c.code), type: typeAttr },
-      mapPositionTag(c.position.x, c.position.y),
-    )
-  }).join('\n    ')
+    const lines = [
+      `    <Control type="${iofControlType(c.type)}">`,
+      `      <Id>${xmlEscape(controlCode(c))}</Id>`,
+      `      ${mapPos(c.position.x, c.position.y)}`,
+      '    </Control>',
+    ]
+    return lines.join('\n')
+  }).join('\n')
 
-  // Build <Course> elements
+  // <Course> elements
   const coursesXml = project.courses.map(course => {
     const resolvedControls = course.controls
       .map(cc => controlMap.get(cc.controlId))
       .filter((c): c is Control => c !== undefined)
 
-    if (resolvedControls.length === 0) return ''
+    if (resolvedControls.length < 2) return ''
 
-    const courseControls = course.controls.map((cc, idx) => {
+    const distances = computeCourseDistances(course, project.controls, project.map)
+    const isScore = course.type === 'score'
+
+    const courseControlsXml = course.controls.map((cc, idx) => {
       const control = controlMap.get(cc.controlId)
       if (!control) return ''
+
       const isFirst = idx === 0
       const isLast = idx === course.controls.length - 1
-      const iofType = controlTypeToIof(control, isFirst, isLast)
-      const attrs: Record<string, string | number> = {
-        sequence: idx + 1,
-        type: iofType,
-        controlId: String(control.code),
+      let type: string
+      if (control.type === 'start' || isFirst) type = 'Start'
+      else if (control.type === 'finish' || isLast) type = 'Finish'
+      else type = 'Control'
+
+      const attrs: string[] = [`type="${type}"`]
+      if (isScore && type === 'Control') attrs.push('randomOrder="true"')
+
+      const children: string[] = [
+        `        <Control>${xmlEscape(controlCode(control))}</Control>`,
+      ]
+      if (idx > 0 && distances.legs[idx - 1] > 0) {
+        children.push(`        <LegLength>${Math.round(distances.legs[idx - 1])}</LegLength>`)
       }
-      if (course.type === 'score' && cc.scorePoints !== undefined) {
-        attrs.score = cc.scorePoints
+      if (isScore && cc.scorePoints !== undefined) {
+        children.push(`        <Score>${cc.scorePoints}</Score>`)
       }
-      return `      ${tag('CourseControl', attrs)}`
+
+      return [
+        `      <CourseControl ${attrs.join(' ')}>`,
+        ...children,
+        '      </CourseControl>',
+      ].join('\n')
     }).filter(Boolean).join('\n')
 
-    const courseAttrs: Record<string, string> = { id: course.id, name: course.name }
-    if (course.type === 'score') courseAttrs.type = 'Score'
-
-    let courseChildren = courseControls
-    if (course.type === 'score' && course.scoreTimeLimit) {
-      courseChildren = `      ${tag('ScoreTimeLimit', { value: course.scoreTimeLimit })}\n` + courseChildren
+    const courseChildren: string[] = [
+      `      <Name>${xmlEscape(course.name)}</Name>`,
+    ]
+    if (distances.total > 0) {
+      courseChildren.push(`      <Length>${Math.round(distances.total)}</Length>`)
     }
 
-    return tag('Course', courseAttrs, '\n' + courseChildren + '\n    ')
-  }).filter(Boolean).join('\n    ')
+    return [
+      '    <Course>',
+      ...courseChildren,
+      courseControlsXml,
+      '    </Course>',
+    ].join('\n')
+  }).filter(Boolean).join('\n')
 
-  const now = new Date().toISOString()
-
+  // <ClassCourseAssignment> elements
   const classAssignmentsXml = project.classes.map(rc => {
     const course = project.courses.find(c => c.id === rc.courseId)
     if (!course) return ''
-    return tag('ClassCourseAssignment', {},
-      `\n        ${tag('ClassName', {}, xmlEscape(rc.name))}\n        ${tag('CourseName', {}, xmlEscape(course.name))}\n      `,
-    )
-  }).filter(Boolean).join('\n    ')
+    return [
+      '    <ClassCourseAssignment>',
+      `      <ClassName>${xmlEscape(rc.name)}</ClassName>`,
+      `      <CourseName>${xmlEscape(course.name)}</CourseName>`,
+      '    </ClassCourseAssignment>',
+    ].join('\n')
+  }).filter(Boolean).join('\n')
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<CourseData xmlns="http://www.orienteering.org/datastandard/3.0"
-            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-            iofVersion="3.0"
-            creator="xcorso"
-            createTime="${now}">
-  <Event>
-    <Name>${xmlEscape(project.meta.name)}</Name>
-  </Event>
-  <RaceCourseData>
-    <Map scale="${project.map.scale}"/>
-    ${controlsXml}
-    ${coursesXml}
-    ${classAssignmentsXml}
-  </RaceCourseData>
-</CourseData>`
+  const now = new Date().toISOString()
+
+  const parts = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<CourseData iofVersion="3.0" creator="xcorso" createTime="${now}" xmlns="http://www.orienteering.org/datastandard/3.0">`,
+    '  <Event>',
+    `    <Name>${xmlEscape(project.meta.name)}</Name>`,
+    '  </Event>',
+    '  <RaceCourseData>',
+    mapXml,
+    controlsXml,
+    coursesXml,
+    classAssignmentsXml,
+    '  </RaceCourseData>',
+    '</CourseData>',
+  ].filter(Boolean)
+
+  return parts.join('\n')
 }
