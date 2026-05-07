@@ -697,9 +697,42 @@ export async function exportCoursePdf(
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
   const courses = project.courses.filter(c => options.courseIds.includes(c.id))
 
+  let svgMapElement: SVGElement | null = null
   let mapDataUrl: string | null = null
+
   if (loadedMap) {
-    try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
+    if (loadedMap.type === 'svg') {
+      const svgEl = loadedMap.content as SVGElement
+      svgMapElement = svgEl.cloneNode(true) as SVGElement
+      const opacity = options.mapOpacity ?? 1
+      if (opacity < 1) {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+        g.setAttribute('opacity', String(opacity))
+        while (svgMapElement.firstChild) g.appendChild(svgMapElement.firstChild)
+        svgMapElement.appendChild(g)
+      }
+    } else {
+      try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
+    }
+  }
+
+  async function embedMap(toPage: (pt: MapPoint) => Pos) {
+    if (!loadedMap) return
+    const tl = toPage({ x: loadedMap.bounds.minX, y: loadedMap.bounds.minY })
+    const br = toPage({ x: loadedMap.bounds.maxX, y: loadedMap.bounds.maxY })
+    const w = br.x - tl.x
+    const h = br.y - tl.y
+    if (svgMapElement) {
+      try {
+        const { svg2pdf } = await import('svg2pdf.js')
+        await svg2pdf(svgMapElement, doc, { x: tl.x, y: tl.y, width: w, height: h })
+        return
+      } catch {
+        svgMapElement = null
+        if (!mapDataUrl) try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch {}
+      }
+    }
+    if (mapDataUrl) doc.addImage(mapDataUrl, 'JPEG', tl.x, tl.y, w, h)
   }
 
   let pageIndex = 0
@@ -735,11 +768,7 @@ export async function exportCoursePdf(
             return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
 
-          if (mapDataUrl && loadedMap) {
-            const tl = toPage({ x: loadedMap.bounds.minX, y: loadedMap.bounds.minY })
-            const br = toPage({ x: loadedMap.bounds.maxX, y: loadedMap.bounds.maxY })
-            doc.addImage(mapDataUrl, 'JPEG', tl.x, tl.y, br.x - tl.x, br.y - tl.y)
-          }
+          await embedMap(toPage)
 
           const color = '#7B2FBE'
           setColor(doc, color)
@@ -809,11 +838,7 @@ export async function exportCoursePdf(
         }
 
         // Map background
-        if (mapDataUrl && loadedMap) {
-          const tl = toPage({ x: loadedMap.bounds.minX, y: loadedMap.bounds.minY })
-          const br = toPage({ x: loadedMap.bounds.maxX, y: loadedMap.bounds.maxY })
-          doc.addImage(mapDataUrl, 'JPEG', tl.x, tl.y, br.x - tl.x, br.y - tl.y)
-        }
+        await embedMap(toPage)
 
         setColor(doc, course.color)
 
