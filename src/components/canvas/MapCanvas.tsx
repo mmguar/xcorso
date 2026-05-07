@@ -6,10 +6,14 @@ import { LegsLayer } from './LegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
+import { unitsPerMm } from '../../lib/courseUtils'
 import type { Annotation, AnnotationType, Control, MapPoint, Viewport } from '../../types'
 
 const TAP_PX    = 8
 const HIT_PX    = 20
+const CIRCLE_R_MM  = 2.5
+const TRIANGLE_MM  = 6.0
+const HIT_TOLERANCE_PX = 8
 const MIN_SCALE = 0.05
 const MAX_SCALE = 50
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -39,11 +43,19 @@ export function MapCanvas({ loadedMap }: Props) {
   const removeControlFromCourse  = useStore(s => s.removeControlFromCourse)
   const setMapScaleMeasurement   = useStore(s => s.setMapScaleMeasurement)
   const setActiveTool            = useStore(s => s.setActiveTool)
+  const addControlGap            = useStore(s => s.addControlGap)
+  const addLegGap                = useStore(s => s.addLegGap)
+  const clearControlGaps         = useStore(s => s.clearControlGaps)
+  const clearLegGaps             = useStore(s => s.clearLegGaps)
+  const addLegBendPoint          = useStore(s => s.addLegBendPoint)
+  const removeLegBendPoint       = useStore(s => s.removeLegBendPoint)
+  const clearLegBendPoints       = useStore(s => s.clearLegBendPoints)
 
   const [useRaster, setUseRaster] = useState(true)
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
+  const [hoverScreenPt, setHoverScreenPt] = useState<{ x: number; y: number } | null>(null)
 
   // ── Fit to screen on map load ──────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -81,16 +93,30 @@ export function MapCanvas({ loadedMap }: Props) {
       return { x: v.x + c.position.x * v.scale, y: v.y + c.position.y * v.scale }
     }
 
+    function controlHitRadius(control: Control): number {
+      const v = vpRef.current
+      const map = useStore.getState().project?.map
+      if (!map) return HIT_PX
+      const upm = unitsPerMm(map)
+      let symbolR: number
+      if (control.type === 'start') {
+        symbolR = TRIANGLE_MM * upm * Math.sqrt(3) / 2 * 2 / 3
+      } else {
+        symbolR = CIRCLE_R_MM * upm
+      }
+      const symbolScreenR = symbolR * v.scale
+      return Math.max(HIT_PX, symbolScreenR + HIT_TOLERANCE_PX)
+    }
+
     function findControlAt(screenX: number, screenY: number): Control | null {
       const controls = useStore.getState().project?.controls ?? []
-      const courseMode = !!useStore.getState().editor.selectedCourseId
-      const hitRadius = courseMode ? HIT_PX * 2 : HIT_PX
       let best: Control | null = null
-      let bestDist = hitRadius
+      let bestDist = Infinity
       for (const c of controls) {
         const s = controlToScreen(c)
         const d = Math.hypot(screenX - s.x, screenY - s.y)
-        if (d < bestDist) { best = c; bestDist = d }
+        const hitR = controlHitRadius(c)
+        if (d < hitR && d < bestDist) { best = c; bestDist = d }
       }
       return best
     }
@@ -101,6 +127,142 @@ export function MapCanvas({ loadedMap }: Props) {
       if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y)
       const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq))
       return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    function findLegAt(screenX: number, screenY: number): { courseId: string; courseControlId: string; t: number; segmentIndex: number } | null {
+      const state = useStore.getState()
+      const proj = state.project
+      if (!proj) return null
+      const courseId = state.editor.selectedCourseId
+      const course = courseId ? proj.courses.find(c => c.id === courseId) : null
+      if (!course || course.type === 'score' || course.controls.length < 2) return null
+      const controlMap = new Map(proj.controls.map(c => [c.id, c]))
+      const mapPt = screenToMap(screenX, screenY)
+      const hitR = HIT_PX / vpRef.current.scale
+
+      for (let i = 1; i < course.controls.length; i++) {
+        const fromCtrl = controlMap.get(course.controls[i - 1].controlId)
+        const toCtrl = controlMap.get(course.controls[i].controlId)
+        if (!fromCtrl || !toCtrl) continue
+
+        const cc = course.controls[i]
+        const bendPts = cc.legBendPoints
+        const pts: MapPoint[] = bendPts?.length
+          ? [fromCtrl.position, ...bendPts, toCtrl.position]
+          : [fromCtrl.position, toCtrl.position]
+
+        let totalLen = 0
+        for (let j = 1; j < pts.length; j++) totalLen += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y)
+
+        let cumLen = 0
+        for (let j = 0; j < pts.length - 1; j++) {
+          const a = pts[j], b = pts[j + 1]
+          const d = distToSegment(mapPt, a, b)
+          const segLen = Math.hypot(b.x - a.x, b.y - a.y)
+          if (d < hitR) {
+            const dx = b.x - a.x, dy = b.y - a.y
+            const lenSq = dx * dx + dy * dy
+            const segT = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((mapPt.x - a.x) * dx + (mapPt.y - a.y) * dy) / lenSq))
+            const t = totalLen === 0 ? 0 : (cumLen + segT * segLen) / totalLen
+            return { courseId: course.id, courseControlId: cc.id, t, segmentIndex: j }
+          }
+          cumLen += segLen
+        }
+      }
+      return null
+    }
+
+    function findBendPointAt(screenX: number, screenY: number): { courseId: string; courseControlId: string; bendIndex: number } | null {
+      const state = useStore.getState()
+      const proj = state.project
+      if (!proj) return null
+      const courseId = state.editor.selectedCourseId
+      const course = courseId ? proj.courses.find(c => c.id === courseId) : null
+      if (!course || course.controls.length < 2) return null
+      const mapPt = screenToMap(screenX, screenY)
+      const hitR = HIT_PX / vpRef.current.scale
+
+      for (const cc of course.controls) {
+        if (!cc.legBendPoints) continue
+        for (let j = 0; j < cc.legBendPoints.length; j++) {
+          const bp = cc.legBendPoints[j]
+          if (Math.hypot(mapPt.x - bp.x, mapPt.y - bp.y) < hitR) {
+            return { courseId: course.id, courseControlId: cc.id, bendIndex: j }
+          }
+        }
+      }
+      return null
+    }
+
+    function handleGapTap(sx: number, sy: number) {
+      const gapSize = useStore.getState().editor.gapSize
+      const mapPt = screenToMap(sx, sy)
+      const hitControl = findControlAt(sx, sy)
+
+      if (hitControl) {
+        const dx = mapPt.x - hitControl.position.x
+        const dy = mapPt.y - hitControl.position.y
+        const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360
+        const halfGap = gapSize / 2
+        const startAngle = (angle - halfGap + 360) % 360
+        const endAngle = (angle + halfGap) % 360
+        addControlGap(hitControl.id, { startAngle, endAngle })
+        return
+      }
+
+      const legHit = findLegAt(sx, sy)
+      if (legHit) {
+        const legFraction = gapSize / 360
+        const halfGap = legFraction / 2
+        const start = Math.max(0, legHit.t - halfGap)
+        const end = Math.min(1, legHit.t + halfGap)
+        addLegGap(legHit.courseId, legHit.courseControlId, { start, end })
+      }
+    }
+
+    function handleGapRightClick(sx: number, sy: number) {
+      const hitControl = findControlAt(sx, sy)
+      if (hitControl && hitControl.gaps?.length) {
+        clearControlGaps(hitControl.id)
+        return
+      }
+      const legHit = findLegAt(sx, sy)
+      if (legHit) {
+        clearLegGaps(legHit.courseId, legHit.courseControlId)
+      }
+    }
+
+    function handleBendTap(sx: number, sy: number) {
+      const bpHit = findBendPointAt(sx, sy)
+      if (bpHit) return // tapping an existing bend point does nothing; drag or right-click it
+
+      const legHit = findLegAt(sx, sy)
+      if (!legHit) return
+      const mapPt = screenToMap(sx, sy)
+
+      // Find where in the bend points array to insert (based on segment index)
+      const state = useStore.getState()
+      const course = state.project?.courses.find(c => c.id === legHit.courseId)
+      if (!course) return
+      const cc = course.controls.find(c => c.id === legHit.courseControlId)
+      if (!cc) return
+
+      // segmentIndex 0 = from control to first bend point (or to control if none)
+      // Insert the new point at segmentIndex position in the bend points array
+      const insertIdx = legHit.segmentIndex
+      addLegBendPoint(legHit.courseId, legHit.courseControlId, mapPt, insertIdx)
+    }
+
+    function handleBendRightClick(sx: number, sy: number) {
+      const bpHit = findBendPointAt(sx, sy)
+      if (bpHit) {
+        removeLegBendPoint(bpHit.courseId, bpHit.courseControlId, bpHit.bendIndex)
+        return
+      }
+      const legHit = findLegAt(sx, sy)
+      if (legHit) {
+        clearLegBendPoints(legHit.courseId, legHit.courseControlId)
+      }
     }
 
     function findAnnotationAt(screenX: number, screenY: number): Annotation | null {
@@ -126,6 +288,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragControlId: string | null = null
     let dragOffset: { dx: number; dy: number } | null = null
     let dragStarted = false
+
+    let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
+    let dragBendStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -183,6 +348,16 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       const { activeTool } = useStore.getState().editor
+      if (activeTool === 'bend' && pos.size === 1) {
+        const rect = div.getBoundingClientRect()
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+        const bpHit = findBendPointAt(sx, sy)
+        if (bpHit) {
+          dragBend = bpHit
+          dragBendStarted = false
+        }
+      }
       if (activeTool === 'select' && pos.size === 1) {
         const rect = div.getBoundingClientRect()
         const sx = e.clientX - rect.left
@@ -208,6 +383,19 @@ export function MapCanvas({ loadedMap }: Props) {
         if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) {
           clearLongPress()
         }
+      }
+
+      if (dragBend && pos.size === 1) {
+        if (!dragBendStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveLegBendPoint()
+          dragBendStarted = true
+        }
+        const rect = div.getBoundingClientRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        useStore.getState().moveLegBendPoint(dragBend.courseId, dragBend.courseControlId, dragBend.bendIndex, mapPt)
+        return
       }
 
       if (dragControlId && pos.size === 1) {
@@ -255,6 +443,15 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (longPressFired) { longPressFired = false; return }
 
+      // End bend point drag
+      if (dragBend && dragBendStarted) {
+        dragBend = null
+        dragBendStarted = false
+        return
+      }
+      dragBend = null
+      dragBendStarted = false
+
       // End control drag
       if (dragControlId && dragStarted) {
         dragControlId = null
@@ -278,6 +475,18 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool, selectedCourseId } = useStore.getState().editor
       const ms = measureStartRef.current
       const hitControl = findControlAt(sx, sy)
+
+      // Gap tool
+      if (activeTool === 'gap') {
+        handleGapTap(sx, sy)
+        return
+      }
+
+      // Bend tool
+      if (activeTool === 'bend') {
+        handleBendTap(sx, sy)
+        return
+      }
 
       // Delete tool
       if (activeTool === 'delete') {
@@ -345,14 +554,26 @@ export function MapCanvas({ loadedMap }: Props) {
       }
     }
 
-    // ── Right-click on control → remove last instance from course ────────────
+    // ── Right-click ────────────────────────────────────────────────────────
     function onContextMenu(e: MouseEvent) {
       e.preventDefault()
-      const { selectedCourseId } = useStore.getState().editor
-      if (!selectedCourseId) return
-
+      const { activeTool, selectedCourseId } = useStore.getState().editor
       const rect = div.getBoundingClientRect()
-      const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top)
+      const sx = e.clientX - rect.left
+      const sy = e.clientY - rect.top
+
+      if (activeTool === 'gap') {
+        handleGapRightClick(sx, sy)
+        return
+      }
+
+      if (activeTool === 'bend') {
+        handleBendRightClick(sx, sy)
+        return
+      }
+
+      if (!selectedCourseId) return
+      const hit = findControlAt(sx, sy)
       if (!hit) return
 
       const course = useStore.getState().project?.courses.find(c => c.id === selectedCourseId)
@@ -365,22 +586,33 @@ export function MapCanvas({ loadedMap }: Props) {
       }
     }
 
+    function onHover(e: PointerEvent) {
+      if (e.pointerType === 'touch') return
+      const rect = div.getBoundingClientRect()
+      setHoverScreenPt({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    }
+    function onLeave() { setHoverScreenPt(null) }
+
     div.addEventListener('wheel',        onWheel,   { passive: false })
     div.addEventListener('pointerdown',  onDown)
     div.addEventListener('pointermove',  onMove)
+    div.addEventListener('pointermove',  onHover)
     div.addEventListener('pointerup',    onUp)
     div.addEventListener('pointercancel', onCancel)
     div.addEventListener('dblclick',     onDblClick)
     div.addEventListener('contextmenu',  onContextMenu)
+    div.addEventListener('pointerleave', onLeave)
 
     return () => {
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
+      div.removeEventListener('pointermove',  onHover)
       div.removeEventListener('pointerup',    onUp)
       div.removeEventListener('pointercancel', onCancel)
       div.removeEventListener('dblclick',     onDblClick)
       div.removeEventListener('contextmenu',  onContextMenu)
+      div.removeEventListener('pointerleave', onLeave)
     }
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -392,11 +624,16 @@ export function MapCanvas({ loadedMap }: Props) {
   }
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
+  const gapSize = useStore(s => s.editor.gapSize)
   const selectedCourse = project.courses.find(c => c.id === editor.selectedCourseId) ?? null
   const isCourseMode = !!editor.selectedCourseId
-  const cursor = isCourseMode ? 'default'
+
+  const showGapRing = editor.activeTool === 'gap' && hoverScreenPt != null
+
+  const cursor = editor.activeTool === 'bend' ? 'crosshair'
+    : editor.activeTool === 'gap' ? 'none'
+    : isCourseMode ? 'default'
     : editor.activeTool === 'select' ? 'grab'
-    : editor.activeTool === 'delete' ? 'crosshair'
     : 'crosshair'
 
   return (
@@ -426,6 +663,8 @@ export function MapCanvas({ loadedMap }: Props) {
             course={selectedCourse}
             controls={project.controls}
             map={project.map}
+            showBendHandles={editor.activeTool === 'bend'}
+            appearance={editor.appearance}
           />
           <AnnotationsLayer
             annotations={project.annotations}
@@ -437,6 +676,30 @@ export function MapCanvas({ loadedMap }: Props) {
             controls={project.controls}
           />
         </g>
+        {showGapRing && hoverScreenPt && (() => {
+          const upm = unitsPerMm(project.map)
+          const r = CIRCLE_R_MM * upm * editor.appearance.controlScale * vp.scale
+          const circumference = 2 * Math.PI * r
+          const gapFraction = gapSize / 360
+          const gapLen = circumference * gapFraction
+          const arcLen = circumference - gapLen
+          const sw = Math.max(1, 0.35 * upm * editor.appearance.lineWidth * vp.scale)
+          const { x, y } = hoverScreenPt
+          return (
+            <g style={{ pointerEvents: 'none' }}>
+              <circle
+                cx={x} cy={y} r={r}
+                fill="none"
+                stroke="#ea580c"
+                strokeWidth={sw}
+                strokeDasharray={`${arcLen} ${gapLen}`}
+                strokeDashoffset={arcLen / 2 + circumference / 4}
+              />
+              <line x1={x - 4} y1={y} x2={x + 4} y2={y} stroke="#ea580c" strokeWidth={1} />
+              <line x1={x} y1={y - 4} x2={x} y2={y + 4} stroke="#ea580c" strokeWidth={1} />
+            </g>
+          )
+        })()}
       </svg>
 
       {/* Saturation slider + HD toggle (hidden on mobile — slider is in Header) */}

@@ -50,19 +50,19 @@ export const PAGE_SIZES: Record<string, { w: number; h: number; label: string }>
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+export type DescMode = 'none' | 'separate' | 'on-map'
+
 export interface PdfExportOptions {
   pageSize: string
   orientation: 'portrait' | 'landscape'
   printScale: number
+  scaleOverrides?: Record<string, number>
   courseIds: string[]
   allControls?: boolean
-  includeDescriptions?: boolean
-  descriptionOnMap?: boolean
-  sheetX?: number
-  sheetY?: number
+  descModes?: Record<string, DescMode>
+  offsets?: Record<string, { x: number; y: number }>
+  sheetPositions?: Record<string, { x: number; y: number }>
   tiling?: boolean
-  offsetX?: number
-  offsetY?: number
   mapOpacity?: number
 }
 
@@ -194,6 +194,13 @@ function courseBoundsMm(
     .map(cc => controlMap.get(cc.controlId))
     .filter((c): c is Control => c != null)
     .map(c => mapToMm(c.position, map, printScale))
+  for (const cc of course.controls) {
+    if (cc.legBendPoints) {
+      for (const bp of cc.legBendPoints) {
+        positions.push(mapToMm(bp, map, printScale))
+      }
+    }
+  }
   return computeBounds(positions)
 }
 
@@ -231,7 +238,8 @@ export function checkFit(project: Project, options: PdfExportOptions): CourseFit
   }
 
   for (const course of project.courses.filter(c => options.courseIds.includes(c.id))) {
-    const bounds = courseBoundsMm(course, project.controls, project.map, options.printScale)
+    const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
+    const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
     results.push({
       courseId: course.id,
       courseName: course.name,
@@ -322,7 +330,8 @@ export function checkTiling(project: Project, options: PdfExportOptions): Course
   }
 
   for (const course of project.courses.filter(c => options.courseIds.includes(c.id))) {
-    const bounds = courseBoundsMm(course, project.controls, project.map, options.printScale)
+    const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
+    const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
     if (!bounds) { results.push({ courseId: course.id, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }); continue }
     const cols = tileCount(bounds.width, printableW)
     const rows = tileCount(bounds.height, printableH)
@@ -357,6 +366,13 @@ export function coursePreviewMm(
       .map(cc => controlMap.get(cc.controlId))
       .filter((c): c is Control => c != null)
       .map(c => mapToMm(c.position, project.map, printScale))
+    for (const cc of course.controls) {
+      if (cc.legBendPoints) {
+        for (const bp of cc.legBendPoints) {
+          positions.push(mapToMm(bp, project.map, printScale))
+        }
+      }
+    }
   }
 
   const bounds = computeBounds(positions)
@@ -414,23 +430,69 @@ function clipR(type: string): number {
   return CONTROL_R
 }
 
-function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string) {
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const len = Math.sqrt(dx * dx + dy * dy)
-  if (len === 0) return
-
-  const ux = dx / len
-  const uy = dy / len
+function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, bendPoints?: Pos[]) {
+  doc.setLineWidth(LEG_W)
+  doc.setLineCap(1)
   const fromR = clipR(fromType)
   const toR = clipR(toType)
 
-  doc.setLineWidth(LEG_W)
-  doc.setLineCap(1)
-  doc.line(
-    from.x + ux * fromR, from.y + uy * fromR,
-    to.x - ux * toR, to.y - uy * toR,
-  )
+  if (bendPoints && bendPoints.length > 0) {
+    const pts: Pos[] = [from, ...bendPoints, to]
+    const clipped = clipPolyline(pts, fromR, toR)
+    if (clipped.length < 2) return
+    for (let i = 0; i < clipped.length - 1; i++) {
+      doc.line(clipped[i].x, clipped[i].y, clipped[i + 1].x, clipped[i + 1].y)
+    }
+  } else {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    const len = Math.sqrt(dx * dx + dy * dy)
+    if (len === 0) return
+    const ux = dx / len
+    const uy = dy / len
+    doc.line(
+      from.x + ux * fromR, from.y + uy * fromR,
+      to.x - ux * toR, to.y - uy * toR,
+    )
+  }
+}
+
+function clipPolyline(pts: Pos[], startClip: number, endClip: number): Pos[] {
+  if (pts.length < 2) return pts
+  // Clip start
+  let result = pts
+  let remaining = startClip
+  for (let i = 0; i < result.length - 1; i++) {
+    const segLen = Math.hypot(result[i + 1].x - result[i].x, result[i + 1].y - result[i].y)
+    if (remaining < segLen) {
+      const t = remaining / segLen
+      const clipped: Pos = {
+        x: result[i].x + t * (result[i + 1].x - result[i].x),
+        y: result[i].y + t * (result[i + 1].y - result[i].y),
+      }
+      result = [clipped, ...result.slice(i + 1)]
+      break
+    }
+    remaining -= segLen
+    if (i === result.length - 2) return []
+  }
+  // Clip end
+  remaining = endClip
+  for (let i = result.length - 1; i > 0; i--) {
+    const segLen = Math.hypot(result[i].x - result[i - 1].x, result[i].y - result[i - 1].y)
+    if (remaining < segLen) {
+      const t = remaining / segLen
+      const clipped: Pos = {
+        x: result[i].x + t * (result[i - 1].x - result[i].x),
+        y: result[i].y + t * (result[i - 1].y - result[i].y),
+      }
+      result = [...result.slice(0, i), clipped]
+      break
+    }
+    remaining -= segLen
+    if (i === 1) return []
+  }
+  return result
 }
 
 function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string) {
@@ -655,8 +717,7 @@ export async function exportCoursePdf(
           if (pageIndex > 0) doc.addPage([pw, ph], orient)
           pageIndex++
 
-          const ox = options.offsetX ?? 0
-          const oy = options.offsetY ?? 0
+          const { x: ox, y: oy } = options.offsets?.[ALL_CONTROLS_ID] ?? { x: 0, y: 0 }
           let viewCenterX: number, viewCenterY: number
           if (useTiling) {
             viewCenterX = bounds.minX + ox + col * (printableW - TILE_OVERLAP) + printableW / 2
@@ -713,7 +774,9 @@ export async function exportCoursePdf(
   }
 
   for (const course of courses) {
-    const bounds = courseBoundsMm(course, project.controls, project.map, options.printScale)
+    const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
+    const descMode = options.descModes?.[course.id] ?? 'none'
+    const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
     if (!bounds) continue
 
     // Build tile grid
@@ -727,8 +790,7 @@ export async function exportCoursePdf(
         pageIndex++
 
         // Each tile's viewport center in course-mm space
-        const ox = options.offsetX ?? 0
-        const oy = options.offsetY ?? 0
+        const { x: ox, y: oy } = options.offsets?.[course.id] ?? { x: 0, y: 0 }
         let viewCenterX: number, viewCenterY: number
         if (useTiling) {
           viewCenterX = bounds.minX + ox + col * (printableW - TILE_OVERLAP) + printableW / 2
@@ -742,7 +804,7 @@ export async function exportCoursePdf(
         const cy = ph / 2
 
         function toPage(pt: MapPoint): Pos {
-          const mm = mapToMm(pt, project.map, options.printScale)
+          const mm = mapToMm(pt, project.map, courseScale)
           return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
         }
 
@@ -773,7 +835,8 @@ export async function exportCoursePdf(
             const to = controlMap.get(course.controls[i + 1].controlId)
             if (!from || !to) continue
             setColor(doc, course.color)
-            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type)
+            const bends = course.controls[i + 1].legBendPoints?.map(p => toPage(p))
+            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, bends)
           }
         }
 
@@ -795,10 +858,9 @@ export async function exportCoursePdf(
         }
 
         // Description sheet overlay on map
-        if (options.descriptionOnMap && course.controls.length > 0) {
-          const sx = options.sheetX ?? MARGIN
-          const sy = options.sheetY ?? MARGIN
-          drawDescriptionSheetOverlay(doc, course, project.controls, options.printScale, sx, sy)
+        if (descMode === 'on-map' && course.controls.length > 0) {
+          const { x: sx, y: sy } = options.sheetPositions?.[course.id] ?? { x: MARGIN, y: MARGIN }
+          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy)
         }
 
         // Header line
@@ -806,17 +868,17 @@ export async function exportCoursePdf(
         doc.setFont('helvetica', 'normal')
         doc.setTextColor(130, 130, 130)
         const tileLabel = cols * rows > 1
-          ? `${course.name}  —  1:${options.printScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-          : `${course.name}  —  1:${options.printScale.toLocaleString()}`
+          ? `${course.name}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
+          : `${course.name}  —  1:${courseScale.toLocaleString()}`
         doc.text(tileLabel, MARGIN, MARGIN + 3)
       }
     }
 
     // Description sheet on separate page(s)
-    if (options.includeDescriptions && !options.descriptionOnMap && course.controls.length > 0) {
+    if (descMode === 'separate' && course.controls.length > 0) {
       doc.addPage([pw, ph], orient)
       pageIndex++
-      drawDescriptionSheet(doc, course, project.controls, options.printScale, pw, ph)
+      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph)
     }
   }
 

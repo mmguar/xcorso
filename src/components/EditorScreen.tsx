@@ -29,7 +29,14 @@ export function EditorScreen({ onGoHome }: Props) {
       return
     }
     loadMap(mapFileData, project.map.filename)
-      .then(setLoadedMap)
+      .then((map) => {
+        setLoadedMap(map)
+        const { width, height } = map.bounds
+        const proj = useStore.getState().project
+        if (proj && (proj.map.width !== width || proj.map.height !== height)) {
+          useStore.getState().setMapDimensions(width, height)
+        }
+      })
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
   }, [mapFileData, project.map.filename, setLoadedMap])
 

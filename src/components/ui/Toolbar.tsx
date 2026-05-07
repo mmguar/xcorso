@@ -6,7 +6,7 @@
 
 import { useEffect } from 'react'
 import {
-  MousePointer2, Triangle, Target, Slash, X, Ruler, Undo2, Redo2, Circle, Ban, Trash2,
+  MousePointer2, Triangle, Target, Slash, X, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
@@ -19,6 +19,7 @@ const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
   { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
   { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
   { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
+  { tool: 'gap', label: 'Gap (click circle or leg to hide a section)', shortcut: 'G' },
   { tool: 'delete', label: 'Delete (click control or annotation)', shortcut: 'D' },
   { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
 ]
@@ -31,8 +32,29 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'forbidden-route': s => <Slash size={s} />,
   'crossing-point': s => <X size={s} />,
   'out-of-bounds': s => <Ban size={s} />,
+  'gap': s => <CircleDashed size={s} />,
+  'bend': s => <Waypoints size={s} />,
   'delete': s => <Trash2 size={s} />,
   'measure-scale': s => <Ruler size={s} />,
+}
+
+function GapSizeSlider() {
+  const gapSize = useStore(s => s.editor.gapSize)
+  const setGapSize = useStore(s => s.setGapSize)
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-gray-400 select-none">{gapSize}°</span>
+      <input
+        type="range"
+        min={10}
+        max={120}
+        step={5}
+        value={gapSize}
+        onChange={e => setGapSize(parseInt(e.target.value))}
+        className="w-16 h-1 accent-orange-600"
+      />
+    </div>
+  )
 }
 
 export function Toolbar() {
@@ -60,6 +82,8 @@ export function Toolbar() {
       }
       if (selectedCourseId) {
         if (e.key === 'Escape') setSelectedCourse(null)
+        else if (e.key.toLowerCase() === 'g') setActiveTool(activeTool === 'gap' ? 'select' : 'gap')
+        else if (e.key.toLowerCase() === 'b') setActiveTool(activeTool === 'bend' ? 'select' : 'bend')
         return
       }
       const t = tools.find(t => t.shortcut?.toLowerCase() === e.key.toLowerCase())
@@ -67,7 +91,7 @@ export function Toolbar() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse])
+  }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, activeTool])
 
   const btnClass = "w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all"
 
@@ -99,10 +123,44 @@ export function Toolbar() {
           className="w-3 h-3 rounded-full shrink-0"
           style={{ background: selectedCourse?.color ?? '#7B2FBE' }}
         />
-        <span className="text-xs md:text-sm text-gray-700">
-          <span className="hidden md:inline">Click controls to add · right-click to remove</span>
-          <span className="md:hidden">Tap to add · hold to remove</span>
-        </span>
+        {activeTool === 'gap' ? (
+          <span className="text-xs md:text-sm text-gray-700">
+            Click circle or leg to add gap
+          </span>
+        ) : activeTool === 'bend' ? (
+          <span className="text-xs md:text-sm text-gray-700">
+            <span className="hidden md:inline">Click leg to add bend · drag to move · right-click to remove</span>
+            <span className="md:hidden">Tap leg to bend · drag points</span>
+          </span>
+        ) : (
+          <span className="text-xs md:text-sm text-gray-700">
+            <span className="hidden md:inline">Click controls to add · right-click to remove</span>
+            <span className="md:hidden">Tap to add · hold to remove</span>
+          </span>
+        )}
+        <button
+          onClick={() => setActiveTool(activeTool === 'gap' ? 'select' : 'gap')}
+          title="Gap tool (G)"
+          className={`${btnClass} ${
+            activeTool === 'gap'
+              ? 'bg-orange-600 text-white shadow-inner'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+          }`}
+        >
+          {toolIcons['gap'](16)}
+        </button>
+        {activeTool === 'gap' && <GapSizeSlider />}
+        <button
+          onClick={() => setActiveTool(activeTool === 'bend' ? 'select' : 'bend')}
+          title="Bend leg tool (B)"
+          className={`${btnClass} ${
+            activeTool === 'bend'
+              ? 'bg-orange-600 text-white shadow-inner'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+          }`}
+        >
+          {toolIcons['bend'](16)}
+        </button>
         <button
           onClick={() => setSelectedCourse(null)}
           className="ml-1 md:ml-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg px-2.5 py-1 md:px-3 md:py-1.5 transition-colors"
@@ -139,6 +197,12 @@ export function Toolbar() {
         </button>
       ))}
 
+      {activeTool === 'gap' && (
+        <>
+          <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
+          <GapSizeSlider />
+        </>
+      )}
       <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
       {undoRedo}
     </div>

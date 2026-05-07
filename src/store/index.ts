@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   Annotation, AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
+  CircleGap, LegGap, AppearanceSettings,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
@@ -15,6 +16,8 @@ interface EditorState {
   selectedCourseId: string | null
   viewport: Viewport
   mapSaturation: number
+  gapSize: number // gap tool size in degrees (for circles) / fraction (for legs)
+  appearance: AppearanceSettings
   // Annotation drawing in progress (forbidden_route, out_of_bounds)
   pendingAnnotationPoints: MapPoint[]
 }
@@ -42,6 +45,8 @@ interface AppActions {
   // Map
   setMapScale: (scale: number, source: 'ocad' | 'manual') => void
   setMapScaleMeasurement: (p1: MapPoint, p2: MapPoint, realWorldMeters: number, renderScale?: number) => void
+  /** Updates native map extent; does not push undo (synced from loaded map). */
+  setMapDimensions: (width: number, height: number) => void
 
   // Controls
   addControl: (type: ControlType, position: MapPoint, code?: number) => Control
@@ -59,6 +64,8 @@ interface AppActions {
   updateCourseName: (id: string, name: string) => void
   updateCourseColor: (id: string, color: string) => void
   addControlToCourse: (courseId: string, controlId: string) => void
+  addAllControlsToCourse: (courseId: string) => void
+  addControlsToCourseByCode: (courseId: string, codes: number[]) => void
   removeControlFromCourse: (courseId: string, courseControlId: string) => void
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
@@ -69,6 +76,21 @@ interface AppActions {
   deleteClass: (id: string) => void
   updateClassName: (id: string, name: string) => void
   updateClassCourse: (id: string, courseId: string) => void
+
+  // Gaps
+  addControlGap: (controlId: string, gap: CircleGap) => void
+  removeControlGap: (controlId: string, index: number) => void
+  clearControlGaps: (controlId: string) => void
+  addLegGap: (courseId: string, courseControlId: string, gap: LegGap) => void
+  removeLegGap: (courseId: string, courseControlId: string, index: number) => void
+  clearLegGaps: (courseId: string, courseControlId: string) => void
+
+  // Bend points
+  addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number) => void
+  beginMoveLegBendPoint: () => void
+  moveLegBendPoint: (courseId: string, courseControlId: string, index: number, position: MapPoint) => void
+  removeLegBendPoint: (courseId: string, courseControlId: string, index: number) => void
+  clearLegBendPoints: (courseId: string, courseControlId: string) => void
 
   // Annotations
   addAnnotationPoint: (point: MapPoint) => void
@@ -85,6 +107,8 @@ interface AppActions {
   setSelectedCourse: (id: string | null) => void
   setViewport: (viewport: Viewport) => void
   setMapSaturation: (saturation: number) => void
+  setGapSize: (size: number) => void
+  setAppearance: (settings: Partial<AppearanceSettings>) => void
 
   // Session
   clearSession: () => void
@@ -96,12 +120,23 @@ interface AppActions {
 
 type Store = AppState & AppActions
 
+const defaultAppearance: AppearanceSettings = {
+  controlScale: 1,
+  lineWidth: 1,
+  color: '',
+  outlineEnabled: false,
+  outlineColor: '#ffffff',
+  outlineWidth: 0.7,
+}
+
 const defaultEditor: EditorState = {
   activeTool: 'select',
   selectedControlId: null,
   selectedCourseId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,
+  gapSize: 35,
+  appearance: defaultAppearance,
   pendingAnnotationPoints: [],
 }
 
@@ -188,6 +223,13 @@ export const useStore = create<Store>((set, get) => {
         p.map.scaleMeasurement = { p1, p2, realWorldMeters }
         p.map.scaleSource = 'manual'
         p.map.scale = Math.round((realWorldMeters * 1000) / effectiveDist)
+      })
+    },
+
+    setMapDimensions: (width, height) => {
+      mutateProjectSilent(p => {
+        p.map.width = width
+        p.map.height = height
       })
     },
 
@@ -370,6 +412,45 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
+    addAllControlsToCourse: (courseId) => {
+      const { project } = get()
+      if (!project) return
+      const course = project.courses.find(c => c.id === courseId)
+      if (!course) return
+      const regularControls = project.controls
+        .filter(c => c.type === 'control')
+        .sort((a, b) => a.code - b.code)
+      if (regularControls.length === 0) return
+      mutateProject(p => {
+        const c = p.courses.find(c => c.id === courseId)
+        if (!c) return
+        const getType = (id: string) => p.controls.find(ctrl => ctrl.id === id)?.type
+        const finishIdx = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
+        const insertIdx = finishIdx >= 0 ? finishIdx : c.controls.length
+        const newEntries = regularControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id }))
+        c.controls.splice(insertIdx, 0, ...newEntries)
+      })
+    },
+
+    addControlsToCourseByCode: (courseId, codes) => {
+      const { project } = get()
+      if (!project) return
+      const course = project.courses.find(c => c.id === courseId)
+      if (!course) return
+      const controlsByCode = new Map(project.controls.filter(c => c.type === 'control').map(c => [c.code, c]))
+      const validControls = codes.map(code => controlsByCode.get(code)).filter((c): c is Control => c != null)
+      if (validControls.length === 0) return
+      mutateProject(p => {
+        const c = p.courses.find(c => c.id === courseId)
+        if (!c) return
+        const getType = (id: string) => p.controls.find(ctrl => ctrl.id === id)?.type
+        const finishIdx = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
+        const insertIdx = finishIdx >= 0 ? finishIdx : c.controls.length
+        const newEntries = validControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id }))
+        c.controls.splice(insertIdx, 0, ...newEntries)
+      })
+    },
+
     removeControlFromCourse: (courseId, courseControlId) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
@@ -426,6 +507,120 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
+    // ── Gaps ──────────────────────────────────────────────────────────────
+
+    addControlGap: (controlId, gap) => {
+      mutateProject(p => {
+        const c = p.controls.find(c => c.id === controlId)
+        if (!c) return
+        if (!c.gaps) c.gaps = []
+        c.gaps.push(gap)
+      })
+    },
+
+    removeControlGap: (controlId, index) => {
+      mutateProject(p => {
+        const c = p.controls.find(c => c.id === controlId)
+        if (!c || !c.gaps) return
+        c.gaps.splice(index, 1)
+        if (c.gaps.length === 0) c.gaps = undefined
+      })
+    },
+
+    clearControlGaps: (controlId) => {
+      mutateProject(p => {
+        const c = p.controls.find(c => c.id === controlId)
+        if (c) c.gaps = undefined
+      })
+    },
+
+    addLegGap: (courseId, courseControlId, gap) => {
+      mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc) return
+        if (!cc.legGaps) cc.legGaps = []
+        cc.legGaps.push(gap)
+      })
+    },
+
+    removeLegGap: (courseId, courseControlId, index) => {
+      mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc || !cc.legGaps) return
+        cc.legGaps.splice(index, 1)
+        if (cc.legGaps.length === 0) cc.legGaps = undefined
+      })
+    },
+
+    clearLegGaps: (courseId, courseControlId) => {
+      mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.legGaps = undefined
+      })
+    },
+
+    // ── Bend points ─────────────────────────────────────────────────────────
+
+    addLegBendPoint: (courseId, courseControlId, point, index) => {
+      mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc) return
+        if (!cc.legBendPoints) cc.legBendPoints = []
+        if (index !== undefined) {
+          cc.legBendPoints.splice(index, 0, point)
+        } else {
+          cc.legBendPoints.push(point)
+        }
+      })
+    },
+
+    beginMoveLegBendPoint: () => {
+      const { project, undoStack } = get()
+      if (!project) return
+      set({
+        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
+        redoStack: [],
+      })
+    },
+
+    moveLegBendPoint: (courseId, courseControlId, index, position) => {
+      mutateProjectSilent(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc?.legBendPoints?.[index]) return
+        cc.legBendPoints[index] = position
+      })
+    },
+
+    removeLegBendPoint: (courseId, courseControlId, index) => {
+      mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc?.legBendPoints) return
+        cc.legBendPoints.splice(index, 1)
+        if (cc.legBendPoints.length === 0) cc.legBendPoints = undefined
+      })
+    },
+
+    clearLegBendPoints: (courseId, courseControlId) => {
+      mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.legBendPoints = undefined
+      })
+    },
+
     // ── Annotations ───────────────────────────────────────────────────────
 
     addAnnotationPoint: (point) => {
@@ -476,7 +671,7 @@ export const useStore = create<Store>((set, get) => {
           ...state.editor,
           selectedCourseId: id,
           selectedControlId: id ? null : state.editor.selectedControlId,
-          activeTool: id ? 'select' : state.editor.activeTool,
+          activeTool: id ? (state.editor.activeTool === 'gap' || state.editor.activeTool === 'bend' ? state.editor.activeTool : 'select') : state.editor.activeTool,
           pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
         },
       }))
@@ -488,6 +683,14 @@ export const useStore = create<Store>((set, get) => {
 
     setMapSaturation: (saturation) => {
       set(state => ({ editor: { ...state.editor, mapSaturation: saturation } }))
+    },
+
+    setGapSize: (size) => {
+      set(state => ({ editor: { ...state.editor, gapSize: size } }))
+    },
+
+    setAppearance: (settings) => {
+      set(state => ({ editor: { ...state.editor, appearance: { ...state.editor.appearance, ...settings } } }))
     },
 
     // ── Session ──────────────────────────────────────────────────────────

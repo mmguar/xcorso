@@ -30,6 +30,16 @@ function validateProject(raw: unknown): Project {
   if (typeof mc.scale !== 'number' || !isFinite(mc.scale) || mc.scale <= 0) mc.scale = 10000
   if (mc.storage == null || typeof mc.storage !== 'object') mc.storage = { mode: 'embedded' }
 
+  const legacy = mc as Record<string, unknown>
+  if (typeof mc.width !== 'number' || !isFinite(mc.width) || mc.width < 0) {
+    const sx = legacy.size_x
+    mc.width = typeof sx === 'number' && isFinite(sx) && sx >= 0 ? sx : 0
+  }
+  if (typeof mc.height !== 'number' || !isFinite(mc.height) || mc.height < 0) {
+    const sy = legacy.size_y
+    mc.height = typeof sy === 'number' && isFinite(sy) && sy >= 0 ? sy : 0
+  }
+
   if (!Array.isArray(obj.controls)) obj.controls = []
   if (!Array.isArray(obj.courses)) obj.courses = []
   if (!Array.isArray(obj.classes)) obj.classes = []
