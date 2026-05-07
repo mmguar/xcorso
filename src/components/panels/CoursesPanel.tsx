@@ -99,6 +99,8 @@ function CourseEditor({ course }: { course: Course }) {
   const updateCourseColor = useStore(s => s.updateCourseColor)
   const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
   const deleteCourse = useStore(s => s.deleteCourse)
+  const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
+  const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
 
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
   const distances = computeCourseDistances(course, project.controls, project.map)
@@ -106,6 +108,7 @@ function CourseEditor({ course }: { course: Course }) {
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(course.name)
   const [showDescriptions, setShowDescriptions] = useState(false)
+  const [codesInput, setCodesInput] = useState('')
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -172,6 +175,31 @@ function CourseEditor({ course }: { course: Course }) {
           Show points on map
         </label>
       )}
+
+      {/* Add controls toolbar */}
+      <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-gray-100">
+        <input
+          type="text"
+          value={codesInput}
+          onChange={e => setCodesInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && codesInput.trim()) {
+              const codes = codesInput.split(/[\s,;-]+/).map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+              if (codes.length > 0) addControlsToCourseByCode(course.id, codes)
+              setCodesInput('')
+            }
+          }}
+          placeholder="Type codes: 31,32,33"
+          className="flex-1 min-w-0 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        />
+        <button
+          onClick={() => addAllControlsToCourse(course.id)}
+          className="text-xs text-orange-600 hover:text-orange-800 font-medium whitespace-nowrap transition-colors"
+          title="Add all controls sorted by code"
+        >
+          + All
+        </button>
+      </div>
 
       {/* Controls list */}
       <div className="divide-y divide-gray-100">

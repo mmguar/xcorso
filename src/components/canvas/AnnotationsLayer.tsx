@@ -26,8 +26,8 @@ function dims(upm: number) {
     crossW:      0.6  * upm,
     crossHalf:   1.5  * upm,
     crossH:      1.5  * upm,
-    hatchSpace:  0.8  * upm,
-    hatchW:      0.25 * upm,
+    hatchSpace:  1.2  * upm,
+    hatchW:      0.2 * upm,
     boundaryW:   0.7  * upm,
   }
 }
@@ -145,12 +145,12 @@ function OutOfBoundsArea({ points, upm, color, patternId }: {
   return (
     <g>
       <defs>
-        <pattern id={patternId} width={sp} height={sp}
+        <pattern id={patternId} width={sp/0.707} height={sp/0.707} // 0.707 is sqrt(2)/2 to account for 45° rotation
           patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1={0} y1={0} x2={0} y2={sp}
-            stroke={color} strokeWidth={d.hatchW} />
-          <line x1={0} y1={0} x2={sp} y2={0}
-            stroke={color} strokeWidth={d.hatchW} />
+          <line x1={0} y1={0} x2={0} y2={sp/0.707}
+            stroke={color} strokeWidth={d.hatchW/0.707} />
+          <line x1={0} y1={0} x2={sp/0.707} y2={0}
+            stroke={color} strokeWidth={d.hatchW/0.707} />
         </pattern>
       </defs>
       <path d={pathD} fill={`url(#${patternId})`}

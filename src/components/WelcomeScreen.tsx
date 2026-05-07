@@ -70,6 +70,8 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
         filename: mapFile.name,
         storage: storageMode === 'embedded' ? { mode: 'embedded' } : { mode: 'reference', path: mapFile.name },
         scale: loadedMap.detectedScale ?? 10000,
+        width: loadedMap.bounds.width,
+        height: loadedMap.bounds.height,
         scaleSource: loadedMap.detectedScale ? 'ocad' : 'manual',
       }
 

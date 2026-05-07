@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import {
   exportCoursePdf, checkFit, checkTiling, canExportPdf, PAGE_SIZES, MARGIN,
   suggestFitScale, coursePreviewMm, mapToMm, ALL_CONTROLS_ID,
 } from '../lib/pdfExport'
-import type { PdfExportOptions, CoursePreview } from '../lib/pdfExport'
+import type { PdfExportOptions, CoursePreview, DescMode } from '../lib/pdfExport'
 import type { LoadedMap } from '../lib/mapLoader'
 import type { MapConfig } from '../types'
 import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
@@ -49,6 +49,7 @@ function PrintPreview({
   sheetY,
   onSheetChange,
   mapImage,
+  dotColor = '#7c3aed',
 }: {
   preview: CoursePreview
   pageW: number
@@ -64,6 +65,7 @@ function PrintPreview({
   sheetY?: number
   onSheetChange?: (x: number, y: number) => void
   mapImage: MapImageInfo | null
+  dotColor?: string
 }) {
   const dragRef = useRef<{ target: 'map' | 'sheet'; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
@@ -181,7 +183,7 @@ function PrintPreview({
           cx={pcx + (c.x - centerX) * mmScale}
           cy={pcy + (c.y - centerY) * mmScale}
           r={3}
-          fill="#7c3aed"
+          fill={dotColor}
           opacity={0.7}
         />
       ))}
@@ -223,17 +225,17 @@ export function PdfExportDialog({ onClose }: Props) {
   const [pageSize, setPageSize] = useState('a4')
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
   const [printScale, setPrintScale] = useState(project.map.scale)
+  const [scaleInput, setScaleInput] = useState(String(project.map.scale))
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(project.courses.map(c => c.id)),
   )
   const [allControls, setAllControls] = useState(false)
-  const [includeDescriptions, setIncludeDescriptions] = useState(false)
-  const [descriptionOnMap, setDescriptionOnMap] = useState(false)
-  const [sheetX, setSheetX] = useState(MARGIN)
-  const [sheetY, setSheetY] = useState(MARGIN)
+  const [descModes, setDescModes] = useState<Record<string, DescMode>>({})
+  const [scaleOverrides, setScaleOverrides] = useState<Record<string, number>>({})
+  const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
+  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [tiling, setTiling] = useState(false)
-  const [offsetX, setOffsetX] = useState(0)
-  const [offsetY, setOffsetY] = useState(0)
+  const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
   const [mapOpacity, setMapOpacity] = useState(1)
   const [exporting, setExporting] = useState(false)
 
@@ -241,15 +243,13 @@ export function PdfExportDialog({ onClose }: Props) {
     pageSize,
     orientation,
     printScale,
+    scaleOverrides,
     courseIds: [...selectedIds],
     allControls,
-    includeDescriptions: includeDescriptions || descriptionOnMap,
-    descriptionOnMap,
-    sheetX,
-    sheetY,
+    descModes,
+    offsets,
+    sheetPositions,
     tiling,
-    offsetX,
-    offsetY,
     mapOpacity,
   }
 
@@ -264,30 +264,47 @@ export function PdfExportDialog({ onClose }: Props) {
   const tileInfo = checkTiling(project, options)
   const hasSelection = selectedIds.size > 0 || allControls
   const anyOverflow = fitInfo.some(f => !f.fits)
-  const descPages = (includeDescriptions && !descriptionOnMap)
-    ? project.courses
-        .filter(c => selectedIds.has(c.id))
-        .reduce((sum, c) => sum + descriptionSheetPageCount(c, project.controls, ph), 0)
-    : 0
+  const descPages = project.courses
+    .filter(c => selectedIds.has(c.id) && descModes[c.id] === 'separate')
+    .reduce((sum, c) => sum + descriptionSheetPageCount(c, project.controls, ph), 0)
   const totalPages = (tiling
     ? tileInfo.reduce((sum, t) => sum + t.totalPages, 0)
     : fitInfo.length) + descPages
   const scalable = canExportPdf(project.map)
 
-  const previewId = allControls ? ALL_CONTROLS_ID : [...selectedIds][0]
-  const preview = previewId
-    ? coursePreviewMm(project, previewId, printScale)
+  const previewIds = [
+    ...(allControls ? [ALL_CONTROLS_ID] : []),
+    ...project.courses.filter(c => selectedIds.has(c.id)).map(c => c.id),
+  ]
+  const activePreviewId = previewCourseId && previewIds.includes(previewCourseId)
+    ? previewCourseId
+    : previewIds[0] ?? null
+  const activeScale = activePreviewId && activePreviewId !== ALL_CONTROLS_ID
+    ? scaleOverrides[activePreviewId] ?? printScale
+    : printScale
+  const preview = activePreviewId
+    ? coursePreviewMm(project, activePreviewId, activeScale)
     : null
-  const mapImage = useMapPreviewBounds(loadedMap, project.map, printScale)
+  const mapImage = useMapPreviewBounds(loadedMap, project.map, activeScale)
 
-  const previewCourse = descriptionOnMap && !allControls
-    ? project.courses.find(c => c.id === [...selectedIds][0])
+  const activeOffset = activePreviewId ? offsets[activePreviewId] ?? { x: 0, y: 0 } : { x: 0, y: 0 }
+  const hasOffset = activeOffset.x !== 0 || activeOffset.y !== 0
+
+  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && descModes[activePreviewId] === 'on-map'
+    ? project.courses.find(c => c.id === activePreviewId)
     : null
   const sheetSize = previewCourse
     ? descriptionSheetSize(previewCourse, project.controls)
     : null
+  const activeSheetPos = activePreviewId ? sheetPositions[activePreviewId] ?? { x: MARGIN, y: MARGIN } : { x: MARGIN, y: MARGIN }
 
-  const hasOffset = offsetX !== 0 || offsetY !== 0
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [onClose])
 
   async function handleExport() {
     setExporting(true)
@@ -366,18 +383,21 @@ export function PdfExportDialog({ onClose }: Props) {
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">1 :</span>
             <input
-              type="number"
-              value={printScale}
-              min={1}
-              onChange={e => {
-                const v = parseInt(e.target.value)
-                if (!isNaN(v) && v > 0) setPrintScale(v)
+              type="text"
+              inputMode="numeric"
+              value={scaleInput}
+              onChange={e => setScaleInput(e.target.value)}
+              onBlur={() => {
+                const v = parseInt(scaleInput)
+                if (!isNaN(v) && v > 0) { setPrintScale(v); setScaleInput(String(v)) }
+                else setScaleInput(String(printScale))
               }}
+              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
               className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
             {printScale !== project.map.scale && (
               <button
-                onClick={() => setPrintScale(project.map.scale)}
+                onClick={() => { setPrintScale(project.map.scale); setScaleInput(String(project.map.scale)) }}
                 className="text-xs text-orange-600 hover:text-orange-800"
               >
                 Reset to 1:{project.map.scale.toLocaleString()}
@@ -385,7 +405,7 @@ export function PdfExportDialog({ onClose }: Props) {
             )}
             {fitScale && fitScale !== printScale && (
               <button
-                onClick={() => setPrintScale(fitScale)}
+                onClick={() => { setPrintScale(fitScale); setScaleInput(String(fitScale)) }}
                 className="text-xs text-orange-600 hover:text-orange-800"
               >
                 Fit to page (1:{fitScale.toLocaleString()})
@@ -428,7 +448,7 @@ export function PdfExportDialog({ onClose }: Props) {
         )}
 
         {/* Print frame preview */}
-        {preview && hasSelection && (
+        {preview && hasSelection && activePreviewId && (
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-gray-500">
@@ -437,29 +457,93 @@ export function PdfExportDialog({ onClose }: Props) {
               </label>
               {hasOffset && (
                 <button
-                  onClick={() => { setOffsetX(0); setOffsetY(0) }}
+                  onClick={() => setOffsets(prev => {
+                    const next = { ...prev }
+                    delete next[activePreviewId]
+                    return next
+                  })}
                   className="text-xs text-orange-600 hover:text-orange-800"
                 >
                   Re-center
                 </button>
               )}
             </div>
+            {previewIds.length > 1 && (
+              <div className="flex gap-1 flex-wrap">
+                {previewIds.map(id => {
+                  const course = id === ALL_CONTROLS_ID ? null : project.courses.find(c => c.id === id)
+                  const label = id === ALL_CONTROLS_ID ? 'All controls' : (course?.name ?? id)
+                  const color = id === ALL_CONTROLS_ID ? '#ea580c' : (course?.color ?? '#7B2FBE')
+                  const isActive = id === activePreviewId
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setPreviewCourseId(id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'bg-orange-100 text-orange-700 ring-1 ring-orange-300'
+                          : 'text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {activePreviewId !== ALL_CONTROLS_ID && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Scale:</span>
+                <span className="text-xs text-gray-500">1 :</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={scaleOverrides[activePreviewId] != null ? String(scaleOverrides[activePreviewId]) : ''}
+                  placeholder={String(printScale)}
+                  onChange={e => {
+                    const raw = e.target.value
+                    if (raw === '') {
+                      setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
+                    } else {
+                      const v = parseInt(raw)
+                      if (!isNaN(v) && v > 0) setScaleOverrides(prev => ({ ...prev, [activePreviewId]: v }))
+                    }
+                  }}
+                  onBlur={e => {
+                    if (e.target.value === '') return
+                    const v = parseInt(e.target.value)
+                    if (isNaN(v) || v <= 0) setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
+                  }}
+                  className="w-20 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                />
+                {scaleOverrides[activePreviewId] != null && (
+                  <button
+                    onClick={() => setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })}
+                    className="text-[11px] text-orange-600 hover:text-orange-800"
+                  >
+                    Reset to 1:{printScale.toLocaleString()}
+                  </button>
+                )}
+              </div>
+            )}
             <PrintPreview
               preview={preview}
               pageW={pw}
               pageH={ph}
               printableW={printableW}
               printableH={printableH}
-              offsetX={offsetX}
-              offsetY={offsetY}
-              onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y) }}
+              offsetX={activeOffset.x}
+              offsetY={activeOffset.y}
+              onOffsetChange={(x, y) => setOffsets(prev => ({ ...prev, [activePreviewId]: { x, y } }))}
               mapImage={mapImage}
+              dotColor={activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (project.courses.find(c => c.id === activePreviewId)?.color ?? '#7B2FBE')}
               {...(sheetSize ? {
                 sheetW: sheetSize.width,
                 sheetH: sheetSize.height,
-                sheetX,
-                sheetY,
-                onSheetChange: (x: number, y: number) => { setSheetX(x); setSheetY(y) },
+                sheetX: activeSheetPos.x,
+                sheetY: activeSheetPos.y,
+                onSheetChange: (x: number, y: number) => setSheetPositions(prev => ({ ...prev, [activePreviewId]: { x, y } })),
               } : {})}
             />
           </div>
@@ -526,66 +610,74 @@ export function PdfExportDialog({ onClose }: Props) {
                 const fit = fitInfo.find(f => f.courseId === course.id)
                 const tile = tileInfo.find(t => t.courseId === course.id)
                 const checked = selectedIds.has(course.id)
+                const courseScale = scaleOverrides[course.id]
                 return (
-                  <label
-                    key={course.id}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleCourse(course.id)}
-                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
-                    />
-                    <div
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: course.color }}
-                    />
-                    <span className="text-sm flex-1 truncate">{course.name}</span>
-                    {fit && checked && (
-                      <span className={`text-xs shrink-0 ${
-                        fit.fits ? 'text-green-600'
-                          : tiling ? 'text-blue-600'
-                          : 'text-amber-600'
-                      }`}>
-                        {fit.fits
-                          ? 'fits'
-                          : tiling && tile
-                            ? `${tile.cols}×${tile.rows} pages`
-                            : `${Math.round(fit.widthMm)}×${Math.round(fit.heightMm)} mm (page: ${Math.round(fit.printableW)}×${Math.round(fit.printableH)})`}
-                      </span>
-                    )}
-                  </label>
+                  <div key={course.id} className="hover:bg-gray-50">
+                    <label className="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCourse(course.id)}
+                        className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+                      />
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: course.color }}
+                      />
+                      <span className="text-sm flex-1 truncate">{course.name}</span>
+                      {checked && (
+                        <select
+                          value={descModes[course.id] ?? 'none'}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => {
+                            e.stopPropagation()
+                            setDescModes(prev => ({ ...prev, [course.id]: e.target.value as DescMode }))
+                          }}
+                          className="text-[11px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        >
+                          <option value="none">No desc</option>
+                          <option value="separate">+ desc page</option>
+                          <option value="on-map">Desc on map</option>
+                        </select>
+                      )}
+                      {fit && checked && (
+                        <span className={`text-xs shrink-0 ${
+                          fit.fits ? 'text-green-600'
+                            : tiling ? 'text-blue-600'
+                            : 'text-amber-600'
+                        }`}>
+                          {fit.fits
+                            ? `fits${courseScale ? ` (1:${courseScale.toLocaleString()})` : ''}`
+                            : tiling && tile
+                              ? `${tile.cols}×${tile.rows} pages`
+                              : `${Math.round(fit.widthMm)}×${Math.round(fit.heightMm)} mm`}
+                        </span>
+                      )}
+                    </label>
+                  </div>
                 )
               })
             )}
           </div>
         </div>
 
-        {/* Description sheets */}
+        {/* Bulk description mode */}
         {selectedIds.size > 0 && (
-          <div className="flex flex-col gap-2 bg-gray-50 rounded-xl px-4 py-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeDescriptions}
-                onChange={e => { setIncludeDescriptions(e.target.checked); if (!e.target.checked) setDescriptionOnMap(false) }}
-                className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
-              />
-              <span className="text-sm font-medium text-gray-700">Include control description sheets</span>
-            </label>
-            {includeDescriptions && (
-              <label className="flex items-center gap-3 cursor-pointer ml-6">
-                <input
-                  type="checkbox"
-                  checked={descriptionOnMap}
-                  onChange={e => setDescriptionOnMap(e.target.checked)}
-                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
-                />
-                <span className="text-sm text-gray-600">Print on map page</span>
-                <span className="text-xs text-gray-400">— drag to position</span>
-              </label>
-            )}
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span className="font-medium">Set all descriptions:</span>
+            {([['none', 'None'], ['separate', '+ page'], ['on-map', 'On map']] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => {
+                  const next: Record<string, DescMode> = { ...descModes }
+                  for (const id of selectedIds) next[id] = mode
+                  setDescModes(next)
+                }}
+                className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-orange-50 hover:text-orange-700 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
           </div>
         )}
 
