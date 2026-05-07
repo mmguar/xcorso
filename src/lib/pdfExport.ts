@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import 'svg2pdf.js'
+import { svg2pdf } from 'svg2pdf.js'
 import type { Project, Course, Control, MapPoint, MapConfig } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
@@ -725,7 +725,7 @@ export async function exportCoursePdf(
     const h = br.y - tl.y
     if (svgMapElement) {
       try {
-        await doc.svg(svgMapElement, { x: tl.x, y: tl.y, width: w, height: h })
+        await svg2pdf(svgMapElement, doc, { x: tl.x, y: tl.y, width: w, height: h })
         return
       } catch {
         svgMapElement = null
