@@ -29,9 +29,8 @@ const CROSS_W = 0.6
 const CROSS_HALF = 1.5
 const CROSS_H = 1.5
 
-const OOB_HATCH_SPACE = 0.8
-const OOB_HATCH_W = 0.25
-const OOB_BOUNDARY_W = 0.7
+const OOB_HATCH_SPACE = 1.2
+const OOB_HATCH_W = 0.2
 
 export const MARGIN = 10
 const TILE_OVERLAP = 15
@@ -628,15 +627,15 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[]) {
   if (points.length < 3) return
 
   // Boundary outline
-  doc.setLineWidth(OOB_BOUNDARY_W)
-  doc.setLineCap(1)
-  doc.setLineJoin(1)
-  doc.moveTo(points[0].x, points[0].y)
-  for (let i = 1; i < points.length; i++) {
-    doc.lineTo(points[i].x, points[i].y)
-  }
-  doc.lineTo(points[0].x, points[0].y)
-  doc.stroke()
+  //doc.setLineWidth(OOB_BOUNDARY_W)
+  //doc.setLineCap(1)
+  //doc.setLineJoin(1)
+  //doc.moveTo(points[0].x, points[0].y)
+  //for (let i = 1; i < points.length; i++) {
+  //  doc.lineTo(points[i].x, points[i].y)
+  //}
+  //doc.lineTo(points[0].x, points[0].y)
+  //doc.stroke()
 
   // Bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -661,16 +660,28 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[]) {
   // 45° hatch lines: for line y = x + c, perpendicular spacing = step
   // means c changes by step * sqrt(2)
   doc.setLineWidth(OOB_HATCH_W)
-  const cMin = minY - maxX
-  const cMax = maxY - minX
+  const cMin1 = minY - maxX
+  const cMax1 = maxY - minX
   const cStep = OOB_HATCH_SPACE * Math.SQRT2
 
-  for (let c = cMin; c <= cMax; c += cStep) {
+  for (let c = cMin1; c <= cMax1; c += cStep) {
     const xStart = Math.max(minX, minY - c)
     const xEnd = Math.min(maxX, maxY - c)
     if (xStart >= xEnd) continue
     doc.line(xStart, xStart + c, xEnd, xEnd + c)
   }
+
+  const cMin2 = minX + minY;
+const cMax2 = maxX + maxY;  
+
+  for (let c = cMin2; c <= cMax2; c += cStep) {
+    const xStart = Math.max(minX, c - maxY);
+    const xEnd = Math.min(maxX, c - minY);
+    if (xStart <= xEnd) {
+      doc.line(xStart, c - xStart, xEnd, c - xEnd);
+    }
+  }
+
 
   internal.write('Q')
 }
