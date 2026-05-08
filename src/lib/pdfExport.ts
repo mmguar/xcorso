@@ -1,8 +1,9 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
+import { computeCourseDistances } from './distance'
 
 // ── ISOM 2017-2 symbol dimensions (mm on paper) ────────────────────────────
 
@@ -495,12 +496,15 @@ function clipPolyline(pts: Pos[], startClip: number, endClip: number): Pos[] {
   return result
 }
 
-function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string) {
+function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, labelOffsetMm?: Pos) {
   doc.setFontSize(NUMBER_SIZE_PT)
   doc.setFont('helvetica', 'bold')
 
   let ox: number, oy: number
-  if (type === 'start') {
+  if (labelOffsetMm) {
+    ox = labelOffsetMm.x
+    oy = labelOffsetMm.y
+  } else if (type === 'start') {
     ox = START_SIDE / 2 + 1
     oy = -(START_SIDE * Math.sqrt(3) / 2 * 2 / 3 - 1)
   } else if (type === 'finish') {
@@ -681,6 +685,87 @@ function getLabel(c: Control, seqMap: Map<string, number> | null): string {
   return defaultControlLabel(c)
 }
 
+// ── Scale bar ──────────────────────────────────────────────────────────────
+
+function drawScaleBar(
+  doc: jsPDF,
+  sb: ScaleBar,
+  toPage: (pt: MapPoint) => Pos,
+  printScale: number,
+) {
+  const segMm = (sb.segmentLengthM * 1000) / printScale
+  const totalMm = segMm * sb.segments
+  const barH = 2.0
+  const textH = 2.5
+  const pad = 1.5
+  const strokeW = 0.2
+  const tickH = 0.5
+
+  const boxW = totalMm + pad * 2
+  const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
+
+  const origin = toPage(sb.position)
+
+  // Background
+  if (sb.bgAlpha > 0) {
+    doc.setFillColor(255, 255, 255)
+    doc.roundedRect(origin.x, origin.y, boxW, boxH, 0.5, 0.5, 'F')
+  }
+
+  const barX = origin.x + pad
+  const barY = origin.y + pad + textH + tickH
+
+  // Segments
+  for (let i = 0; i < sb.segments; i++) {
+    doc.setLineWidth(strokeW)
+    doc.setDrawColor(0, 0, 0)
+    if (i % 2 === 0) {
+      doc.setFillColor(0, 0, 0)
+    } else {
+      doc.setFillColor(255, 255, 255)
+    }
+    doc.rect(barX + i * segMm, barY, segMm, barH, 'FD')
+  }
+
+  // Ticks and labels
+  doc.setTextColor(0, 0, 0)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(textH * 0.7 * 2.83) // mm to pt
+
+  const fmtDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
+
+  for (let i = 0; i <= sb.segments; i++) {
+    const tx = barX + i * segMm
+    doc.setLineWidth(strokeW)
+    doc.setDrawColor(0, 0, 0)
+    doc.line(tx, barY - tickH, tx, barY)
+
+    if (i === 0 || i === 1 || i === sb.segments) {
+      const label = fmtDist(i * sb.segmentLengthM)
+      doc.text(label, tx, barY - tickH - textH * 0.15, { align: 'center' })
+    }
+  }
+
+  // Scale text
+  doc.setFontSize(textH * 0.8 * 2.83)
+  doc.text(`1:${printScale.toLocaleString()}`, origin.x + boxW / 2, barY + barH + textH + pad * 0.3, { align: 'center' })
+}
+
+// ── Text label ─────────────────────────────────────────────────────────────
+
+function drawTextLabel(
+  doc: jsPDF,
+  tl: TextLabel,
+  toPage: (pt: MapPoint) => Pos,
+) {
+  const pos = toPage(tl.position)
+  const [r, g, b] = hexToRgb(tl.color)
+  doc.setTextColor(r, g, b)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(tl.fontSizeMm * 2.83) // mm to pt
+  doc.text(tl.text, pos.x, pos.y)
+}
+
 // ── Main export ─────────────────────────────────────────────────────────────
 
 export async function exportCoursePdf(
@@ -724,8 +809,8 @@ export async function exportCoursePdf(
     const h = br.y - tl.y
     if (svgMapElement) {
       try {
-        const { svg2pdf } = await import('svg2pdf.js')
-        await svg2pdf(svgMapElement, doc, { x: tl.x, y: tl.y, width: w, height: h })
+        await import('svg2pdf.js')
+        await doc.svg(svgMapElement, { x: tl.x, y: tl.y, width: w, height: h })
         return
       } catch {
         svgMapElement = null
@@ -789,6 +874,10 @@ export async function exportCoursePdf(
             drawControlSymbol(doc, ctrl.type, pos)
             drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type)
           }
+
+          // Overlays
+          for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, options.printScale)
+          for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
 
           doc.setFontSize(8)
           doc.setFont('helvetica', 'normal')
@@ -879,13 +968,19 @@ export async function exportCoursePdf(
           const pos = toPage(ctrl.position)
           setColor(doc, course.color)
           drawControlSymbol(doc, ctrl.type, pos)
-          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type)
+          const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
+          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, loMm)
         }
+
+        // Overlays
+        for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, courseScale)
+        for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
 
         // Description sheet overlay on map
         if (descMode === 'on-map' && course.controls.length > 0) {
           const { x: sx, y: sy } = options.sheetPositions?.[course.id] ?? { x: MARGIN, y: MARGIN }
-          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy)
+          const dist = computeCourseDistances(course, project.controls, project.map)
+          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy, dist.total)
         }
 
         // Header line
@@ -903,7 +998,8 @@ export async function exportCoursePdf(
     if (descMode === 'separate' && course.controls.length > 0) {
       doc.addPage([pw, ph], orient)
       pageIndex++
-      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph)
+      const dist = computeCourseDistances(course, project.controls, project.map)
+      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph, dist.total)
     }
   }
 

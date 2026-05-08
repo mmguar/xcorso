@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields } from '../lib/iofSymbols'
 import { defaultControlLabel } from '../lib/courseUtils'
+import { computeCourseDistances, formatDistance } from '../lib/distance'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
 import type { Course, Control } from '../types'
 
@@ -18,6 +19,7 @@ export function ControlDescriptionGrid({ course }: GridProps) {
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
 
+  const distances = computeCourseDistances(course, project.controls, project.map)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
   const resolvedControls = course.controls
@@ -46,8 +48,11 @@ export function ControlDescriptionGrid({ course }: GridProps) {
           <tr>
             <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
               {course.name}
-              {project.map.scale > 0 && (
-                <span className="font-normal text-gray-500 ml-2">1:{project.map.scale}</span>
+              {distances.total > 0 && (
+                <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
+              )}
+              {course.climb != null && course.climb > 0 && (
+                <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
               )}
             </td>
           </tr>

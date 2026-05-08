@@ -13,10 +13,12 @@
 - [x] We absolutely need a feature to hide part of a control circle or of a line
 - [x] We also need a feature to slightly move a line, for example by adding a second point so it becomes two segments, basically sometimes we don't want the line between controls to be perfectly straight
 - [ ] we want to move around control numbers maybe. do not implement yet
-- [ ] we want to be able to set the climb for the course and have it shown in the header of the control description sheet
+- [ ] we want to be able to set the climb for the course and have it shown in the header of the control description sheet. This is only set manually
 - [ ] we need to update the clue sheet to correctly show the start and finish and its header
-- [ ] we want a feature that lets us add a scale bar to the map. The scale bar should be five segments, show the length of one segment and of all five, it should also state the scale. I think the best way would be to show it on a white square and we should be able to set the alpha of the white square (up to totally transparent) 
-- [ ] for the pdf export feature, the current preview we have is extremely cool, that's what differentiates xcorso. We should make it be course dependent.for each course selected, we should show a preview and be able to move it around or center it, even show the control sheet in differnt positions.
+- [X] we want a feature that lets us add a scale bar to the map. The scale bar should be n segments, show the length of one segment and of all n, we should be able to choose the length of a segment. It should also state the scale. I think the best way would be to show it on a white square and we should be able to set the alpha of the white square (up to totally transparent) 
+- [X] We should also be able to add custom text. Size and color of the font should be customizable.
+- [X] for the pdf export feature, the current preview we have is extremely cool, that's what differentiates xcorso. We should make it be course dependent.for each course selected, we should show a preview and be able to move it around or center it, even show the control sheet in differnt positions.
+
 ### Bugs
 - [x] All controls view no longer shows legs, just control points
 - [x] Zoom out bug — MIN_SCALE now based on initial fit-to-screen scale

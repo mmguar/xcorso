@@ -1,4 +1,4 @@
-import type { Control, Course, MapConfig } from '../types'
+import type { Control, Course, MapConfig, MapPoint, ControlType } from '../types'
 
 export function defaultControlLabel(control: { type: string; code: number; label?: string }): string {
   if (control.label) return control.label
@@ -25,6 +25,23 @@ export function unitsPerMm(map: MapConfig): number {
     }
   }
   return DEFAULT_PX_PER_MM
+}
+
+const CIRCLE_R_MM  = 2.5
+const TRIANGLE_MM  = 6.0
+
+export function defaultLabelOffset(type: ControlType, upm: number, controlScale: number): MapPoint {
+  const cr = CIRCLE_R_MM * upm * controlScale
+  if (type === 'start') {
+    const side = TRIANGLE_MM * upm * controlScale
+    const halfSide = side / 2
+    const h = side * Math.sqrt(3) / 2
+    return { x: halfSide * 1.1, y: -h * 0.4 }
+  }
+  if (type === 'finish') {
+    return { x: cr * 1.3, y: -cr * 1.1 }
+  }
+  return { x: cr * 1.1, y: -cr * 1.1 }
 }
 
 export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number> {
