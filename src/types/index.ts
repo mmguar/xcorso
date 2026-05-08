@@ -81,6 +81,7 @@ export interface CourseControl {
   scorePoints?: number       // score-O only
   legGaps?: LegGap[]         // gaps on the leg leading TO this control
   legBendPoints?: MapPoint[] // intermediate waypoints on the leg leading TO this control
+  labelOffset?: MapPoint     // offset from control center to label anchor, in map units
   // Phase 3 placeholder:
   // branchId?: string
 }
@@ -91,6 +92,7 @@ export interface Course {
   type: CourseType
   controls: CourseControl[]  // ordered for linear; unordered for score
   scoreTimeLimit?: number    // minutes, score-O only
+  climb?: number             // metres, manually set
   color: string              // overprint color, default '#7B2FBE'
   showPoints?: boolean       // display [points] next to controls on map
   // Phase 3 placeholder:
@@ -117,6 +119,24 @@ export interface Annotation {
   color?: string
 }
 
+// ─── Overlays ───────────────────────────────────────────────────────────────
+
+export interface ScaleBar {
+  id: string
+  position: MapPoint         // top-left corner in map coordinates
+  segments: number           // number of segments (e.g. 3)
+  segmentLengthM: number     // real-world length per segment in metres (e.g. 100)
+  bgAlpha: number            // 0 = transparent, 1 = opaque white
+}
+
+export interface TextLabel {
+  id: string
+  position: MapPoint         // anchor point in map coordinates
+  text: string
+  fontSizeMm: number         // font size in mm on paper (e.g. 3)
+  color: string              // hex color
+}
+
 // ─── Project ────────────────────────────────────────────────────────────────
 
 export interface ProjectMeta {
@@ -133,6 +153,8 @@ export interface Project {
   courses: Course[]
   classes: RaceClass[]
   annotations: Annotation[]
+  scaleBars: ScaleBar[]
+  textLabels: TextLabel[]
 }
 
 // ─── Appearance ──────────���──────────────────────���───────────────────────────
@@ -160,6 +182,8 @@ export type ActiveTool =
   | 'delete'
   | 'gap'
   | 'bend'
+  | 'place-scalebar'
+  | 'place-text'
 
 export interface Viewport {
   x: number       // pan offset x (screen px)

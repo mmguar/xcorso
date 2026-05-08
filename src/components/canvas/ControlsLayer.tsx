@@ -1,4 +1,4 @@
-import type { Control, CircleGap, AppearanceSettings } from '../../types'
+import type { Control, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, unitsPerMm } from '../../lib/courseUtils'
 
@@ -50,9 +50,10 @@ interface ShapeProps {
   label: string
   upm: number
   appearance: AppearanceSettings
+  labelOffset?: MapPoint
 }
 
-function StartTriangle({ control, color, label, upm, appearance }: ShapeProps) {
+function StartTriangle({ control, color, label, upm, appearance, labelOffset }: ShapeProps) {
   const scale = appearance.controlScale
   const cr = CIRCLE_R_MM * upm * scale
   const { x, y } = control.position
@@ -66,6 +67,8 @@ function StartTriangle({ control, color, label, upm, appearance }: ShapeProps) {
   const sw = SW_MM * upm * appearance.lineWidth
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
+  const lx = labelOffset ? x + labelOffset.x : x + halfSide * 1.1
+  const ly = labelOffset ? y + labelOffset.y : y - h * 0.4
   return (
     <g>
       {appearance.outlineEnabled && (
@@ -77,7 +80,7 @@ function StartTriangle({ control, color, label, upm, appearance }: ShapeProps) {
       <polygon points={points} fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <text x={x + halfSide * 1.1} y={y - h * 0.4}
+      <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
         textAnchor="start" dominantBaseline="auto">
         {label}
@@ -86,7 +89,7 @@ function StartTriangle({ control, color, label, upm, appearance }: ShapeProps) {
   )
 }
 
-function FinishCircles({ control, color, label, upm, appearance }: ShapeProps) {
+function FinishCircles({ control, color, label, upm, appearance, labelOffset }: ShapeProps) {
   const scale = appearance.controlScale
   const cr = CIRCLE_R_MM * upm * scale
   const innerR = FINISH_IR_MM * upm * scale
@@ -97,6 +100,8 @@ function FinishCircles({ control, color, label, upm, appearance }: ShapeProps) {
   const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
   const innerDash = control.gaps?.length ? gapsToDashArray(control.gaps, innerCirc) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
+  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.3
+  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
   return (
     <g>
       {appearance.outlineEnabled && (
@@ -115,7 +120,7 @@ function FinishCircles({ control, color, label, upm, appearance }: ShapeProps) {
       <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
         {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
       />
-      <text x={x + cr * 1.3} y={y - cr * 1.1}
+      <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
         textAnchor="start" dominantBaseline="auto">
         {label}
@@ -124,13 +129,15 @@ function FinishCircles({ control, color, label, upm, appearance }: ShapeProps) {
   )
 }
 
-function ControlCircle({ control, color, label, upm, appearance }: ShapeProps) {
+function ControlCircle({ control, color, label, upm, appearance, labelOffset }: ShapeProps) {
   const cr = CIRCLE_R_MM * upm * appearance.controlScale
   const sw = SW_MM * upm * appearance.lineWidth
   const { x, y } = control.position
   const circumference = 2 * Math.PI * cr
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
+  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
+  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
   return (
     <g>
       {appearance.outlineEnabled && (
@@ -145,7 +152,7 @@ function ControlCircle({ control, color, label, upm, appearance }: ShapeProps) {
         fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <text x={x + cr * 1.1} y={y - cr * 1.1}
+      <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
         textAnchor="start" dominantBaseline="auto">
         {label}
@@ -209,13 +216,16 @@ export function ControlsLayer({ controls }: Props) {
           label += ` [${control.points}]`
         }
 
+        const cc = selectedCourse?.controls.find(cc => cc.controlId === control.id)
+        const labelOffset = cc?.labelOffset
+
         const Shape = control.type === 'start' ? StartTriangle
           : control.type === 'finish' ? FinishCircles
           : ControlCircle
 
         return (
           <g key={control.id} opacity={opacity}>
-            <Shape control={control} color={color} label={label} upm={upm} appearance={appearance} />
+            <Shape control={control} color={color} label={label} upm={upm} appearance={appearance} labelOffset={labelOffset} />
           </g>
         )
       })}

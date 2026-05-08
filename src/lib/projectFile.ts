@@ -44,6 +44,8 @@ function validateProject(raw: unknown): Project {
   if (!Array.isArray(obj.courses)) obj.courses = []
   if (!Array.isArray(obj.classes)) obj.classes = []
   if (!Array.isArray(obj.annotations)) obj.annotations = []
+  if (!Array.isArray(obj.scaleBars)) obj.scaleBars = []
+  if (!Array.isArray(obj.textLabels)) obj.textLabels = []
 
   for (const c of obj.controls as Record<string, unknown>[]) {
     if (typeof c.id !== 'string') c.id = crypto.randomUUID()

@@ -7,6 +7,7 @@
 import { useEffect } from 'react'
 import {
   MousePointer2, Triangle, Target, Slash, X, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
+  RulerDimensionLine, Type,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
@@ -22,6 +23,8 @@ const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
   { tool: 'gap', label: 'Gap (click circle or leg to hide a section)', shortcut: 'G' },
   { tool: 'delete', label: 'Delete (click control or annotation)', shortcut: 'D' },
   { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
+  { tool: 'place-scalebar', label: 'Place Scale Bar', shortcut: 'K' },
+  { tool: 'place-text', label: 'Place Text', shortcut: 'T' },
 ]
 
 const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
@@ -36,6 +39,8 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'bend': s => <Waypoints size={s} />,
   'delete': s => <Trash2 size={s} />,
   'measure-scale': s => <Ruler size={s} />,
+  'place-scalebar': s => <RulerDimensionLine size={s} />,
+  'place-text': s => <Type size={s} />,
 }
 
 function GapSizeSlider() {
@@ -77,8 +82,17 @@ export function Toolbar() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return }
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        const sel = useStore.getState().editor.selectedControlId
-        if (sel) { e.preventDefault(); useStore.getState().deleteControl(sel); return }
+        const state = useStore.getState()
+        const sel = state.editor.selectedControlId
+        if (sel) { e.preventDefault(); state.deleteControl(sel); return }
+        const oid = state.editor.selectedOverlayId
+        if (oid) {
+          e.preventDefault()
+          const proj = state.project
+          if (proj?.scaleBars.some(s => s.id === oid)) state.deleteScaleBar(oid)
+          else if (proj?.textLabels.some(t => t.id === oid)) state.deleteTextLabel(oid)
+          return
+        }
       }
       if (selectedCourseId) {
         if (e.key === 'Escape') setSelectedCourse(null)

@@ -9,6 +9,7 @@ import { MapCanvas } from './canvas/MapCanvas'
 import { Header } from './ui/Header'
 import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
+import { OverlaySettingsPanel } from './panels/OverlaySettingsPanel'
 
 interface Props { onGoHome: () => void }
 
@@ -67,6 +68,7 @@ export function EditorScreen({ onGoHome }: Props) {
         <div className="flex-1 relative overflow-hidden">
           <MapCanvas loadedMap={loadedMap} />
           <Toolbar />
+          <OverlaySettingsPanel />
         </div>
         <SidePanel />
       </div>
