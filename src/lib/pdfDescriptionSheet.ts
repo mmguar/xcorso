@@ -19,6 +19,11 @@ const FILL_SW = (1 / 200) * CELL
 const INSET = 0.82
 const COL_HEADER_H = CELL * 0.6
 
+function fmtDist(m: number): string {
+  if (m < 1000) return `${Math.round(m)} m`
+  return `${(m / 1000).toFixed(2)} km`
+}
+
 function maxControlRows(pageH: number): number {
   const headerH = CELL + COL_HEADER_H
   return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - headerH) / CELL)
@@ -189,6 +194,7 @@ export function drawDescriptionSheetOverlay(
   mapScale: number,
   originX: number,
   originY: number,
+  distanceM?: number,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -216,6 +222,7 @@ export function drawDescriptionSheetOverlay(
   doc.setTextColor(0, 0, 0)
   let label = course.name
   if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
+  if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
   if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
   doc.text(label, gridX + GRID_W / 2, y + CELL / 2 + 1, { align: 'center' })
   y += CELL
@@ -292,6 +299,7 @@ export function drawDescriptionSheet(
   mapScale: number,
   pageW: number,
   pageH: number,
+  distanceM?: number,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -317,6 +325,7 @@ export function drawDescriptionSheet(
     doc.setTextColor(0, 0, 0)
     let label = course.name
     if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
+    if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
     if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
     doc.text(label, pageW / 2, y + CELL / 2 + 1, { align: 'center' })
 

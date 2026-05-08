@@ -3,6 +3,7 @@ import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
+import { computeCourseDistances } from './distance'
 
 // ── ISOM 2017-2 symbol dimensions (mm on paper) ────────────────────────────
 
@@ -808,8 +809,8 @@ export async function exportCoursePdf(
     const h = br.y - tl.y
     if (svgMapElement) {
       try {
-        const { svg2pdf } = await import('svg2pdf.js')
-        await svg2pdf(svgMapElement, doc, { x: tl.x, y: tl.y, width: w, height: h })
+        await import('svg2pdf.js')
+        await doc.svg(svgMapElement, { x: tl.x, y: tl.y, width: w, height: h })
         return
       } catch {
         svgMapElement = null
@@ -978,7 +979,8 @@ export async function exportCoursePdf(
         // Description sheet overlay on map
         if (descMode === 'on-map' && course.controls.length > 0) {
           const { x: sx, y: sy } = options.sheetPositions?.[course.id] ?? { x: MARGIN, y: MARGIN }
-          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy)
+          const dist = computeCourseDistances(course, project.controls, project.map)
+          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy, dist.total)
         }
 
         // Header line
@@ -996,7 +998,8 @@ export async function exportCoursePdf(
     if (descMode === 'separate' && course.controls.length > 0) {
       doc.addPage([pw, ph], orient)
       pageIndex++
-      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph)
+      const dist = computeCourseDistances(course, project.controls, project.map)
+      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph, dist.total)
     }
   }
 
