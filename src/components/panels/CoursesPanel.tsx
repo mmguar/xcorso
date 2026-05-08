@@ -103,8 +103,6 @@ function CourseEditor({ course }: { course: Course }) {
           course={course}
           onRemove={(ccId) => removeControlFromCourse(course.id, ccId)}
           onReorder={(reordered) => reorderCourseControls(course.id, reordered)}
-          legDistances={distances.legs}
-          totalDistance={distances.total}
         />
       </div>
 
