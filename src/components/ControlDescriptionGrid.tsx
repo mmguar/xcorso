@@ -19,7 +19,7 @@ import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields } from '../lib/iofSymbols'
 import { defaultControlLabel } from '../lib/courseUtils'
-import { formatDistance } from '../lib/distance'
+import { computeCourseDistances, formatDistance } from '../lib/distance'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
 import type { Course, Control, CourseControl } from '../types'
 
@@ -46,6 +46,7 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder, legDistanc
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
 
+  const distances = computeCourseDistances(course, project.controls, project.map)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
   const showDist = legDistances != null && legDistances.length > 0
@@ -86,32 +87,49 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder, legDistanc
 
   return (
     <div className="overflow-x-auto">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={course.controls.map(cc => cc.id)} strategy={verticalListSortingStrategy}>
-          <table className="border-collapse" style={{ fontSize: 11 }}>
-            <thead>
-              <tr>
-                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
-                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
-                {columns.map(col => (
-                  <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
-                    style={{ width: CELL, minWidth: CELL }} title={col.label}>
-                    {col.id}
-                  </th>
-                ))}
-                {showDist && <th className="px-1 text-gray-400 font-normal text-[10px]" />}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
-                  {course.name}
-                  {totalDistance != null && totalDistance > 0 && (
-                    <span className="font-normal text-gray-500 ml-2">{formatDistance(totalDistance)}</span>
-                  )}
-                  {course.climb != null && course.climb > 0 && (
-                    <span className="font-normal text-gray-500 ml-2">{course.climb} m</span>
-                  )}
+      <table className="border-collapse" style={{ fontSize: 11 }}>
+        <thead>
+          <tr>
+            <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
+            <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
+            {columns.map(col => (
+              <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
+                style={{ width: CELL, minWidth: CELL }} title={col.label}>
+                {col.id}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {/* Course header row */}
+          <tr>
+            <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
+              {course.name}
+              {distances.total > 0 && (
+                <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
+              )}
+              {course.climb != null && course.climb > 0 && (
+                <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
+              )}
+            </td>
+          </tr>
+
+          {resolvedControls.map((ctrl) => {
+            if (ctrl.type === 'control') seq++
+            const seqLabel = ctrl.type === 'start' ? '△'
+              : ctrl.type === 'finish' ? '◎'
+              : String(seq)
+            const desc = ctrl.description ?? {}
+
+            return (
+              <tr key={ctrl.id}>
+                {/* Column A: sequence */}
+                <td className={`${BORDER} text-center font-bold`} style={{ width: CELL, height: CELL }}>
+                  {seqLabel}
+                </td>
+                {/* Column B: code */}
+                <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
+                  {defaultControlLabel(ctrl)}
                 </td>
                 {showDist && <td />}
               </tr>

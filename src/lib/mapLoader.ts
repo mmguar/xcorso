@@ -161,11 +161,12 @@ export async function loadBitmapMap(data: ArrayBuffer, filename: string): Promis
 }
 
 export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
-  const pdfjs = await import('pdfjs-dist')
+  // Use the legacy bundle for better compatibility with older Safari/iPad WebKit.
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   // Worker must be set up — point to the bundled worker
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.mjs',
+      'pdfjs-dist/legacy/build/pdf.worker.mjs',
       import.meta.url,
     ).toString()
   }
