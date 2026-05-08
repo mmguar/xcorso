@@ -11,7 +11,8 @@ import { CoursesPanel } from '../panels/CoursesPanel'
 
 type Tab = 'controls' | 'courses'
 
-const SIDEBAR_W = 288 // w-72 = 18rem = 288px
+const SIDEBAR_W = 352 // w-88 = 22 rem = 352px
+
 
 export function SidePanel() {
   const [tab, setTab] = useState<Tab>('controls')
@@ -43,7 +44,7 @@ export function SidePanel() {
         hidden md:flex flex-col
         shrink-0 border-l border-gray-200 bg-white
         transition-[width] duration-200
-        ${collapsed ? 'w-12' : 'w-76 overflow-hidden'}
+        ${collapsed ? 'w-12' : 'w-88 overflow-hidden'}
       `}>
         {collapsed ? (
           <CollapsedSidebar onExpand={() => setCollapsed(false)} />

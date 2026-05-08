@@ -1,100 +1,14 @@
 import { useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, GripVertical, X, List } from 'lucide-react'
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import type { DragEndEvent } from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore } from '../../store'
-import { computeCourseDistances, formatDistance } from '../../lib/distance'
-import { defaultControlLabel } from '../../lib/courseUtils'
+import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
-import type { Control, Course, CourseControl } from '../../types'
-
-interface SortableRowProps {
-  cc: CourseControl
-  idx: number
-  course: Course
-  controlMap: Map<string, Control>
-  legDist: number | undefined
-}
-
-function SortableControlRow({ cc, idx, course, controlMap, legDist }: SortableRowProps) {
-  const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
-  const updateScorePoints = useStore(s => s.updateScorePoints)
-  const ctrl = controlMap.get(cc.controlId)
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: cc.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white"
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="touch-none text-gray-300 cursor-grab active:cursor-grabbing p-1 -m-1"
-      >
-        <GripVertical size={14} />
-      </div>
-      <span className="text-gray-400 text-xs w-5 text-right">{idx + 1}</span>
-      <span className={`font-mono text-xs w-8 font-medium ${
-        ctrl?.type === 'start' ? 'text-green-600' :
-        ctrl?.type === 'finish' ? 'text-red-600' : 'text-orange-700'
-      }`}>
-        {ctrl ? defaultControlLabel(ctrl) : '?'}
-      </span>
-      {legDist !== undefined && (
-        <span className="text-gray-400 text-xs flex-1">{formatDistance(legDist)}</span>
-      )}
-      {course.type === 'score' && (
-        <input
-          type="number"
-          min={0}
-          value={cc.scorePoints ?? ''}
-          placeholder="pts"
-          onChange={e => updateScorePoints(course.id, cc.id, parseInt(e.target.value) || 0)}
-          className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
-        />
-      )}
-      <button
-        onClick={() => removeControlFromCourse(course.id, cc.id)}
-        className="text-gray-200 hover:text-red-400 transition-colors ml-auto"
-      >
-        <X size={12} />
-      </button>
-    </div>
-  )
-}
+import type { Course } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
   const project = useStore(s => s.project!)
   const reorderCourseControls = useStore(s => s.reorderCourseControls)
+  const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
   const updateCourseName = useStore(s => s.updateCourseName)
   const updateCourseColor = useStore(s => s.updateCourseColor)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
@@ -103,30 +17,11 @@ function CourseEditor({ course }: { course: Course }) {
   const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
   const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
 
-  const controlMap = new Map(project.controls.map(c => [c.id, c]))
   const distances = computeCourseDistances(course, project.controls, project.map)
 
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(course.name)
-  const [showDescriptions, setShowDescriptions] = useState(false)
   const [codesInput, setCodesInput] = useState('')
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
-  )
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const oldIdx = course.controls.findIndex(cc => cc.id === active.id)
-    const newIdx = course.controls.findIndex(cc => cc.id === over.id)
-    if (oldIdx === -1 || newIdx === -1) return
-    const reordered = [...course.controls]
-    const [item] = reordered.splice(oldIdx, 1)
-    reordered.splice(newIdx, 0, item)
-    reorderCourseControls(course.id, reordered)
-  }
 
   return (
     <div className="border border-orange-200 rounded-xl overflow-hidden mb-2">
@@ -202,31 +97,18 @@ function CourseEditor({ course }: { course: Course }) {
         </button>
       </div>
 
-      {/* Controls list */}
-      <div className="divide-y divide-gray-100">
-        {course.controls.length === 0 ? (
-          <div className="px-4 py-3 text-xs text-gray-400">
-            Click controls on the map to add them to this course.
-          </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={course.controls.map(cc => cc.id)} strategy={verticalListSortingStrategy}>
-              {course.controls.map((cc, idx) => (
-                <SortableControlRow
-                  key={cc.id}
-                  cc={cc}
-                  idx={idx}
-                  course={course}
-                  controlMap={controlMap}
-                  legDist={distances.legs[idx - 1]}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
-        )}
+      {/* Control description grid */}
+      <div className="px-2 py-1.5">
+        <ControlDescriptionGrid
+          course={course}
+          onRemove={(ccId) => removeControlFromCourse(course.id, ccId)}
+          onReorder={(reordered) => reorderCourseControls(course.id, reordered)}
+          legDistances={distances.legs}
+          totalDistance={distances.total}
+        />
       </div>
 
-      {/* Total distance + climb */}
+      {/* Climb input */}
       {distances.total > 0 && (
         <div className="flex items-center px-3 py-1.5 bg-gray-50 border-t border-gray-100">
           <label className="flex items-center gap-1 text-xs text-gray-500">
@@ -244,28 +126,6 @@ function CourseEditor({ course }: { course: Course }) {
             />
             <span className="text-gray-400">m</span>
           </label>
-          <span className="text-xs font-semibold text-gray-600 ml-auto">
-            Total: {formatDistance(distances.total)}
-          </span>
-        </div>
-      )}
-
-      {/* Control descriptions */}
-      {course.controls.length > 0 && (
-        <div className="border-t border-gray-100">
-          <button
-            onClick={() => setShowDescriptions(d => !d)}
-            className="flex items-center gap-1.5 w-full px-3 py-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors"
-          >
-            <List size={12} />
-            Control descriptions
-            {showDescriptions ? <ChevronDown size={12} className="ml-auto" /> : <ChevronRight size={12} className="ml-auto" />}
-          </button>
-          {showDescriptions && (
-            <div className="px-2 pb-2">
-              <ControlDescriptionGrid course={course} />
-            </div>
-          )}
         </div>
       )}
     </div>
