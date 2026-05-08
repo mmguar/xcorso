@@ -1,20 +1,45 @@
 import { useState } from 'react'
+import { X } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import type { DragEndEvent } from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields } from '../lib/iofSymbols'
 import { defaultControlLabel } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
-import type { Course, Control } from '../types'
+import type { Course, Control, CourseControl } from '../types'
 
 const CELL = 32
 const BORDER = 'border border-gray-300'
 
 interface GridProps {
   course: Course
+  onRemove?: (courseControlId: string) => void
+  onReorder?: (reordered: CourseControl[]) => void
 }
 
-export function ControlDescriptionGrid({ course }: GridProps) {
+interface RowData {
+  cc: CourseControl
+  ctrl: Control
+  seq: number
+  legDist?: number
+}
+
+export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   const project = useStore(s => s.project!)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
@@ -22,82 +47,97 @@ export function ControlDescriptionGrid({ course }: GridProps) {
   const distances = computeCourseDistances(course, project.controls, project.map)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
-  const resolvedControls = course.controls
-    .map(cc => controlMap.get(cc.controlId))
-    .filter((c): c is Control => c !== undefined)
+  const showDist = distances.legs.length > 0
 
   let seq = 0
+  let filteredIdx = 0
+  const rows: RowData[] = []
+  for (const cc of course.controls) {
+    const ctrl = controlMap.get(cc.controlId)
+    if (!ctrl) continue
+    if (ctrl.type === 'control') seq++
+    rows.push({
+      cc,
+      ctrl,
+      seq: ctrl.type === 'control' ? seq : 0,
+      legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+    })
+    filteredIdx++
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    if (!onReorder) return
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIdx = course.controls.findIndex(cc => cc.id === active.id)
+    const newIdx = course.controls.findIndex(cc => cc.id === over.id)
+    if (oldIdx === -1 || newIdx === -1) return
+    const reordered = [...course.controls]
+    const [item] = reordered.splice(oldIdx, 1)
+    reordered.splice(newIdx, 0, item)
+    onReorder(reordered)
+  }
 
   return (
     <div className="overflow-x-auto">
-      <table className="border-collapse" style={{ fontSize: 11 }}>
-        <thead>
-          <tr>
-            <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
-            <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
-            {columns.map(col => (
-              <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
-                style={{ width: CELL, minWidth: CELL }} title={col.label}>
-                {col.id}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {/* Course header row */}
-          <tr>
-            <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
-              {course.name}
-              {distances.total > 0 && (
-                <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
-              )}
-              {course.climb != null && course.climb > 0 && (
-                <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
-              )}
-            </td>
-          </tr>
-
-          {resolvedControls.map((ctrl) => {
-            if (ctrl.type === 'control') seq++
-            const seqLabel = ctrl.type === 'start' ? '△'
-              : ctrl.type === 'finish' ? '◎'
-              : String(seq)
-            const desc = ctrl.description ?? {}
-
-            return (
-              <tr key={ctrl.id}>
-                {/* Column A: sequence */}
-                <td className={`${BORDER} text-center font-bold`} style={{ width: CELL, height: CELL }}>
-                  {seqLabel}
-                </td>
-                {/* Column B: code */}
-                <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
-                  {defaultControlLabel(ctrl)}
-                </td>
-                {/* Columns C-H */}
-                {columns.map(col => {
-                  const field = columnFields[col.id]
-                  const value = desc[field]
-                  const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
-
-                  return (
-                    <td
-                      key={col.id}
-                      className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
-                      style={{ width: CELL, height: CELL, padding: 0 }}
-                      onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
-                    >
-                      {value && <IofSymbolIcon code={value} size={CELL - 4} />}
-                    </td>
-                  )
-                })}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={course.controls.map(cc => cc.id)} strategy={verticalListSortingStrategy}>
+          <table className="border-collapse" style={{ fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
+                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
+                {columns.map(col => (
+                  <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
+                    style={{ width: CELL, minWidth: CELL }} title={col.label}>
+                    {col.id}
+                  </th>
+                ))}
+                {showDist && <th className="px-1" />}
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              <tr>
+                <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
+                  {course.name}
+                  {distances.total > 0 && (
+                    <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
+                  )}
+                  {course.climb != null && course.climb > 0 && (
+                    <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
+                  )}
+                </td>
+                {showDist && <td />}
+              </tr>
 
-      {/* Symbol picker */}
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center text-xs text-gray-400 py-3">
+                    Click controls on the map to add them.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => (
+                  <SortableDescRow
+                    key={row.cc.id}
+                    row={row}
+                    showDist={showDist}
+                    picker={picker}
+                    setPicker={setPicker}
+                    onRemove={onRemove}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </SortableContext>
+      </DndContext>
+
       {picker && (
         <SymbolPicker
           column={picker.column}
@@ -117,6 +157,87 @@ export function ControlDescriptionGrid({ course }: GridProps) {
   )
 }
 
+function SortableDescRow({
+  row,
+  showDist,
+  picker,
+  setPicker,
+  onRemove,
+}: {
+  row: RowData
+  showDist: boolean
+  picker: { controlId: string; column: IofColumn } | null
+  setPicker: (p: { controlId: string; column: IofColumn } | null) => void
+  onRemove?: (ccId: string) => void
+}) {
+  const { cc, ctrl, seq, legDist } = row
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: cc.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  const seqLabel = ctrl.type === 'start' ? '△'
+    : ctrl.type === 'finish' ? '◎'
+    : String(seq)
+  const desc = ctrl.description ?? {}
+
+  return (
+    <tr ref={setNodeRef} style={style} className="group">
+      <td
+        className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
+        style={{ width: CELL, height: CELL }}
+        {...attributes}
+        {...listeners}
+      >
+        {seqLabel}
+        {onRemove && (
+          <button
+            onClick={() => onRemove(cc.id)}
+            onPointerDown={e => e.stopPropagation()}
+            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
+          >
+            <X size={8} />
+          </button>
+        )}
+      </td>
+      <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
+        {defaultControlLabel(ctrl)}
+      </td>
+      {columns.map(col => {
+        const field = columnFields[col.id]
+        const value = desc[field]
+        const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
+
+        return (
+          <td
+            key={col.id}
+            className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
+            style={{ width: CELL, height: CELL, padding: 0 }}
+            onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
+          >
+            {value && <IofSymbolIcon code={value} size={CELL - 4} />}
+          </td>
+        )
+      })}
+      {showDist && (
+        <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
+          {legDist != null ? formatDistance(legDist) : ''}
+        </td>
+      )}
+    </tr>
+  )
+}
+
 function SymbolPicker({
   column, current, onSelect, onClear, onClose,
 }: {
@@ -133,7 +254,6 @@ function SymbolPicker({
     ? symbols.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.includes(search))
     : symbols
 
-  // Group column G symbols by base type
   const grouped = column === 'G' ? groupLocationSymbols(filtered) : null
 
   return (
