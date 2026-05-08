@@ -214,9 +214,9 @@ export function drawDescriptionSheetOverlay(
   doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 0, 0)
-  const label = mapScale > 0
-    ? `${course.name}    1:${mapScale.toLocaleString()}`
-    : course.name
+  let label = course.name
+  if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
+  if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
   doc.text(label, gridX + GRID_W / 2, y + CELL / 2 + 1, { align: 'center' })
   y += CELL
 
@@ -315,9 +315,9 @@ export function drawDescriptionSheet(
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(0, 0, 0)
-    const label = mapScale > 0
-      ? `${course.name}    1:${mapScale.toLocaleString()}`
-      : course.name
+    let label = course.name
+    if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
+    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
     doc.text(label, pageW / 2, y + CELL / 2 + 1, { align: 'center' })
 
     y += CELL

@@ -49,6 +49,9 @@ export function ControlDescriptionGrid({ course }: GridProps) {
               {project.map.scale > 0 && (
                 <span className="font-normal text-gray-500 ml-2">1:{project.map.scale}</span>
               )}
+              {course.climb != null && course.climb > 0 && (
+                <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
+              )}
             </td>
           </tr>
 

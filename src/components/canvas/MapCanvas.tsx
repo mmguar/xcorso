@@ -4,9 +4,10 @@ import { MapLayer } from './MapLayer'
 import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
+import { OverlaysLayer } from './OverlaysLayer'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm } from '../../lib/courseUtils'
+import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap } from '../../lib/courseUtils'
 import type { Annotation, AnnotationType, Control, MapPoint, Viewport } from '../../types'
 
 const TAP_PX    = 8
@@ -50,6 +51,9 @@ export function MapCanvas({ loadedMap }: Props) {
   const addLegBendPoint          = useStore(s => s.addLegBendPoint)
   const removeLegBendPoint       = useStore(s => s.removeLegBendPoint)
   const clearLegBendPoints       = useStore(s => s.clearLegBendPoints)
+  const addScaleBar              = useStore(s => s.addScaleBar)
+  const addTextLabel             = useStore(s => s.addTextLabel)
+  const setSelectedOverlay       = useStore(s => s.setSelectedOverlay)
 
   const [useRaster, setUseRaster] = useState(true)
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
@@ -285,12 +289,109 @@ export function MapCanvas({ loadedMap }: Props) {
       return null
     }
 
+    function findOverlayAt(screenX: number, screenY: number): { id: string; kind: 'scalebar' | 'text' } | null {
+      const proj = useStore.getState().project
+      if (!proj) return null
+      const mapPt = screenToMap(screenX, screenY)
+      const upm = unitsPerMm(proj.map)
+
+      for (const sb of proj.scaleBars) {
+        const segMmOnPaper = (sb.segmentLengthM * 1000) / proj.map.scale
+        const segU = segMmOnPaper * upm
+        const totalU = segU * sb.segments
+        const pad = 1.5 * upm
+        const textH = 2.5 * upm
+        const barH = 2.0 * upm
+        const tickH = 0.5 * upm
+        const boxW = totalU + pad * 2
+        const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
+        if (mapPt.x >= sb.position.x && mapPt.x <= sb.position.x + boxW &&
+            mapPt.y >= sb.position.y && mapPt.y <= sb.position.y + boxH) {
+          return { id: sb.id, kind: 'scalebar' }
+        }
+      }
+
+      for (const tl of proj.textLabels) {
+        const fontSize = tl.fontSizeMm * upm
+        const w = tl.text.length * fontSize * 0.65
+        const h = fontSize * 1.3
+        if (mapPt.x >= tl.position.x && mapPt.x <= tl.position.x + w &&
+            mapPt.y >= tl.position.y - fontSize && mapPt.y <= tl.position.y - fontSize + h) {
+          return { id: tl.id, kind: 'text' }
+        }
+      }
+
+      return null
+    }
+
     let dragControlId: string | null = null
     let dragOffset: { dx: number; dy: number } | null = null
     let dragStarted = false
 
     let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
     let dragBendStarted = false
+
+    let dragOverlay: { id: string; kind: 'scalebar' | 'text'; dx: number; dy: number } | null = null
+    let dragOverlayStarted = false
+
+    let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
+    let dragLabelStarted = false
+
+    function findLabelAt(screenX: number, screenY: number): { courseId: string; courseControlId: string; controlId: string; labelX: number; labelY: number } | null {
+      const state = useStore.getState()
+      const proj = state.project
+      if (!proj) return null
+      const courseId = state.editor.selectedCourseId
+      if (!courseId) return null
+      const course = proj.courses.find(c => c.id === courseId)
+      if (!course) return null
+      const map = proj.map
+      const upm = unitsPerMm(map)
+      const controlScale = state.editor.appearance.controlScale
+      const v = vpRef.current
+      const controlMap = new Map(proj.controls.map(c => [c.id, c]))
+      const seqMap = course.type === 'linear' ? buildSequenceMap(course, proj.controls) : null
+
+      let best: { courseId: string; courseControlId: string; controlId: string; labelX: number; labelY: number } | null = null
+      let bestDist = Infinity
+
+      for (const cc of course.controls) {
+        const ctrl = controlMap.get(cc.controlId)
+        if (!ctrl) continue
+        const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale)
+        const labelMapX = ctrl.position.x + offset.x
+        const labelMapY = ctrl.position.y + offset.y
+        const labelScreenX = v.x + labelMapX * v.scale
+        const labelScreenY = v.y + labelMapY * v.scale
+
+        // Estimate text bounding box in screen pixels
+        const cr = CIRCLE_R_MM * upm * controlScale
+        const fontSize = cr * 1.1 * v.scale
+        let labelText: string
+        if (seqMap && ctrl.type === 'control') {
+          labelText = String(seqMap.get(ctrl.id) ?? defaultControlLabel(ctrl))
+        } else {
+          labelText = defaultControlLabel(ctrl)
+        }
+        const textW = labelText.length * fontSize * 0.7
+        const textH = fontSize
+        const pad = Math.max(HIT_PX * 0.5, 4)
+
+        // textAnchor="start", dominantBaseline="auto" → anchor is at left baseline
+        // Text extends right by textW, upward by ~textH from anchor
+        if (screenX >= labelScreenX - pad && screenX <= labelScreenX + textW + pad &&
+            screenY >= labelScreenY - textH - pad && screenY <= labelScreenY + pad) {
+          const cx = labelScreenX + textW / 2
+          const cy = labelScreenY - textH / 2
+          const d = Math.hypot(screenX - cx, screenY - cy)
+          if (d < bestDist) {
+            best = { courseId, courseControlId: cc.id, controlId: cc.controlId, labelX: labelMapX, labelY: labelMapY }
+            bestDist = d
+          }
+        }
+      }
+      return best
+    }
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -362,12 +463,35 @@ export function MapCanvas({ loadedMap }: Props) {
         const rect = div.getBoundingClientRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
-        const hit = findControlAt(sx, sy)
-        if (hit) {
+        const labelHit = findLabelAt(sx, sy)
+        if (labelHit) {
           const mapPt = screenToMap(sx, sy)
-          dragControlId = hit.id
-          dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
-          dragStarted = false
+          dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
+          dragLabelStarted = false
+        } else {
+          const hit = findControlAt(sx, sy)
+          if (hit) {
+            const mapPt = screenToMap(sx, sy)
+            dragControlId = hit.id
+            dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
+            dragStarted = false
+          } else {
+            const overlayHit = findOverlayAt(sx, sy)
+            if (overlayHit) {
+              const mapPt = screenToMap(sx, sy)
+              const proj = useStore.getState().project
+              let pos: { x: number; y: number } | undefined
+              if (overlayHit.kind === 'scalebar') {
+                pos = proj?.scaleBars.find(s => s.id === overlayHit.id)?.position
+              } else {
+                pos = proj?.textLabels.find(t => t.id === overlayHit.id)?.position
+              }
+              if (pos) {
+                dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - pos.x, dy: mapPt.y - pos.y }
+                dragOverlayStarted = false
+              }
+            }
+          }
         }
       }
     }
@@ -398,6 +522,23 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragLabel && pos.size === 1) {
+        if (!dragLabelStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveCourseLabel()
+          dragLabelStarted = true
+        }
+        const rect = div.getBoundingClientRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
+        if (ctrl) {
+          const offset = { x: mapPt.x - dragLabel.dx - ctrl.position.x, y: mapPt.y - dragLabel.dy - ctrl.position.y }
+          useStore.getState().moveCourseLabel(dragLabel.courseId, dragLabel.courseControlId, offset)
+        }
+        return
+      }
+
       if (dragControlId && pos.size === 1) {
         if (!dragStarted) {
           const start = down.get(e.pointerId)
@@ -410,6 +551,24 @@ export function MapCanvas({ loadedMap }: Props) {
         useStore.getState().moveControl(dragControlId, {
           x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy,
         })
+        return
+      }
+
+      if (dragOverlay && pos.size === 1) {
+        if (!dragOverlayStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveOverlay()
+          dragOverlayStarted = true
+        }
+        const rect = div.getBoundingClientRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
+        if (dragOverlay.kind === 'scalebar') {
+          useStore.getState().moveScaleBar(dragOverlay.id, newPos)
+        } else {
+          useStore.getState().moveTextLabel(dragOverlay.id, newPos)
+        }
         return
       }
 
@@ -443,6 +602,15 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (longPressFired) { longPressFired = false; return }
 
+      // End label drag
+      if (dragLabel && dragLabelStarted) {
+        dragLabel = null
+        dragLabelStarted = false
+        return
+      }
+      dragLabel = null
+      dragLabelStarted = false
+
       // End bend point drag
       if (dragBend && dragBendStarted) {
         dragBend = null
@@ -462,6 +630,15 @@ export function MapCanvas({ loadedMap }: Props) {
       dragControlId = null
       dragOffset = null
       dragStarted = false
+
+      // End overlay drag
+      if (dragOverlay && dragOverlayStarted) {
+        dragOverlay = null
+        dragOverlayStarted = false
+        return
+      }
+      dragOverlay = null
+      dragOverlayStarted = false
 
       if (!start) return
       if (e.pointerType === 'mouse' && e.button !== 0) return
@@ -493,8 +670,14 @@ export function MapCanvas({ loadedMap }: Props) {
         if (hitControl) {
           useStore.getState().deleteControl(hitControl.id)
         } else {
-          const hitAnn = findAnnotationAt(sx, sy)
-          if (hitAnn) useStore.getState().deleteAnnotation(hitAnn.id)
+          const hitOverlay = findOverlayAt(sx, sy)
+          if (hitOverlay) {
+            if (hitOverlay.kind === 'scalebar') useStore.getState().deleteScaleBar(hitOverlay.id)
+            else useStore.getState().deleteTextLabel(hitOverlay.id)
+          } else {
+            const hitAnn = findAnnotationAt(sx, sy)
+            if (hitAnn) useStore.getState().deleteAnnotation(hitAnn.id)
+          }
         }
         return
       }
@@ -505,8 +688,19 @@ export function MapCanvas({ loadedMap }: Props) {
           addControlToCourse(selectedCourseId, hitControl.id)
         } else {
           setSelectedControl(hitControl.id)
+          setSelectedOverlay(null)
         }
         return
+      }
+
+      // Overlay hit (select mode only, outside course mode)
+      if (!selectedCourseId && activeTool === 'select') {
+        const overlayHit = findOverlayAt(sx, sy)
+        if (overlayHit) {
+          setSelectedOverlay(overlayHit.id)
+          setSelectedControl(null)
+          return
+        }
       }
 
       // In course-building mode, background taps deselect
@@ -525,6 +719,12 @@ export function MapCanvas({ loadedMap }: Props) {
           addAnnotationPoint(mapPt)
           commitAnnotation('crossing_point')
           break
+        case 'place-scalebar':
+          addScaleBar(mapPt)
+          break
+        case 'place-text':
+          addTextLabel(mapPt)
+          break
         case 'measure-scale':
           if (!ms) {
             measureStartRef.current = mapPt
@@ -535,12 +735,14 @@ export function MapCanvas({ loadedMap }: Props) {
           break
         case 'select':
           setSelectedControl(null)
+          setSelectedOverlay(null)
           break
       }
     }
 
     function onCancel(e: PointerEvent) {
       clearLongPress()
+      dragLabel = null; dragLabelStarted = false
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
     }
@@ -671,6 +873,12 @@ export function MapCanvas({ loadedMap }: Props) {
             pendingPoints={editor.pendingAnnotationPoints}
             pendingType={getAnnotationType()}
             map={project.map}
+          />
+          <OverlaysLayer
+            scaleBars={project.scaleBars}
+            textLabels={project.textLabels}
+            map={project.map}
+            selectedOverlayId={editor.selectedOverlayId}
           />
           <ControlsLayer
             controls={project.controls}

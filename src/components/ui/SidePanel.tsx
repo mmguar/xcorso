@@ -43,7 +43,7 @@ export function SidePanel() {
         hidden md:flex flex-col
         shrink-0 border-l border-gray-200 bg-white
         transition-[width] duration-200
-        ${collapsed ? 'w-12' : 'w-72 overflow-hidden'}
+        ${collapsed ? 'w-12' : 'w-76 overflow-hidden'}
       `}>
         {collapsed ? (
           <CollapsedSidebar onExpand={() => setCollapsed(false)} />

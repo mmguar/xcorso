@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   Annotation, AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
-  CircleGap, LegGap, AppearanceSettings,
+  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
@@ -14,6 +14,7 @@ interface EditorState {
   activeTool: ActiveTool
   selectedControlId: string | null
   selectedCourseId: string | null
+  selectedOverlayId: string | null
   viewport: Viewport
   mapSaturation: number
   gapSize: number // gap tool size in degrees (for circles) / fraction (for legs)
@@ -69,6 +70,7 @@ interface AppActions {
   removeControlFromCourse: (courseId: string, courseControlId: string) => void
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
+  updateCourseClimb: (id: string, climb: number | undefined) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
 
   // Classes
@@ -92,11 +94,28 @@ interface AppActions {
   removeLegBendPoint: (courseId: string, courseControlId: string, index: number) => void
   clearLegBendPoints: (courseId: string, courseControlId: string) => void
 
+  // Course label offsets
+  beginMoveCourseLabel: () => void
+  moveCourseLabel: (courseId: string, courseControlId: string, offset: MapPoint) => void
+
   // Annotations
   addAnnotationPoint: (point: MapPoint) => void
   commitAnnotation: (type: AnnotationType) => void
   cancelAnnotation: () => void
   deleteAnnotation: (id: string) => void
+
+  // Scale bars
+  addScaleBar: (position: MapPoint) => ScaleBar
+  updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>) => void
+  deleteScaleBar: (id: string) => void
+  beginMoveOverlay: () => void
+  moveScaleBar: (id: string, position: MapPoint) => void
+
+  // Text labels
+  addTextLabel: (position: MapPoint) => TextLabel
+  updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>) => void
+  deleteTextLabel: (id: string) => void
+  moveTextLabel: (id: string, position: MapPoint) => void
 
   // Map rendering
   setLoadedMap: (map: LoadedMap | null) => void
@@ -105,6 +124,7 @@ interface AppActions {
   setActiveTool: (tool: ActiveTool) => void
   setSelectedControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
+  setSelectedOverlay: (id: string | null) => void
   setViewport: (viewport: Viewport) => void
   setMapSaturation: (saturation: number) => void
   setGapSize: (size: number) => void
@@ -133,6 +153,7 @@ const defaultEditor: EditorState = {
   activeTool: 'select',
   selectedControlId: null,
   selectedCourseId: null,
+  selectedOverlayId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,
   gapSize: 35,
@@ -197,11 +218,15 @@ export const useStore = create<Store>((set, get) => {
         courses: [],
         classes: [],
         annotations: [],
+        scaleBars: [],
+        textLabels: [],
       }
       set({ project, mapFileData: mapData, undoStack: [], redoStack: [] })
     },
 
     loadProject: (project, mapData) => {
+      if (!project.scaleBars) project.scaleBars = []
+      if (!project.textLabels) project.textLabels = []
       set({ project, mapFileData: mapData, undoStack: [], redoStack: [], editor: defaultEditor })
     },
 
@@ -474,6 +499,13 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
+    updateCourseClimb: (id, climb) => {
+      mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.climb = climb
+      })
+    },
+
     updateCourseShowPoints: (id, showPoints) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
@@ -621,6 +653,26 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
+    // ── Course label offsets ─────────────────────────────────────────────
+
+    beginMoveCourseLabel: () => {
+      const { project, undoStack } = get()
+      if (!project) return
+      set({
+        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
+        redoStack: [],
+      })
+    },
+
+    moveCourseLabel: (courseId, courseControlId, offset) => {
+      mutateProjectSilent(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.labelOffset = offset
+      })
+    },
+
     // ── Annotations ───────────────────────────────────────────────────────
 
     addAnnotationPoint: (point) => {
@@ -649,6 +701,79 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => { p.annotations = p.annotations.filter(a => a.id !== id) })
     },
 
+    // ── Scale bars ───────────────────────────────────────────────────────
+
+    addScaleBar: (position) => {
+      const sb: ScaleBar = {
+        id: uuidv4(), position, segments: 3, segmentLengthM: 100, bgAlpha: 0.8,
+      }
+      mutateProject(p => { p.scaleBars.push(sb) })
+      set(state => ({ editor: { ...state.editor, selectedOverlayId: sb.id } }))
+      return sb
+    },
+
+    updateScaleBar: (id, updates) => {
+      mutateProject(p => {
+        const sb = p.scaleBars.find(s => s.id === id)
+        if (sb) Object.assign(sb, updates)
+      })
+    },
+
+    deleteScaleBar: (id) => {
+      mutateProject(p => { p.scaleBars = p.scaleBars.filter(s => s.id !== id) })
+      set(state => ({
+        editor: { ...state.editor, selectedOverlayId: state.editor.selectedOverlayId === id ? null : state.editor.selectedOverlayId },
+      }))
+    },
+
+    beginMoveOverlay: () => {
+      const { project, undoStack } = get()
+      if (!project) return
+      set({
+        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
+        redoStack: [],
+      })
+    },
+
+    moveScaleBar: (id, position) => {
+      mutateProjectSilent(p => {
+        const sb = p.scaleBars.find(s => s.id === id)
+        if (sb) sb.position = position
+      })
+    },
+
+    // ── Text labels ──────────────────────────────────────────────────────
+
+    addTextLabel: (position) => {
+      const tl: TextLabel = {
+        id: uuidv4(), position, text: 'Text', fontSizeMm: 4, color: '#000000',
+      }
+      mutateProject(p => { p.textLabels.push(tl) })
+      set(state => ({ editor: { ...state.editor, selectedOverlayId: tl.id } }))
+      return tl
+    },
+
+    updateTextLabel: (id, updates) => {
+      mutateProject(p => {
+        const tl = p.textLabels.find(t => t.id === id)
+        if (tl) Object.assign(tl, updates)
+      })
+    },
+
+    deleteTextLabel: (id) => {
+      mutateProject(p => { p.textLabels = p.textLabels.filter(t => t.id !== id) })
+      set(state => ({
+        editor: { ...state.editor, selectedOverlayId: state.editor.selectedOverlayId === id ? null : state.editor.selectedOverlayId },
+      }))
+    },
+
+    moveTextLabel: (id, position) => {
+      mutateProjectSilent(p => {
+        const tl = p.textLabels.find(t => t.id === id)
+        if (tl) tl.position = position
+      })
+    },
+
     // ── Map rendering ────────────────────────────────────────────────────
 
     setLoadedMap: (map) => set({ loadedMap: map }),
@@ -671,9 +796,16 @@ export const useStore = create<Store>((set, get) => {
           ...state.editor,
           selectedCourseId: id,
           selectedControlId: id ? null : state.editor.selectedControlId,
+          selectedOverlayId: id ? null : state.editor.selectedOverlayId,
           activeTool: id ? (state.editor.activeTool === 'gap' || state.editor.activeTool === 'bend' ? state.editor.activeTool : 'select') : state.editor.activeTool,
           pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
         },
+      }))
+    },
+
+    setSelectedOverlay: (id) => {
+      set(state => ({
+        editor: { ...state.editor, selectedOverlayId: id, selectedControlId: id ? null : state.editor.selectedControlId },
       }))
     },
 
