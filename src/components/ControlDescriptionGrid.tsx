@@ -30,8 +30,6 @@ interface GridProps {
   course: Course
   onRemove?: (courseControlId: string) => void
   onReorder?: (reordered: CourseControl[]) => void
-  legDistances?: number[]
-  totalDistance?: number
 }
 
 interface RowData {
@@ -41,7 +39,7 @@ interface RowData {
   legDist?: number
 }
 
-export function ControlDescriptionGrid({ course, onRemove, onReorder, legDistances, totalDistance }: GridProps) {
+export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   const project = useStore(s => s.project!)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
@@ -49,7 +47,7 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder, legDistanc
   const distances = computeCourseDistances(course, project.controls, project.map)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
-  const showDist = legDistances != null && legDistances.length > 0
+  const showDist = distances.legs.length > 0
 
   let seq = 0
   let filteredIdx = 0
@@ -62,7 +60,7 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder, legDistanc
       cc,
       ctrl,
       seq: ctrl.type === 'control' ? seq : 0,
-      legDist: filteredIdx > 0 ? legDistances?.[filteredIdx - 1] : undefined,
+      legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
     })
     filteredIdx++
   }
@@ -87,56 +85,39 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder, legDistanc
 
   return (
     <div className="overflow-x-auto">
-      <table className="border-collapse" style={{ fontSize: 11 }}>
-        <thead>
-          <tr>
-            <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
-            <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
-            {columns.map(col => (
-              <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
-                style={{ width: CELL, minWidth: CELL }} title={col.label}>
-                {col.id}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {/* Course header row */}
-          <tr>
-            <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
-              {course.name}
-              {distances.total > 0 && (
-                <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
-              )}
-              {course.climb != null && course.climb > 0 && (
-                <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
-              )}
-            </td>
-          </tr>
-
-          {resolvedControls.map((ctrl) => {
-            if (ctrl.type === 'control') seq++
-            const seqLabel = ctrl.type === 'start' ? '△'
-              : ctrl.type === 'finish' ? '◎'
-              : String(seq)
-            const desc = ctrl.description ?? {}
-
-            return (
-              <tr key={ctrl.id}>
-                {/* Column A: sequence */}
-                <td className={`${BORDER} text-center font-bold`} style={{ width: CELL, height: CELL }}>
-                  {seqLabel}
-                </td>
-                {/* Column B: code */}
-                <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
-                  {defaultControlLabel(ctrl)}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={course.controls.map(cc => cc.id)} strategy={verticalListSortingStrategy}>
+          <table className="border-collapse" style={{ fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
+                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
+                {columns.map(col => (
+                  <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
+                    style={{ width: CELL, minWidth: CELL }} title={col.label}>
+                    {col.id}
+                  </th>
+                ))}
+                {showDist && <th className="px-1" />}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
+                  {course.name}
+                  {distances.total > 0 && (
+                    <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
+                  )}
+                  {course.climb != null && course.climb > 0 && (
+                    <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
+                  )}
                 </td>
                 {showDist && <td />}
               </tr>
 
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8 + (showDist ? 1 : 0)} className="text-center text-xs text-gray-400 py-3">
+                  <td colSpan={8} className="text-center text-xs text-gray-400 py-3">
                     Click controls on the map to add them.
                   </td>
                 </tr>
