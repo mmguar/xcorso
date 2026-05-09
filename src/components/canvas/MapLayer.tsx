@@ -4,7 +4,7 @@
  * Bitmap / PDF → <image> element.
  */
 
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import type { LoadedMap } from '../../lib/mapLoader'
 
 interface Props {
@@ -12,7 +12,7 @@ interface Props {
   useRaster?: boolean
 }
 
-export function MapLayer({ loadedMap, useRaster = true }: Props) {
+export const MapLayer = memo(function MapLayer({ loadedMap, useRaster = true }: Props) {
   const gRef = useRef<SVGGElement>(null)
 
   useEffect(() => {
@@ -69,4 +69,4 @@ export function MapLayer({ loadedMap, useRaster = true }: Props) {
       style={{ pointerEvents: 'none' }}
     />
   )
-}
+})

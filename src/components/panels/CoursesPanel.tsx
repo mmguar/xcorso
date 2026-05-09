@@ -3,9 +3,11 @@ import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
+import { useRenderTracker } from '../../lib/perf'
 import type { Course } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
+  useRenderTracker('CourseEditor')
   const project = useStore(s => s.project!)
   const reorderCourseControls = useStore(s => s.reorderCourseControls)
   const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
@@ -201,6 +203,7 @@ function ClassesSection() {
 }
 
 export function CoursesPanel() {
+  useRenderTracker('CoursesPanel')
   const project = useStore(s => s.project!)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const addCourse = useStore(s => s.addCourse)

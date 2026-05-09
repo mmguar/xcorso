@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
+import { useRenderTracker } from '../../lib/perf'
 import { MapLayer } from './MapLayer'
 import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
@@ -22,6 +23,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 interface Props { loadedMap: LoadedMap }
 
 export function MapCanvas({ loadedMap }: Props) {
+  useRenderTracker('MapCanvas')
   const divRef = useRef<HTMLDivElement>(null)
 
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
@@ -30,12 +32,15 @@ export function MapCanvas({ loadedMap }: Props) {
   function setVp(next: Viewport) {
     vpRef.current = next
     setVpState(next)
-    useStore.getState().setViewport(next)
   }
 
   // ── Store ──────────────────────────────────────────────────────────────────
   const project  = useStore(s => s.project!)
-  const editor   = useStore(s => s.editor)
+  const activeTool = useStore(s => s.editor.activeTool)
+  const selectedCourseId = useStore(s => s.editor.selectedCourseId)
+  const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
+  const appearance = useStore(s => s.editor.appearance)
+  const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
   const addControl               = useStore(s => s.addControl)
   const setSelectedControl       = useStore(s => s.setSelectedControl)
   const addAnnotationPoint       = useStore(s => s.addAnnotationPoint)
@@ -60,6 +65,8 @@ export function MapCanvas({ loadedMap }: Props) {
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
   const [hoverScreenPt, setHoverScreenPt] = useState<{ x: number; y: number } | null>(null)
+  const hoverScreenPtRef = useRef(hoverScreenPt)
+  hoverScreenPtRef.current = hoverScreenPt
 
   // ── Fit to screen on map load ──────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -790,6 +797,11 @@ export function MapCanvas({ loadedMap }: Props) {
 
     function onHover(e: PointerEvent) {
       if (e.pointerType === 'touch') return
+      const state = useStore.getState()
+      if (state.editor.activeTool !== 'gap') {
+        if (hoverScreenPtRef.current != null) setHoverScreenPt(null)
+        return
+      }
       const rect = div.getBoundingClientRect()
       setHoverScreenPt({ x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
@@ -819,23 +831,23 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   function getAnnotationType(): AnnotationType | null {
-    if (editor.activeTool === 'forbidden-route') return 'forbidden_route'
-    if (editor.activeTool === 'crossing-point')  return 'crossing_point'
-    if (editor.activeTool === 'out-of-bounds')   return 'out_of_bounds'
+    if (activeTool === 'forbidden-route') return 'forbidden_route'
+    if (activeTool === 'crossing-point')  return 'crossing_point'
+    if (activeTool === 'out-of-bounds')   return 'out_of_bounds'
     return null
   }
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const gapSize = useStore(s => s.editor.gapSize)
-  const selectedCourse = project.courses.find(c => c.id === editor.selectedCourseId) ?? null
-  const isCourseMode = !!editor.selectedCourseId
+  const selectedCourse = project.courses.find(c => c.id === selectedCourseId) ?? null
+  const isCourseMode = !!selectedCourseId
 
-  const showGapRing = editor.activeTool === 'gap' && hoverScreenPt != null
+  const showGapRing = activeTool === 'gap' && hoverScreenPt != null
 
-  const cursor = editor.activeTool === 'bend' ? 'crosshair'
-    : editor.activeTool === 'gap' ? 'none'
+  const cursor = activeTool === 'bend' ? 'crosshair'
+    : activeTool === 'gap' ? 'none'
     : isCourseMode ? 'default'
-    : editor.activeTool === 'select' ? 'grab'
+    : activeTool === 'select' ? 'grab'
     : 'crosshair'
 
   return (
@@ -865,12 +877,12 @@ export function MapCanvas({ loadedMap }: Props) {
             course={selectedCourse}
             controls={project.controls}
             map={project.map}
-            showBendHandles={editor.activeTool === 'bend'}
-            appearance={editor.appearance}
+            showBendHandles={activeTool === 'bend'}
+            appearance={appearance}
           />
           <AnnotationsLayer
             annotations={project.annotations}
-            pendingPoints={editor.pendingAnnotationPoints}
+            pendingPoints={pendingAnnotationPoints}
             pendingType={getAnnotationType()}
             map={project.map}
           />
@@ -878,7 +890,7 @@ export function MapCanvas({ loadedMap }: Props) {
             scaleBars={project.scaleBars}
             textLabels={project.textLabels}
             map={project.map}
-            selectedOverlayId={editor.selectedOverlayId}
+            selectedOverlayId={selectedOverlayId}
           />
           <ControlsLayer
             controls={project.controls}
@@ -886,12 +898,12 @@ export function MapCanvas({ loadedMap }: Props) {
         </g>
         {showGapRing && hoverScreenPt && (() => {
           const upm = unitsPerMm(project.map)
-          const r = CIRCLE_R_MM * upm * editor.appearance.controlScale * vp.scale
+          const r = CIRCLE_R_MM * upm * appearance.controlScale * vp.scale
           const circumference = 2 * Math.PI * r
           const gapFraction = gapSize / 360
           const gapLen = circumference * gapFraction
           const arcLen = circumference - gapLen
-          const sw = Math.max(1, 0.35 * upm * editor.appearance.lineWidth * vp.scale)
+          const sw = Math.max(1, 0.35 * upm * appearance.lineWidth * vp.scale)
           const { x, y } = hoverScreenPt
           return (
             <g style={{ pointerEvents: 'none' }}>

@@ -20,6 +20,7 @@ import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields } from '../lib/iofSymbols'
 import { defaultControlLabel } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
+import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
 import type { Course, Control, CourseControl } from '../types'
 
@@ -40,6 +41,7 @@ interface RowData {
 }
 
 export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
+  useRenderTracker('ControlDescriptionGrid')
   const project = useStore(s => s.project!)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
