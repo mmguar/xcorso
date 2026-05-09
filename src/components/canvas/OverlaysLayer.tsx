@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { ScaleBar, TextLabel, MapConfig } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 
@@ -140,7 +141,7 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
   )
 }
 
-export function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId }: Props) {
+export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId }: Props) {
   return (
     <g style={{ pointerEvents: 'none' }}>
       {scaleBars.map(sb => (
@@ -161,4 +162,4 @@ export function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId }:
       ))}
     </g>
   )
-}
+})

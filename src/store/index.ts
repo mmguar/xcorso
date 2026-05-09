@@ -7,6 +7,7 @@ import type {
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
+import { timeClone } from '../lib/perf'
 
 const MAX_UNDO = 100
 
@@ -177,13 +178,12 @@ export const useStore = create<Store>((set, get) => {
   function mutateProject(fn: (p: Project) => void) {
     const { project, undoStack } = get()
     if (!project) return
-    const snapshot = structuredClone(project)
-    const p = structuredClone(project)
+    const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
     set({
       project: p,
-      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), snapshot],
+      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), project],
       redoStack: [],
     })
   }
@@ -191,7 +191,7 @@ export const useStore = create<Store>((set, get) => {
   function mutateProjectSilent(fn: (p: Project) => void) {
     set(state => {
       if (!state.project) return state
-      const p = structuredClone(state.project)
+      const p = timeClone('project-silent', state.project)
       p.meta.updatedAt = new Date().toISOString()
       fn(p)
       return { project: p }

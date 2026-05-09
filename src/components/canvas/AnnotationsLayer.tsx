@@ -5,9 +5,10 @@
  *   709 Out-of-bounds area — crosshatched diagonal lines with boundary
  */
 
-import { useId } from 'react'
+import { memo, useId } from 'react'
 import type { Annotation, MapConfig, MapPoint } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
+import { useRenderTracker } from '../../lib/perf'
 
 interface Props {
   annotations: Annotation[]
@@ -161,7 +162,8 @@ function OutOfBoundsArea({ points, upm, color, patternId }: {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function AnnotationsLayer({ annotations, pendingPoints, pendingType, map }: Props) {
+export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, map }: Props) {
+  useRenderTracker('AnnotationsLayer')
   const color = '#a626ff'
   const baseId = useId()
   const upm = unitsPerMm(map)
@@ -214,4 +216,4 @@ export function AnnotationsLayer({ annotations, pendingPoints, pendingType, map 
       )}
     </g>
   )
-}
+})
