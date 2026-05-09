@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { useRenderTracker } from '../lib/perf'
 import { loadMap } from '../lib/mapLoader'
 import { MapCanvas } from './canvas/MapCanvas'
 import { Header } from './ui/Header'
@@ -14,6 +15,7 @@ import { OverlaySettingsPanel } from './panels/OverlaySettingsPanel'
 interface Props { onGoHome: () => void }
 
 export function EditorScreen({ onGoHome }: Props) {
+  useRenderTracker('EditorScreen')
   const project = useStore(s => s.project!)
   const mapFileData = useStore(s => s.mapFileData)
   const loadedMap = useStore(s => s.loadedMap)

@@ -7,6 +7,7 @@ import type {
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
+import { timeClone } from '../lib/perf'
 
 const MAX_UNDO = 100
 
@@ -125,7 +126,6 @@ interface AppActions {
   setSelectedControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
   setSelectedOverlay: (id: string | null) => void
-  setViewport: (viewport: Viewport) => void
   setMapSaturation: (saturation: number) => void
   setGapSize: (size: number) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void
@@ -177,25 +177,22 @@ export const useStore = create<Store>((set, get) => {
   function mutateProject(fn: (p: Project) => void) {
     const { project, undoStack } = get()
     if (!project) return
-    const snapshot = structuredClone(project)
-    const p = structuredClone(project)
+    const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
     set({
       project: p,
-      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), snapshot],
+      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), project],
       redoStack: [],
     })
   }
 
   function mutateProjectSilent(fn: (p: Project) => void) {
-    set(state => {
-      if (!state.project) return state
-      const p = structuredClone(state.project)
-      p.meta.updatedAt = new Date().toISOString()
-      fn(p)
-      return { project: p }
-    })
+    const { project } = get()
+    if (!project) return
+    fn(project)
+    project.meta.updatedAt = new Date().toISOString()
+    set({ project: { ...project } as Project })
   }
 
   return {
@@ -807,10 +804,6 @@ export const useStore = create<Store>((set, get) => {
       set(state => ({
         editor: { ...state.editor, selectedOverlayId: id, selectedControlId: id ? null : state.editor.selectedControlId },
       }))
-    },
-
-    setViewport: (viewport) => {
-      set(state => ({ editor: { ...state.editor, viewport } }))
     },
 
     setMapSaturation: (saturation) => {

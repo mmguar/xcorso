@@ -1,5 +1,7 @@
+import { memo } from 'react'
 import type { Control, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
+import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, unitsPerMm } from '../../lib/courseUtils'
 
 // ISOM 2017-2 dimensions in mm on paper
@@ -165,7 +167,8 @@ interface Props {
   controls: Control[]
 }
 
-export function ControlsLayer({ controls }: Props) {
+export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
+  useRenderTracker('ControlsLayer')
   const map = useStore(s => s.project!.map)
   const upm = unitsPerMm(map)
   const selectedId = useStore(s => s.editor.selectedControlId)
@@ -231,4 +234,4 @@ export function ControlsLayer({ controls }: Props) {
       })}
     </g>
   )
-}
+})
