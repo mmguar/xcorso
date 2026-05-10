@@ -29,6 +29,14 @@ export function MapCanvas({ loadedMap }: Props) {
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
   const vpRef = useRef<Viewport>(vp)
   const fitScaleRef = useRef<number>(MIN_SCALE)
+  const mapGRef = useRef<SVGGElement>(null)
+  const overlayGRef = useRef<SVGGElement>(null)
+  function syncTransform() {
+    const v = vpRef.current
+    const t = `translate(${v.x},${v.y}) scale(${v.scale})`
+    mapGRef.current?.setAttribute('transform', t)
+    overlayGRef.current?.setAttribute('transform', t)
+  }
   function setVp(next: Viewport) {
     vpRef.current = next
     setVpState(next)
@@ -84,6 +92,9 @@ export function MapCanvas({ loadedMap }: Props) {
     })
   }, [loadedMap])
 
+  // Keep <g> transforms in sync after any React re-render
+  useLayoutEffect(syncTransform)
+
   // ── All native event listeners in one place ────────────────────────────────
   useLayoutEffect(() => {
     const el = divRef.current
@@ -93,6 +104,8 @@ export function MapCanvas({ loadedMap }: Props) {
     const pos  = new Map<number, { x: number; y: number }>()
     const down = new Map<number, { x: number; y: number }>()
     let pinchDist = 0
+    let vpDirty = false
+    let wheelTimer: ReturnType<typeof setTimeout> | null = null
 
     function screenToMap(sx: number, sy: number): MapPoint {
       const v = vpRef.current
@@ -418,7 +431,10 @@ export function MapCanvas({ loadedMap }: Props) {
       const minScale = Math.min(fitScaleRef.current, MIN_SCALE)
       const ns = clamp(v.scale * factor, minScale, MAX_SCALE)
       const ratio = ns / v.scale
-      setVp({ scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) })
+      vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
+      syncTransform()
+      if (wheelTimer) clearTimeout(wheelTimer)
+      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current) }, 150)
     }
 
     // ── Pointer down ─────────────────────────────────────────────────────────
@@ -583,7 +599,9 @@ export function MapCanvas({ loadedMap }: Props) {
         const dx = e.clientX - prev.x
         const dy = e.clientY - prev.y
         const v = vpRef.current
-        setVp({ ...v, x: v.x + dx, y: v.y + dy })
+        vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
+        vpDirty = true
+        syncTransform()
       } else if (pos.size === 2) {
         const [a, b] = [...pos.values()]
         const dist = Math.hypot(b.x - a.x, b.y - a.y)
@@ -595,7 +613,9 @@ export function MapCanvas({ loadedMap }: Props) {
         const minScale = Math.min(fitScaleRef.current, MIN_SCALE)
         const ns = clamp(v.scale * (dist / pinchDist), minScale, MAX_SCALE)
         const ratio = ns / v.scale
-        setVp({ scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) })
+        vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
+        vpDirty = true
+        syncTransform()
         pinchDist = dist
       }
     }
@@ -606,6 +626,11 @@ export function MapCanvas({ loadedMap }: Props) {
       const start = down.get(e.pointerId)
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
+
+      if (vpDirty && pos.size === 0) {
+        vpDirty = false
+        setVpState(vpRef.current)
+      }
 
       if (longPressFired) { longPressFired = false; return }
 
@@ -752,6 +777,10 @@ export function MapCanvas({ loadedMap }: Props) {
       dragLabel = null; dragLabelStarted = false
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
+      if (vpDirty && pos.size === 0) {
+        vpDirty = false
+        setVpState(vpRef.current)
+      }
     }
 
     function onDblClick() {
@@ -818,6 +847,7 @@ export function MapCanvas({ loadedMap }: Props) {
     div.addEventListener('pointerleave', onLeave)
 
     return () => {
+      if (wheelTimer) clearTimeout(wheelTimer)
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
@@ -866,13 +896,13 @@ export function MapCanvas({ loadedMap }: Props) {
           filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
         }}
       >
-        <g transform={`translate(${vp.x},${vp.y}) scale(${vp.scale})`}>
+        <g ref={mapGRef}>
           <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
       </svg>
       {/* Overlay layers — controls, legs, annotations (no filter) */}
       <svg width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
-        <g transform={`translate(${vp.x},${vp.y}) scale(${vp.scale})`}>
+        <g ref={overlayGRef}>
           <LegsLayer
             course={selectedCourse}
             controls={project.controls}
