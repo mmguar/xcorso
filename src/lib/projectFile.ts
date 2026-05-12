@@ -47,6 +47,11 @@ function validateProject(raw: unknown): Project {
   if (!Array.isArray(obj.scaleBars)) obj.scaleBars = []
   if (!Array.isArray(obj.textLabels)) obj.textLabels = []
 
+  const mapScale = typeof mc.scale === 'number' && isFinite(mc.scale) && mc.scale > 0 ? mc.scale : 10000
+  for (const sb of obj.scaleBars as Record<string, unknown>[]) {
+    if (typeof sb.scale !== 'number' || !isFinite(sb.scale) || sb.scale <= 0) sb.scale = mapScale
+  }
+
   for (const c of obj.controls as Record<string, unknown>[]) {
     if (typeof c.id !== 'string') c.id = crypto.randomUUID()
     if (typeof c.code !== 'number' || !isFinite(c.code)) c.code = 0

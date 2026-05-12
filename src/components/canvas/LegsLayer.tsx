@@ -22,10 +22,15 @@ const TRIANGLE_MM  = 6.0
 const SW_MM        = 0.35
 const BEND_HANDLE_R_MM = 0.8
 
-function clipRadius(control: Control, upm: number, controlScale: number): number {
-  const r = CIRCLE_R_MM * upm * controlScale
+function symbolScaleFactor(printScale: number): number {
+  return 15000 / printScale
+}
+
+function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number): number {
+  const scaleFactor = symbolScaleFactor(mapScale)
+  const r = CIRCLE_R_MM * upm * controlScale * scaleFactor * 1.3
   if (control.type === 'start') {
-    const side = TRIANGLE_MM * upm * controlScale
+    const side = TRIANGLE_MM * upm * controlScale * scaleFactor
     return side * Math.sqrt(3) / 2 * 2 / 3
   }
   return r
@@ -104,12 +109,14 @@ function legGapsToDashArray(gaps: LegGap[], lineLen: number): string | null {
 function renderLegs(
   course: Course,
   controlMap: Map<string, Control>,
+  mapScale: number,
   upm: number,
   showBendHandles: boolean,
   appearance: AppearanceSettings,
 ): React.ReactNode[] {
   if (course.controls.length < 2 || course.type === 'score') return []
-  const strokeWidth = SW_MM * upm * appearance.lineWidth
+  const scaleFactor = symbolScaleFactor(mapScale)
+  const strokeWidth = SW_MM * upm * scaleFactor * appearance.lineWidth 
   const legColor = appearance.color || course.color
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const elements: React.ReactNode[] = []
@@ -121,8 +128,8 @@ function renderLegs(
 
     const cc = course.controls[i + 1]
     const bendPoints = cc.legBendPoints
-    const fromR = clipRadius(fromControl, upm, appearance.controlScale)
-    const toR = clipRadius(toControl, upm, appearance.controlScale)
+    const fromR = clipRadius(fromControl, mapScale, upm, appearance.controlScale)
+    const toR = clipRadius(toControl, mapScale, upm, appearance.controlScale)
 
     if (bendPoints && bendPoints.length > 0) {
       const fullPath: MapPoint[] = [fromControl.position, ...bendPoints, toControl.position]
@@ -252,7 +259,7 @@ export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBe
   if (!course) return null
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const upm = unitsPerMm(map)
-  const elements = renderLegs(course, controlMap, upm, showBendHandles, appearance)
+  const elements = renderLegs(course, controlMap, map.scale, upm, showBendHandles, appearance)
   if (elements.length === 0) return null
   return <g style={{ pointerEvents: 'none' }}>{elements}</g>
 })

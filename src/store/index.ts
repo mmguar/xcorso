@@ -106,7 +106,7 @@ interface AppActions {
   deleteAnnotation: (id: string) => void
 
   // Scale bars
-  addScaleBar: (position: MapPoint) => ScaleBar
+  addScaleBar: (position: MapPoint, scale: number) => ScaleBar
   updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>) => void
   deleteScaleBar: (id: string) => void
   beginMoveOverlay: () => void
@@ -280,8 +280,9 @@ export const useStore = create<Store>((set, get) => {
 
     moveControl: (id, position) => {
       mutateProjectSilent(p => {
-        const c = p.controls.find(c => c.id === id)
-        if (c) c.position = position
+        const i = p.controls.findIndex(c => c.id === id)
+        if (i === -1) return
+        p.controls = p.controls.map((c, j) => (j === i ? { ...c, position } : c))
       })
     },
 
@@ -622,11 +623,17 @@ export const useStore = create<Store>((set, get) => {
 
     moveLegBendPoint: (courseId, courseControlId, index, position) => {
       mutateProjectSilent(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
-        const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc?.legBendPoints?.[index]) return
-        cc.legBendPoints[index] = position
+        const ci = p.courses.findIndex(c => c.id === courseId)
+        if (ci === -1) return
+        const course = p.courses[ci]
+        const cci = course.controls.findIndex(cc => cc.id === courseControlId)
+        if (cci === -1) return
+        const cc = course.controls[cci]
+        if (!cc.legBendPoints?.[index]) return
+        const legBendPoints = cc.legBendPoints.map((pt, j) => (j === index ? position : pt))
+        const newCc = { ...cc, legBendPoints }
+        const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
+        p.courses = p.courses.map((c, j) => (j === ci ? { ...course, controls: newControls } : c))
       })
     },
 
@@ -663,10 +670,15 @@ export const useStore = create<Store>((set, get) => {
 
     moveCourseLabel: (courseId, courseControlId, offset) => {
       mutateProjectSilent(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
-        const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.labelOffset = offset
+        const ci = p.courses.findIndex(c => c.id === courseId)
+        if (ci === -1) return
+        const course = p.courses[ci]
+        const cci = course.controls.findIndex(cc => cc.id === courseControlId)
+        if (cci === -1) return
+        const cc = course.controls[cci]
+        const newCc = { ...cc, labelOffset: offset }
+        const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
+        p.courses = p.courses.map((c, j) => (j === ci ? { ...course, controls: newControls } : c))
       })
     },
 
@@ -700,9 +712,9 @@ export const useStore = create<Store>((set, get) => {
 
     // ── Scale bars ───────────────────────────────────────────────────────
 
-    addScaleBar: (position) => {
+    addScaleBar: (position, scale) => {
       const sb: ScaleBar = {
-        id: uuidv4(), position, segments: 3, segmentLengthM: 100, bgAlpha: 0.8,
+        id: uuidv4(), position, segments: 3, segmentLengthM: 100, bgAlpha: 0.8, scale,
       }
       mutateProject(p => { p.scaleBars.push(sb) })
       set(state => ({ editor: { ...state.editor, selectedOverlayId: sb.id } }))
@@ -734,8 +746,9 @@ export const useStore = create<Store>((set, get) => {
 
     moveScaleBar: (id, position) => {
       mutateProjectSilent(p => {
-        const sb = p.scaleBars.find(s => s.id === id)
-        if (sb) sb.position = position
+        const i = p.scaleBars.findIndex(s => s.id === id)
+        if (i === -1) return
+        p.scaleBars = p.scaleBars.map((s, j) => (j === i ? { ...s, position } : s))
       })
     },
 
@@ -766,8 +779,9 @@ export const useStore = create<Store>((set, get) => {
 
     moveTextLabel: (id, position) => {
       mutateProjectSilent(p => {
-        const tl = p.textLabels.find(t => t.id === id)
-        if (tl) tl.position = position
+        const i = p.textLabels.findIndex(t => t.id === id)
+        if (i === -1) return
+        p.textLabels = p.textLabels.map((t, j) => (j === i ? { ...t, position } : t))
       })
     },
 

@@ -316,7 +316,7 @@ export function MapCanvas({ loadedMap }: Props) {
       const upm = unitsPerMm(proj.map)
 
       for (const sb of proj.scaleBars) {
-        const segMmOnPaper = (sb.segmentLengthM * 1000) / proj.map.scale
+        const segMmOnPaper = (sb.segmentLengthM * 1000) / sb.scale
         const segU = segMmOnPaper * upm
         const totalU = segU * sb.segments
         const pad = 1.5 * upm
@@ -752,7 +752,7 @@ export function MapCanvas({ loadedMap }: Props) {
           commitAnnotation('crossing_point')
           break
         case 'place-scalebar':
-          addScaleBar(mapPt)
+          addScaleBar(mapPt, project.map.scale)
           break
         case 'place-text':
           addTextLabel(mapPt)
@@ -953,7 +953,7 @@ export function MapCanvas({ loadedMap }: Props) {
       </svg>
 
       {/* Saturation slider + HD toggle (hidden on mobile — slider is in Header) */}
-      <div className="absolute bottom-2 left-2 hidden md:flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
+      <div className="absolute top-2 left-2 hidden md:flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
         <span className="text-[10px] text-gray-400 select-none">Map</span>
         <input
           type="range"

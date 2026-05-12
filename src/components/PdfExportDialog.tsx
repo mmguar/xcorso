@@ -385,7 +385,7 @@ export function PdfExportDialog({ onClose }: Props) {
             <input
               type="text"
               inputMode="numeric"
-              value={scaleInput}
+              value={parseInt(scaleInput)}
               onChange={e => setScaleInput(e.target.value)}
               onBlur={() => {
                 const v = parseInt(scaleInput)
@@ -400,7 +400,7 @@ export function PdfExportDialog({ onClose }: Props) {
                 onClick={() => { setPrintScale(project.map.scale); setScaleInput(String(project.map.scale)) }}
                 className="text-xs text-orange-600 hover:text-orange-800"
               >
-                Reset to 1:{project.map.scale.toLocaleString()}
+                Reset to 1:{parseInt(project.map.scale.toLocaleString())}
               </button>
             )}
             {fitScale && fitScale !== printScale && (
@@ -408,7 +408,7 @@ export function PdfExportDialog({ onClose }: Props) {
                 onClick={() => { setPrintScale(fitScale); setScaleInput(String(fitScale)) }}
                 className="text-xs text-orange-600 hover:text-orange-800"
               >
-                Fit to page (1:{fitScale.toLocaleString()})
+                Fit to page (1:{parseInt(fitScale.toLocaleString())})
               </button>
             )}
           </div>
