@@ -10,6 +10,10 @@ const SW_MM        = 0.35  // stroke width
 const TRIANGLE_MM  = 6.0   // start triangle side
 const FINISH_IR_MM = 1.75  // finish inner circle radius
 
+function symbolScaleFactor(printScale: number): number {
+  return 15000 / printScale
+}
+
 function gapsToDashArray(gaps: CircleGap[], circumference: number): { dashArray: string; dashOffset: number } | null {
   if (gaps.length === 0) return null
   const sorted = [...gaps].sort((a, b) => a.startAngle - b.startAngle)
@@ -50,14 +54,28 @@ interface ShapeProps {
   control: Control
   color: string
   label: string
+  mapScale: number
   upm: number
   appearance: AppearanceSettings
   labelOffset?: MapPoint
 }
 
-function StartTriangle({ control, color, label, upm, appearance, labelOffset }: ShapeProps) {
-  const scale = appearance.controlScale
-  const cr = CIRCLE_R_MM * upm * scale
+function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
+  if (!appearance.outlineEnabled) return {}
+  const outlineSw = appearance.outlineWidth * upm
+  return {
+    stroke: appearance.outlineColor,
+    strokeWidth: outlineSw * 2,
+    strokeLinejoin: 'round' as const,
+    strokeLinecap: 'round' as const,
+    paintOrder: 'stroke fill' as const,
+  }
+}
+
+function StartTriangle({ control, color, label, mapScale, upm, appearance, labelOffset }: ShapeProps) {
+  const scaleFactor = symbolScaleFactor(mapScale)
+  const scale = appearance.controlScale * scaleFactor 
+  const cr = CIRCLE_R_MM * upm *  scale
   const { x, y } = control.position
   const side = TRIANGLE_MM * upm * scale
   const halfSide = side / 2
@@ -66,7 +84,7 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset }: 
   const botY = y + h / 3
   const points = `${x},${topY} ${x - halfSide},${botY} ${x + halfSide},${botY}`
   const perimeter = side * 3
-  const sw = SW_MM * upm * appearance.lineWidth
+  const sw = SW_MM * upm * scaleFactor * appearance.lineWidth 
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const lx = labelOffset ? x + labelOffset.x : x + halfSide * 1.1
@@ -84,21 +102,23 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset }: 
       />
       <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto">
+        textAnchor="start" dominantBaseline="auto"
+        {...labelOutlineSvgProps(appearance, upm)}>
         {label}
       </text>
     </g>
   )
 }
 
-function FinishCircles({ control, color, label, upm, appearance, labelOffset }: ShapeProps) {
+function FinishCircles({ control, color, label, mapScale, upm, appearance, labelOffset }: ShapeProps) {
   const scale = appearance.controlScale
-  const cr = CIRCLE_R_MM * upm * scale
-  const innerR = FINISH_IR_MM * upm * scale
+  const scaleFactor = symbolScaleFactor(mapScale)
+  const cr = CIRCLE_R_MM * upm * scaleFactor * scale
+  const innerR = FINISH_IR_MM * upm * scaleFactor* scale
   const { x, y } = control.position
-  const sw = SW_MM * upm * appearance.lineWidth
-  const outerCirc = 2 * Math.PI * cr
-  const innerCirc = 2 * Math.PI * innerR
+  const sw = SW_MM * upm * scaleFactor * appearance.lineWidth
+  const outerCirc = 2 * Math.PI * scaleFactor * cr
+  const innerCirc = 2 * Math.PI * scaleFactor * innerR
   const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
   const innerDash = control.gaps?.length ? gapsToDashArray(control.gaps, innerCirc) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
@@ -124,18 +144,20 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset }: 
       />
       <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto">
+        textAnchor="start" dominantBaseline="auto"
+        {...labelOutlineSvgProps(appearance, upm)}>
         {label}
       </text>
     </g>
   )
 }
 
-function ControlCircle({ control, color, label, upm, appearance, labelOffset }: ShapeProps) {
-  const cr = CIRCLE_R_MM * upm * appearance.controlScale
-  const sw = SW_MM * upm * appearance.lineWidth
+function ControlCircle({ control, color, label, mapScale, upm, appearance, labelOffset }: ShapeProps) {
+  const scaleFactor = symbolScaleFactor(mapScale)
+  const cr = CIRCLE_R_MM * upm * scaleFactor * appearance.controlScale
+  const sw = SW_MM * scaleFactor * upm * appearance.lineWidth
   const { x, y } = control.position
-  const circumference = 2 * Math.PI * cr
+  const circumference = 2 * Math.PI * cr * scaleFactor
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
@@ -156,7 +178,8 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset }: 
       />
       <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto">
+        textAnchor="start" dominantBaseline="auto"
+        {...labelOutlineSvgProps(appearance, upm)}>
         {label}
       </text>
     </g>
@@ -228,7 +251,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
 
         return (
           <g key={control.id} opacity={opacity}>
-            <Shape control={control} color={color} label={label} upm={upm} appearance={appearance} labelOffset={labelOffset} />
+            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} />
           </g>
         )
       })}

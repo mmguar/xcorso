@@ -127,6 +127,7 @@ export interface ScaleBar {
   segments: number           // number of segments (e.g. 3)
   segmentLengthM: number     // real-world length per segment in metres (e.g. 100)
   bgAlpha: number            // 0 = transparent, 1 = opaque white
+  scale: number              // scale for the bar
 }
 
 export interface TextLabel {

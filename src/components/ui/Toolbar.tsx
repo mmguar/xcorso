@@ -6,7 +6,7 @@
 
 import { useEffect } from 'react'
 import {
-  MousePointer2, Triangle, Target, Slash, X, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
+  MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
   RulerDimensionLine, Type,
 } from 'lucide-react'
 import { useStore } from '../../store'
@@ -32,8 +32,8 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'place-start': s => <Triangle size={s} />,
   'place-finish': s => <Target size={s} />,
   'place-control': s => <Circle size={s} />,
-  'forbidden-route': s => <Slash size={s} />,
-  'crossing-point': s => <X size={s} />,
+  'forbidden-route': s => <X size={s} />,
+  'crossing-point': s => <ChevronsRightLeft size={s} />,
   'out-of-bounds': s => <Ban size={s} />,
   'gap': s => <CircleDashed size={s} />,
   'bend': s => <Waypoints size={s} />,
@@ -188,14 +188,23 @@ export function Toolbar() {
   }
 
   return (
-    <div className="
-      absolute bottom-4 left-1/2 -translate-x-1/2
-      flex items-center gap-0.5 md:gap-1
-      bg-white/95 backdrop-blur border border-gray-200 shadow-lg
-      rounded-2xl px-1.5 py-1 md:px-2 md:py-1.5
-      z-20
-    ">
-      {tools.map(({ tool, label, shortcut }) => (
+<div className="
+  /* Position and Centering */
+  absolute bottom-4 left-0 right-0 mx-auto w-fit
+  
+  /* Layout */
+  flex flex-wrap justify-center items-center 
+  gap-0.5 md:gap-1
+  
+  /* Constraints */
+  max-w-[95vw] 
+  
+  /* Aesthetics */
+  bg-white/95 backdrop-blur border border-gray-200 shadow-lg
+  rounded-2xl px-1.5 py-1 md:px-2 md:py-1.5
+  z-20
+">
+          {tools.map(({ tool, label, shortcut }) => (
         <button
           key={tool}
           onClick={() => setActiveTool(tool)}
