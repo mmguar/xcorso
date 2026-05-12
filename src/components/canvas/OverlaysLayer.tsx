@@ -11,17 +11,19 @@ interface Props {
 
 function ScaleBarSvg({ sb, map, selected }: { sb: ScaleBar; map: MapConfig; selected: boolean }) {
   const upm = unitsPerMm(map)
-  const scaleStr = `1:${map.scale.toLocaleString()}`
+  /** Bar graphic is drawn for this denominator; falls back to map scale for older projects. */
+  const scaleDen = sb.scale ?? map.scale
+  const scaleStr = `1:${Math.round(scaleDen)}`
 
   // Convert segment real-world metres to map units
   // realMetres -> mm on paper: realM * 1_000_000 / scale (µm) / 1000 = realM * 1000 / scale mm
-  const segMmOnPaper = (sb.segmentLengthM * 1000) / map.scale
+  const segMmOnPaper = (sb.segmentLengthM * 1000) / scaleDen
   const segUnits = segMmOnPaper * upm
   const totalUnits = segUnits * sb.segments
 
   const barH = 2.0 * upm       // bar height: 2mm on paper
   const textH = 2.5 * upm      // text size: 2.5mm
-  const pad = 1.5 * upm        // padding
+  const pad = 3 * upm        // padding
   const strokeW = 0.2 * upm
   const tickH = 0.5 * upm      // small ticks above bar
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Trash2, X } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ScaleBar, TextLabel } from '../../types'
@@ -9,7 +9,14 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
 
   const [segments, setSegments] = useState(String(sb.segments))
+  const [scale, setScale] = useState(String(sb.scale))
   const [segLen, setSegLen] = useState(String(sb.segmentLengthM))
+
+  useEffect(() => {
+    setSegments(String(sb.segments))
+    setScale(String(sb.scale))
+    setSegLen(String(sb.segmentLengthM))
+  }, [sb.id, sb.segments, sb.scale, sb.segmentLengthM])
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -31,6 +38,24 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
           </button>
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Scale 1:</span>
+        <input
+          type="number"
+          min={100}
+          max={100000}
+          value={parseInt(scale)}
+          onChange={e => setScale(e.target.value)}
+          onBlur={() => {
+            const n = parseInt(scale)
+            if (!isNaN(n) && n >= 100 && n <= 100000) updateScaleBar(sb.id, { scale: n })
+            else setScale(String(sb.scale))
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        />
+      </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <span className="w-16 shrink-0">Segments</span>

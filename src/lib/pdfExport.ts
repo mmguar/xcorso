@@ -19,20 +19,6 @@ const FINISH_SW = 0.35
 
 const LEG_W = 0.35
 
-const NUMBER_SIZE_PT = 8.5
-
-const ROUTE_LINE_W = 0.35
-const ROUTE_X_ARM = 1.5
-const ROUTE_X_W = 0.35
-const ROUTE_X_SPACE = 5.0
-
-const CROSS_W = 0.6
-const CROSS_HALF = 1.5
-const CROSS_H = 1.5
-
-const OOB_HATCH_SPACE = 1.2
-const OOB_HATCH_W = 0.2
-
 export const MARGIN = 10
 const TILE_OVERLAP = 15
 const MAX_RASTER_PX = 5000
@@ -404,37 +390,52 @@ function setColor(doc: jsPDF, hex: string) {
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
 
-function drawControlSymbol(doc: jsPDF, type: string, pos: Pos) {
+function symbolScaleFactor(printScale: number): number {
+  return 15000 / printScale
+}
+
+function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number) {
+  const sf = symbolScaleFactor(printScale)
+  const startSide = START_SIDE * sf
+  const startSw = START_SW * sf
+  const finishOuter = FINISH_R_OUTER * sf
+  const finishInner = FINISH_R_INNER * sf
+  const finishSw = FINISH_SW * sf
+  const controlR = CONTROL_R * sf
+  const controlSw = CONTROL_SW * sf
+
   if (type === 'start') {
-    const h = START_SIDE * Math.sqrt(3) / 2
-    doc.setLineWidth(START_SW)
+    const h = startSide * Math.sqrt(3) / 2
+    doc.setLineWidth(startSw)
     doc.triangle(
       pos.x, pos.y - h * 2 / 3,
-      pos.x - START_SIDE / 2, pos.y + h / 3,
-      pos.x + START_SIDE / 2, pos.y + h / 3,
+      pos.x - startSide / 2, pos.y + h / 3,
+      pos.x + startSide / 2, pos.y + h / 3,
       'S',
     )
   } else if (type === 'finish') {
-    doc.setLineWidth(FINISH_SW)
-    doc.circle(pos.x, pos.y, FINISH_R_OUTER, 'S')
-    doc.circle(pos.x, pos.y, FINISH_R_INNER, 'S')
+    doc.setLineWidth(finishSw)
+    doc.circle(pos.x, pos.y, finishOuter, 'S')
+    doc.circle(pos.x, pos.y, finishInner, 'S')
   } else {
-    doc.setLineWidth(CONTROL_SW)
-    doc.circle(pos.x, pos.y, CONTROL_R, 'S')
+    doc.setLineWidth(controlSw)
+    doc.circle(pos.x, pos.y, controlR, 'S')
   }
 }
 
-function clipR(type: string): number {
-  if (type === 'start') return START_SIDE * Math.sqrt(3) / 2 * 2 / 3
-  if (type === 'finish') return FINISH_R_OUTER
-  return CONTROL_R
+function clipR(type: string, printScale: number): number {
+  const sf = symbolScaleFactor(printScale)
+  if (type === 'start') return (START_SIDE * sf) * Math.sqrt(3) / 2 * 2 / 3
+  if (type === 'finish') return FINISH_R_OUTER * sf
+  return CONTROL_R * sf
 }
 
-function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, bendPoints?: Pos[]) {
-  doc.setLineWidth(LEG_W)
+function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, bendPoints?: Pos[]) {
+  const sf = symbolScaleFactor(printScale)
+  doc.setLineWidth(LEG_W * sf)
   doc.setLineCap(1)
-  const fromR = clipR(fromType)
-  const toR = clipR(toType)
+  const fromR = clipR(fromType, printScale)
+  const toR = clipR(toType, printScale)
 
   if (bendPoints && bendPoints.length > 0) {
     const pts: Pos[] = [from, ...bendPoints, to]
@@ -495,8 +496,14 @@ function clipPolyline(pts: Pos[], startClip: number, endClip: number): Pos[] {
   return result
 }
 
-function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, labelOffsetMm?: Pos) {
-  doc.setFontSize(NUMBER_SIZE_PT)
+function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, labelOffsetMm?: Pos) {
+  const sf = symbolScaleFactor(printScale)
+  const controlR = CONTROL_R * sf
+  const startSide = START_SIDE * sf
+  const finishOuter = FINISH_R_OUTER * sf
+  const fontSizePt = controlR * 1.1 * 2.8346456693
+
+  doc.setFontSize(fontSizePt)
   doc.setFont('helvetica', 'bold')
 
   let ox: number, oy: number
@@ -504,17 +511,35 @@ function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, labelOffse
     ox = labelOffsetMm.x
     oy = labelOffsetMm.y
   } else if (type === 'start') {
-    ox = START_SIDE / 2 + 1
-    oy = -(START_SIDE * Math.sqrt(3) / 2 * 2 / 3 - 1)
+    const h = startSide * Math.sqrt(3) / 2
+    ox = startSide / 2 * 1.1
+    oy = -h * 0.4
   } else if (type === 'finish') {
-    ox = FINISH_R_OUTER + 1
-    oy = -(FINISH_R_OUTER - 0.5)
+    ox = finishOuter * 1.3
+    oy = -finishOuter * 1.1
   } else {
-    ox = CONTROL_R + 0.8
-    oy = -(CONTROL_R - 0.3)
+    ox = controlR * 1.1
+    oy = -controlR * 1.1
   }
 
   doc.text(label, pos.x + ox, pos.y + oy)
+}
+
+// ── Annotations (ISOM 2017-2, mm on paper — matches AnnotationsLayer `dims` / unitsPerMm) ──
+
+function annotationDimsMm(mapScale: number) {
+  const s = mapScale > 0 ? 15000 / mapScale : 1.5
+  return {
+    routeLineW: 0.35 * s,
+    routeXArm: 1.5 * s,
+    routeXW: 0.35 * s,
+    routeXSpace: 5.0 * s,
+    crossW: 0.6 * s,
+    crossHalf: 1.5 * s,
+    crossH: 1.5 * s,
+    hatchSpace: 1.2 * s,
+    hatchW: 0.2 * s,
+  }
 }
 
 // ── Forbidden route ─────────────────────────────────────────────────────────
@@ -556,34 +581,38 @@ function walkPath(points: Pos[], spacing: number): { x: number; y: number; angle
   return marks
 }
 
-function drawForbiddenRoute(doc: jsPDF, points: Pos[]) {
+function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number) {
   if (points.length < 2) return
+  const d = annotationDimsMm(mapScale)
 
   doc.setLineCap(1)
   doc.setLineJoin(1)
-  doc.setLineWidth(ROUTE_LINE_W)
+  doc.setLineWidth(d.routeLineW)
   for (let i = 0; i < points.length - 1; i++) {
     doc.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
   }
 
-  doc.setLineWidth(ROUTE_X_W)
-  for (const m of walkPath(points, ROUTE_X_SPACE)) {
+  doc.setLineWidth(d.routeXW)
+  for (const m of walkPath(points, d.routeXSpace)) {
     const a1 = m.angle + Math.PI / 4
     const a2 = m.angle - Math.PI / 4
     doc.line(
-      m.x - Math.cos(a1) * ROUTE_X_ARM, m.y - Math.sin(a1) * ROUTE_X_ARM,
-      m.x + Math.cos(a1) * ROUTE_X_ARM, m.y + Math.sin(a1) * ROUTE_X_ARM,
+      m.x - Math.cos(a1) * d.routeXArm, m.y - Math.sin(a1) * d.routeXArm,
+      m.x + Math.cos(a1) * d.routeXArm, m.y + Math.sin(a1) * d.routeXArm,
     )
     doc.line(
-      m.x - Math.cos(a2) * ROUTE_X_ARM, m.y - Math.sin(a2) * ROUTE_X_ARM,
-      m.x + Math.cos(a2) * ROUTE_X_ARM, m.y + Math.sin(a2) * ROUTE_X_ARM,
+      m.x - Math.cos(a2) * d.routeXArm, m.y - Math.sin(a2) * d.routeXArm,
+      m.x + Math.cos(a2) * d.routeXArm, m.y + Math.sin(a2) * d.routeXArm,
     )
   }
 }
 
 // ── Crossing point ──────────────────────────────────────────────────────────
 
-function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number) {
+function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: number) {
+  const d = annotationDimsMm(mapScale)
+  const hw = d.crossHalf
+  const hh = d.crossH
   const { x, y } = center
   const cos = Math.cos(rotation * Math.PI / 180)
   const sin = Math.sin(rotation * Math.PI / 180)
@@ -592,18 +621,16 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number) {
     return { x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }
   }
 
-  const hw = CROSS_HALF
-  const hh = CROSS_H
+  // Same control points as AnnotationsLayer CrossingPoint (quadratic beziers)
+  const l0 = rot(x - 0.8 * hw, y - hh)
+  const lq = rot(x + 0.01 * hw, y)
+  const l1 = rot(x - 0.8 * hw, y + hh)
 
-  const l0 = rot(x - hw * 0.15, y - hh)
-  const lq = rot(x - hw, y)
-  const l1 = rot(x - hw * 0.15, y + hh)
+  const r0 = rot(x + 0.8 * hw, y - hh)
+  const rq = rot(x - 0.01 * hw, y)
+  const r1 = rot(x + 0.8 * hw, y + hh)
 
-  const r0 = rot(x + hw * 0.15, y - hh)
-  const rq = rot(x + hw, y)
-  const r1 = rot(x + hw * 0.15, y + hh)
-
-  doc.setLineWidth(CROSS_W)
+  doc.setLineWidth(d.crossW)
   doc.setLineCap(1)
 
   // Quadratic bezier → cubic: C1 = P0 + 2/3(Q-P0), C2 = P1 + 2/3(Q-P1)
@@ -624,19 +651,9 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number) {
 
 // ── Out-of-bounds area ──────────────────────────────────────────────────────
 
-function drawOutOfBoundsArea(doc: jsPDF, points: Pos[]) {
+function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number) {
   if (points.length < 3) return
-
-  // Boundary outline
-  //doc.setLineWidth(OOB_BOUNDARY_W)
-  //doc.setLineCap(1)
-  //doc.setLineJoin(1)
-  //doc.moveTo(points[0].x, points[0].y)
-  //for (let i = 1; i < points.length; i++) {
-  //  doc.lineTo(points[i].x, points[i].y)
-  //}
-  //doc.lineTo(points[0].x, points[0].y)
-  //doc.stroke()
+  const d = annotationDimsMm(mapScale)
 
   // Bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -658,12 +675,12 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[]) {
   }
   internal.write('h W n')
 
-  // 45° hatch lines: for line y = x + c, perpendicular spacing = step
-  // means c changes by step * sqrt(2)
-  doc.setLineWidth(OOB_HATCH_W)
+  // 45° hatch — spacing matches AnnotationsLayer hatchSpace along the diagonal family y = x + c
+  const hatchW = d.hatchW / 0.707
+  doc.setLineWidth(hatchW)
   const cMin1 = minY - maxX
   const cMax1 = maxY - minX
-  const cStep = OOB_HATCH_SPACE * Math.SQRT2
+  const cStep = d.hatchSpace * Math.SQRT2
 
   for (let c = cMin1; c <= cMax1; c += cStep) {
     const xStart = Math.max(minX, minY - c)
@@ -672,17 +689,16 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[]) {
     doc.line(xStart, xStart + c, xEnd, xEnd + c)
   }
 
-  const cMin2 = minX + minY;
-const cMax2 = maxX + maxY;  
+  const cMin2 = minX + minY
+  const cMax2 = maxX + maxY
 
   for (let c = cMin2; c <= cMax2; c += cStep) {
-    const xStart = Math.max(minX, c - maxY);
-    const xEnd = Math.min(maxX, c - minY);
+    const xStart = Math.max(minX, c - maxY)
+    const xEnd = Math.min(maxX, c - minY)
     if (xStart <= xEnd) {
-      doc.line(xStart, c - xStart, xEnd, c - xEnd);
+      doc.line(xStart, c - xStart, xEnd, c - xEnd)
     }
   }
-
 
   internal.write('Q')
 }
@@ -704,11 +720,12 @@ function drawScaleBar(
   toPage: (pt: MapPoint) => Pos,
   printScale: number,
 ) {
-  const segMm = (sb.segmentLengthM * 1000) / printScale
+  const scaleDen =  printScale
+  const segMm = (sb.segmentLengthM * 1000) / scaleDen
   const totalMm = segMm * sb.segments
   const barH = 2.0
   const textH = 2.5
-  const pad = 1.5
+  const pad = 3
   const strokeW = 0.2
   const tickH = 0.5
 
@@ -759,7 +776,7 @@ function drawScaleBar(
 
   // Scale text
   doc.setFontSize(textH * 0.8 * 2.83)
-  doc.text(`1:${printScale.toLocaleString()}`, origin.x + boxW / 2, barY + barH + textH + pad * 0.3, { align: 'center' })
+  doc.text(`1:${scaleDen.toLocaleString()}`, origin.x + boxW / 2, barY + barH + textH + pad * 0.3, { align: 'center' })
 }
 
 // ── Text label ─────────────────────────────────────────────────────────────
@@ -866,24 +883,26 @@ export async function exportCoursePdf(
 
           await embedMap(toPage)
 
-          const color = '#7B2FBE'
-          setColor(doc, color)
+          const mapScale = project.map.scale
+          const ctrlColor = '#7B2FBE'
+          const annColor = '#a626ff'
 
+          setColor(doc, annColor)
           for (const ann of project.annotations) {
             if (ann.type === 'forbidden_route') {
-              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)))
+              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale)
             } else if (ann.type === 'crossing_point' && ann.points[0]) {
-              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0)
+              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale)
             } else if (ann.type === 'out_of_bounds') {
-              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)))
+              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale)
             }
           }
 
+          setColor(doc, ctrlColor)
           for (const ctrl of project.controls) {
             const pos = toPage(ctrl.position)
-            setColor(doc, color)
-            drawControlSymbol(doc, ctrl.type, pos)
-            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type)
+            drawControlSymbol(doc, ctrl.type, pos, options.printScale)
+            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, options.printScale)
           }
 
           // Overlays
@@ -940,18 +959,22 @@ export async function exportCoursePdf(
         // Map background
         await embedMap(toPage)
 
-        setColor(doc, course.color)
+        const mapScale = project.map.scale
+        const annColor = '#a626ff'
+        setColor(doc, annColor)
 
         // Annotations
         for (const ann of project.annotations) {
           if (ann.type === 'forbidden_route') {
-            drawForbiddenRoute(doc, ann.points.map(p => toPage(p)))
+            drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale)
           } else if (ann.type === 'crossing_point' && ann.points[0]) {
-            drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0)
+            drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale)
           } else if (ann.type === 'out_of_bounds') {
-            drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)))
+            drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale)
           }
         }
+
+        setColor(doc, course.color)
 
         // Legs
         if (course.type === 'linear' && course.controls.length >= 2) {
@@ -961,7 +984,7 @@ export async function exportCoursePdf(
             if (!from || !to) continue
             setColor(doc, course.color)
             const bends = course.controls[i + 1].legBendPoints?.map(p => toPage(p))
-            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, bends)
+            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, bends)
           }
         }
 
@@ -978,9 +1001,9 @@ export async function exportCoursePdf(
 
           const pos = toPage(ctrl.position)
           setColor(doc, course.color)
-          drawControlSymbol(doc, ctrl.type, pos)
+          drawControlSymbol(doc, ctrl.type, pos, courseScale)
           const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
-          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, loMm)
+          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, loMm)
         }
 
         // Overlays
