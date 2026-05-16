@@ -9,7 +9,8 @@ import { memo, useId } from 'react'
 import type { Annotation, MapConfig, MapPoint, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
-import { symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
+import { symbolScaleFactor as specScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
+import type { AnnotationDims } from '../../lib/symbolSpec'
 import { walkPath } from '../../lib/geometry'
 
 interface Props {
@@ -20,20 +21,9 @@ interface Props {
   spec: EventSpec
 }
 
-function dims(upm: number, scale: number, spec: EventSpec) {
-  const sf = specScaleFactor(spec, scale)
-  return {
-    routeLineW:  0.35 * upm * sf,
-    routeXArm:   1.5  * upm * sf,
-    routeXW:     0.35 * upm * sf,
-    routeXSpace: 5.0  * upm * sf,
-    crossW:      0.6  * upm * sf,
-    crossHalf:   1.5  * upm * sf,
-    crossH:      1.5  * upm * sf,
-    hatchSpace:  1.2  * upm * sf,
-    hatchW:      0.2  * upm * sf,
-    boundaryW:   0.7  * upm * sf,
-  }
+function dims(upm: number, scale: number, spec: EventSpec): AnnotationDims {
+  const sf = specScaleFactor(spec, scale) * upm
+  return getAnnotationDims(sf)
 }
 
 

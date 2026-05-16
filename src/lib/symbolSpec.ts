@@ -52,3 +52,33 @@ export function symbolScaleFactor(spec: EventSpec, printScale: number): number {
 export function resolveSpec(projectSpec?: EventSpec, courseSpec?: EventSpec): EventSpec {
   return courseSpec ?? projectSpec ?? 'isom-2017'
 }
+
+export const MM_TO_PT = 72 / 25.4
+
+export interface AnnotationDims {
+  routeLineW: number
+  routeXArm: number
+  routeXW: number
+  routeXSpace: number
+  crossW: number
+  crossHalf: number
+  crossH: number
+  hatchSpace: number
+  hatchW: number
+  boundaryW: number
+}
+
+export function getAnnotationDims(scaleFactor: number): AnnotationDims {
+  return {
+    routeLineW:  0.35 * scaleFactor,
+    routeXArm:   1.5  * scaleFactor,
+    routeXW:     0.35 * scaleFactor,
+    routeXSpace: 5.0  * scaleFactor,
+    crossW:      0.6  * scaleFactor,
+    crossHalf:   1.5  * scaleFactor,
+    crossH:      1.5  * scaleFactor,
+    hatchSpace:  1.2  * scaleFactor,
+    hatchW:      0.2  * scaleFactor,
+    boundaryW:   0.7  * scaleFactor,
+  }
+}

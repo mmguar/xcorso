@@ -4,7 +4,7 @@ import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
 import { computeCourseDistances } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from './symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
 import { walkPath, clipPolyline } from './geometry'
 
 export const MARGIN = 10
@@ -497,7 +497,7 @@ function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale
   const controlR = dims.controlR * sf
   const startSide = dims.startSide * sf
   const finishOuter = dims.finishROuter * sf
-  const fontSizePt = controlR * 1.1 * 2.8346456693
+  const fontSizePt = controlR * 1.1 * MM_TO_PT
 
   doc.setFontSize(fontSizePt)
   doc.setFont('helvetica', 'bold')
@@ -523,17 +523,7 @@ function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale
 
 function annotationDimsMm(mapScale: number, spec: EventSpec) {
   const s = mapScale > 0 ? specScaleFactor(spec, mapScale) : 1.5
-  return {
-    routeLineW: 0.35 * s,
-    routeXArm: 1.5 * s,
-    routeXW: 0.35 * s,
-    routeXSpace: 5.0 * s,
-    crossW: 0.6 * s,
-    crossHalf: 1.5 * s,
-    crossH: 1.5 * s,
-    hatchSpace: 1.2 * s,
-    hatchW: 0.2 * s,
-  }
+  return getAnnotationDims(s)
 }
 
 // ── Forbidden route ─────────────────────────────────────────────────────────
@@ -715,7 +705,7 @@ function drawScaleBar(
   // Ticks and labels
   doc.setTextColor(0, 0, 0)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(textH * 0.7 * 2.83) // mm to pt
+  doc.setFontSize(textH * 0.7 * MM_TO_PT)
 
   const fmtDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
 
@@ -732,7 +722,7 @@ function drawScaleBar(
   }
 
   // Scale text
-  doc.setFontSize(textH * 0.8 * 2.83)
+  doc.setFontSize(textH * 0.8 * MM_TO_PT)
   doc.text(`1:${scaleDen.toLocaleString()}`, origin.x + boxW / 2, barY + barH + textH + pad * 0.3, { align: 'center' })
 }
 
@@ -747,7 +737,7 @@ function drawTextLabel(
   const [r, g, b] = hexToRgb(tl.color)
   doc.setTextColor(r, g, b)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(tl.fontSizeMm * 2.83) // mm to pt
+  doc.setFontSize(tl.fontSizeMm * MM_TO_PT)
   doc.text(tl.text, pos.x, pos.y)
 }
 

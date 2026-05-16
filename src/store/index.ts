@@ -262,8 +262,7 @@ export const useStore = create<Store>((set, get) => {
 
     setMapDimensions: (width, height) => {
       mutateProjectSilent(p => {
-        p.map.width = width
-        p.map.height = height
+        p.map = { ...p.map, width, height }
       })
     },
 
