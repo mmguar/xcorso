@@ -77,9 +77,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
-  const [hoverScreenPt, setHoverScreenPt] = useState<{ x: number; y: number } | null>(null)
-  const hoverScreenPtRef = useRef(hoverScreenPt)
-  hoverScreenPtRef.current = hoverScreenPt
+  const gapRingRef = useRef<SVGGElement>(null)
 
   // ── Fit to screen on map load ──────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -834,22 +832,29 @@ export function MapCanvas({ loadedMap }: Props) {
       }
     }
 
-    function onHover(e: PointerEvent) {
+    function updateGapRing(e: PointerEvent) {
       if (e.pointerType === 'touch') return
-      const state = useStore.getState()
-      if (state.editor.activeTool !== 'gap') {
-        if (hoverScreenPtRef.current != null) setHoverScreenPt(null)
+      const g = gapRingRef.current
+      if (!g) return
+      if (useStore.getState().editor.activeTool !== 'gap') {
+        g.style.display = 'none'
         return
       }
       const rect = div.getBoundingClientRect()
-      setHoverScreenPt({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      const sx = e.clientX - rect.left
+      const sy = e.clientY - rect.top
+      g.setAttribute('transform', `translate(${sx},${sy})`)
+      g.style.display = ''
     }
-    function onLeave() { setHoverScreenPt(null) }
+    function onLeave() {
+      const g = gapRingRef.current
+      if (g) g.style.display = 'none'
+    }
 
     div.addEventListener('wheel',        onWheel,   { passive: false })
     div.addEventListener('pointerdown',  onDown)
     div.addEventListener('pointermove',  onMove)
-    div.addEventListener('pointermove',  onHover)
+    div.addEventListener('pointermove',  updateGapRing)
     div.addEventListener('pointerup',    onUp)
     div.addEventListener('pointercancel', onCancel)
     div.addEventListener('dblclick',     onDblClick)
@@ -861,7 +866,7 @@ export function MapCanvas({ loadedMap }: Props) {
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
-      div.removeEventListener('pointermove',  onHover)
+      div.removeEventListener('pointermove',  updateGapRing)
       div.removeEventListener('pointerup',    onUp)
       div.removeEventListener('pointercancel', onCancel)
       div.removeEventListener('dblclick',     onDblClick)
@@ -881,8 +886,6 @@ export function MapCanvas({ loadedMap }: Props) {
   const gapSize = useStore(s => s.editor.gapSize)
   const selectedCourse = courses.find(c => c.id === selectedCourseId) ?? null
   const isCourseMode = !!selectedCourseId
-
-  const showGapRing = activeTool === 'gap' && hoverScreenPt != null
 
   const cursor = activeTool === 'bend' ? 'crosshair'
     : activeTool === 'gap' ? 'none'
@@ -938,7 +941,7 @@ export function MapCanvas({ loadedMap }: Props) {
             controls={controls}
           />
         </g>
-        {showGapRing && hoverScreenPt && (() => {
+        {activeTool === 'gap' && (() => {
           const upm = unitsPerMm(map)
           const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
           const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
@@ -947,19 +950,18 @@ export function MapCanvas({ loadedMap }: Props) {
           const gapLen = circumference * gapFraction
           const arcLen = circumference - gapLen
           const sw = Math.max(1, 0.35 * upm * appearance.lineWidth * vp.scale)
-          const { x, y } = hoverScreenPt
           return (
-            <g style={{ pointerEvents: 'none' }}>
+            <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
               <circle
-                cx={x} cy={y} r={r}
+                r={r}
                 fill="none"
                 stroke="#ea580c"
                 strokeWidth={sw}
                 strokeDasharray={`${arcLen} ${gapLen}`}
                 strokeDashoffset={arcLen / 2 + circumference / 4}
               />
-              <line x1={x - 4} y1={y} x2={x + 4} y2={y} stroke="#ea580c" strokeWidth={1} />
-              <line x1={x} y1={y - 4} x2={x} y2={y + 4} stroke="#ea580c" strokeWidth={1} />
+              <line x1={-4} y1={0} x2={4} y2={0} stroke="#ea580c" strokeWidth={1} />
+              <line x1={0} y1={-4} x2={0} y2={4} stroke="#ea580c" strokeWidth={1} />
             </g>
           )
         })()}
