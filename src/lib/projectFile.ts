@@ -30,6 +30,7 @@ function validateProject(raw: unknown): Project {
   const mc = map as Record<string, unknown>
   if (!VALID_MAP_TYPES.includes(mc.type as MapType)) throw new Error(`Invalid map.type: ${mc.type}`)
   if (typeof mc.filename !== 'string' || mc.filename.length === 0) throw new Error('Missing map.filename')
+  if (/[/\\]|\.\./.test(mc.filename as string)) throw new Error('Invalid map.filename')
   if (typeof mc.scale !== 'number' || !isFinite(mc.scale) || mc.scale <= 0) mc.scale = 10000
   if (mc.storage == null || typeof mc.storage !== 'object') mc.storage = { mode: 'embedded' }
 
