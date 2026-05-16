@@ -602,6 +602,10 @@ export function getSymbol(code: string): SymbolDef | undefined {
   return symbolMap.get(code)
 }
 
+export function isDimensionText(value: string): boolean {
+  return !symbolMap.has(value)
+}
+
 export function getColumnSymbols(column: IofColumn): SymbolDef[] {
   return allSymbols.filter(s => s.column === column)
 }
@@ -610,7 +614,7 @@ export const columns: { id: IofColumn; label: string }[] = [
   { id: 'C', label: 'Which' },
   { id: 'D', label: 'Feature' },
   { id: 'E', label: 'Appearance' },
-  { id: 'F', label: 'Comb.' },
+  { id: 'F', label: 'Dim.' },
   { id: 'G', label: 'Location' },
   { id: 'H', label: 'Other' },
 ]
