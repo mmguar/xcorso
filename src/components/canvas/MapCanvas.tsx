@@ -42,7 +42,13 @@ export function MapCanvas({ loadedMap }: Props) {
   }
 
   // ── Store ──────────────────────────────────────────────────────────────────
-  const project  = useStore(s => s.project!)
+  const controls = useStore(s => s.project!.controls)
+  const courses = useStore(s => s.project!.courses)
+  const annotations = useStore(s => s.project!.annotations)
+  const map = useStore(s => s.project!.map)
+  const scaleBars = useStore(s => s.project!.scaleBars)
+  const textLabels = useStore(s => s.project!.textLabels)
+  const projectSpec = useStore(s => s.project!.spec)
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
@@ -756,7 +762,7 @@ export function MapCanvas({ loadedMap }: Props) {
           commitAnnotation('crossing_point')
           break
         case 'place-scalebar':
-          addScaleBar(mapPt, project.map.scale)
+          addScaleBar(mapPt, useStore.getState().project!.map.scale)
           break
         case 'place-text':
           addTextLabel(mapPt)
@@ -873,7 +879,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const gapSize = useStore(s => s.editor.gapSize)
-  const selectedCourse = project.courses.find(c => c.id === selectedCourseId) ?? null
+  const selectedCourse = courses.find(c => c.id === selectedCourseId) ?? null
   const isCourseMode = !!selectedCourseId
 
   const showGapRing = activeTool === 'gap' && hoverScreenPt != null
@@ -909,32 +915,32 @@ export function MapCanvas({ loadedMap }: Props) {
         <g ref={overlayGRef}>
           <LegsLayer
             course={selectedCourse}
-            controls={project.controls}
-            map={project.map}
+            controls={controls}
+            map={map}
             showBendHandles={activeTool === 'bend'}
             appearance={appearance}
-            projectSpec={project.spec}
+            projectSpec={projectSpec}
           />
           <AnnotationsLayer
-            annotations={project.annotations}
+            annotations={annotations}
             pendingPoints={pendingAnnotationPoints}
             pendingType={getAnnotationType()}
-            map={project.map}
-            spec={resolveSpec(project.spec, selectedCourse?.spec)}
+            map={map}
+            spec={resolveSpec(projectSpec, selectedCourse?.spec)}
           />
           <OverlaysLayer
-            scaleBars={project.scaleBars}
-            textLabels={project.textLabels}
-            map={project.map}
+            scaleBars={scaleBars}
+            textLabels={textLabels}
+            map={map}
             selectedOverlayId={selectedOverlayId}
           />
           <ControlsLayer
-            controls={project.controls}
+            controls={controls}
           />
         </g>
         {showGapRing && hoverScreenPt && (() => {
-          const upm = unitsPerMm(project.map)
-          const gapSpec = resolveSpec(project.spec, selectedCourse?.spec)
+          const upm = unitsPerMm(map)
+          const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
           const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
           const circumference = 2 * Math.PI * r
           const gapFraction = gapSize / 360
