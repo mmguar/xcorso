@@ -5,9 +5,10 @@
  */
 
 import { memo } from 'react'
-import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings } from '../../types'
+import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 
 interface Props {
   course: Course | null
@@ -15,22 +16,17 @@ interface Props {
   map: MapConfig
   showBendHandles?: boolean
   appearance: AppearanceSettings
+  projectSpec?: EventSpec
 }
 
-const CIRCLE_R_MM  = 2.5
-const TRIANGLE_MM  = 6.0
-const SW_MM        = 0.35
 const BEND_HANDLE_R_MM = 0.8
 
-function symbolScaleFactor(printScale: number): number {
-  return 15000 / printScale
-}
-
-function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number): number {
-  const scaleFactor = symbolScaleFactor(mapScale)
-  const r = CIRCLE_R_MM * upm * controlScale * scaleFactor * 1.3
+function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
+  const dims = getSymbolDims(spec)
+  const sf = specScaleFactor(spec, mapScale)
+  const r = dims.controlR * upm * controlScale * sf * 1.3
   if (control.type === 'start') {
-    const side = TRIANGLE_MM * upm * controlScale * scaleFactor
+    const side = dims.startSide * upm * controlScale * sf
     return side * Math.sqrt(3) / 2 * 2 / 3
   }
   return r
@@ -113,10 +109,12 @@ function renderLegs(
   upm: number,
   showBendHandles: boolean,
   appearance: AppearanceSettings,
+  spec: EventSpec,
 ): React.ReactNode[] {
   if (course.controls.length < 2 || course.type === 'score') return []
-  const scaleFactor = symbolScaleFactor(mapScale)
-  const strokeWidth = SW_MM * upm * scaleFactor * appearance.lineWidth 
+  const dims = getSymbolDims(spec)
+  const scaleFactor = specScaleFactor(spec, mapScale)
+  const strokeWidth = dims.legW * upm * scaleFactor * appearance.lineWidth
   const legColor = appearance.color || course.color
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const elements: React.ReactNode[] = []
@@ -128,8 +126,8 @@ function renderLegs(
 
     const cc = course.controls[i + 1]
     const bendPoints = cc.legBendPoints
-    const fromR = clipRadius(fromControl, mapScale, upm, appearance.controlScale)
-    const toR = clipRadius(toControl, mapScale, upm, appearance.controlScale)
+    const fromR = clipRadius(fromControl, mapScale, upm, appearance.controlScale, spec)
+    const toR = clipRadius(toControl, mapScale, upm, appearance.controlScale, spec)
 
     if (bendPoints && bendPoints.length > 0) {
       const fullPath: MapPoint[] = [fromControl.position, ...bendPoints, toControl.position]
@@ -254,12 +252,13 @@ function renderLegs(
   return elements
 }
 
-export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance }: Props) {
+export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec }: Props) {
   useRenderTracker('LegsLayer')
   if (!course) return null
+  const spec = resolveSpec(projectSpec, course.spec)
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const upm = unitsPerMm(map)
-  const elements = renderLegs(course, controlMap, map.scale, upm, showBendHandles, appearance)
+  const elements = renderLegs(course, controlMap, map.scale, upm, showBendHandles, appearance, spec)
   if (elements.length === 0) return null
   return <g style={{ pointerEvents: 'none' }}>{elements}</g>
 })

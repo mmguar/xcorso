@@ -3,16 +3,8 @@ import type { Control, CircleGap, AppearanceSettings, MapPoint } from '../../typ
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, unitsPerMm } from '../../lib/courseUtils'
-
-// ISOM 2017-2 dimensions in mm on paper
-const CIRCLE_R_MM  = 2.5   // control circle radius
-const SW_MM        = 0.35  // stroke width
-const TRIANGLE_MM  = 6.0   // start triangle side
-const FINISH_IR_MM = 1.75  // finish inner circle radius
-
-function symbolScaleFactor(printScale: number): number {
-  return 15000 / printScale
-}
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
+import type { SymbolDims } from '../../lib/symbolSpec'
 
 function gapsToDashArray(gaps: CircleGap[], circumference: number): { dashArray: string; dashOffset: number } | null {
   if (gaps.length === 0) return null
@@ -58,6 +50,8 @@ interface ShapeProps {
   upm: number
   appearance: AppearanceSettings
   labelOffset?: MapPoint
+  dims: SymbolDims
+  scaleFactor: number
 }
 
 function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
@@ -72,19 +66,18 @@ function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
   }
 }
 
-function StartTriangle({ control, color, label, mapScale, upm, appearance, labelOffset }: ShapeProps) {
-  const scaleFactor = symbolScaleFactor(mapScale)
-  const scale = appearance.controlScale * scaleFactor 
-  const cr = CIRCLE_R_MM * upm *  scale
+function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor }: ShapeProps) {
+  const scale = appearance.controlScale * scaleFactor
+  const cr = dims.controlR * upm * scale
   const { x, y } = control.position
-  const side = TRIANGLE_MM * upm * scale
+  const side = dims.startSide * upm * scale
   const halfSide = side / 2
   const h = side * Math.sqrt(3) / 2
   const topY = y - h * 2 / 3
   const botY = y + h / 3
   const points = `${x},${topY} ${x - halfSide},${botY} ${x + halfSide},${botY}`
   const perimeter = side * 3
-  const sw = SW_MM * upm * scaleFactor * appearance.lineWidth 
+  const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const lx = labelOffset ? x + labelOffset.x : x + halfSide * 1.1
@@ -110,13 +103,12 @@ function StartTriangle({ control, color, label, mapScale, upm, appearance, label
   )
 }
 
-function FinishCircles({ control, color, label, mapScale, upm, appearance, labelOffset }: ShapeProps) {
+function FinishCircles({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor }: ShapeProps) {
   const scale = appearance.controlScale
-  const scaleFactor = symbolScaleFactor(mapScale)
-  const cr = CIRCLE_R_MM * upm * scaleFactor * scale
-  const innerR = FINISH_IR_MM * upm * scaleFactor* scale
+  const cr = dims.finishROuter * upm * scaleFactor * scale
+  const innerR = dims.finishRInner * upm * scaleFactor * scale
   const { x, y } = control.position
-  const sw = SW_MM * upm * scaleFactor * appearance.lineWidth
+  const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const outerCirc = 2 * Math.PI * scaleFactor * cr
   const innerCirc = 2 * Math.PI * scaleFactor * innerR
   const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
@@ -152,10 +144,9 @@ function FinishCircles({ control, color, label, mapScale, upm, appearance, label
   )
 }
 
-function ControlCircle({ control, color, label, mapScale, upm, appearance, labelOffset }: ShapeProps) {
-  const scaleFactor = symbolScaleFactor(mapScale)
-  const cr = CIRCLE_R_MM * upm * scaleFactor * appearance.controlScale
-  const sw = SW_MM * scaleFactor * upm * appearance.lineWidth
+function ControlCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor }: ShapeProps) {
+  const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
+  const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
   const { x, y } = control.position
   const circumference = 2 * Math.PI * cr * scaleFactor
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
@@ -196,10 +187,15 @@ export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
   const upm = unitsPerMm(map)
   const selectedId = useStore(s => s.editor.selectedControlId)
   const appearance = useStore(s => s.editor.appearance)
+  const projectSpec = useStore(s => s.project!.spec)
   const selectedCourse = useStore(s => {
     const cid = s.editor.selectedCourseId
     return cid ? s.project?.courses.find(c => c.id === cid) ?? null : null
   })
+
+  const spec = resolveSpec(projectSpec, selectedCourse?.spec)
+  const dims = getSymbolDims(spec)
+  const scaleFactor = specScaleFactor(spec, map.scale)
 
   const courseControlIds = selectedCourse
     ? new Set(selectedCourse.controls.map(cc => cc.controlId))
@@ -251,7 +247,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
 
         return (
           <g key={control.id} opacity={opacity}>
-            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} />
+            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} />
           </g>
         )
       })}

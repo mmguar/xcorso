@@ -8,7 +8,8 @@ import { useStore } from '../store'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
 import { clearSession } from '../lib/persistence'
-import type { MapConfig, MapType } from '../types'
+import { SPEC_LABELS } from '../lib/symbolSpec'
+import type { MapConfig, MapType, EventSpec } from '../types'
 
 interface Props {
   onProjectLoaded: () => void
@@ -32,6 +33,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
 
   // New project state
   const [projectName, setProjectName] = useState('My Event')
+  const [eventSpec, setEventSpec] = useState<EventSpec>('isom-2017')
   const [storageMode, setStorageMode] = useState<'embedded' | 'reference'>('embedded')
   const [mapFile, setMapFile] = useState<File | null>(null)
 
@@ -75,7 +77,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
         scaleSource: loadedMap.detectedScale ? 'ocad' : 'manual',
       }
 
-      createProject(projectName, mapConfig, data)
+      createProject(projectName, mapConfig, data, eventSpec)
 
       onProjectLoaded()
     } catch (e) {
@@ -167,6 +169,31 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
             onChange={e => setProjectName(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
           />
+        </div>
+
+        {/* Event specification */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-gray-500">Event type</label>
+          <div className="flex gap-3">
+            {(['isom-2017', 'issprm-2019'] as const).map(spec => (
+              <button
+                key={spec}
+                onClick={() => setEventSpec(spec)}
+                className={`flex-1 border rounded-xl px-3 py-2.5 text-xs text-left transition-colors ${
+                  eventSpec === spec
+                    ? 'border-orange-400 bg-orange-50 text-orange-700'
+                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-semibold mb-0.5">{SPEC_LABELS[spec]}</div>
+                <div className="text-gray-400 leading-relaxed">
+                  {spec === 'isom-2017'
+                    ? 'Forest orienteering, base scale 1:15000'
+                    : 'Sprint orienteering, base scale 1:4000'}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Map file */}

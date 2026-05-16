@@ -3,7 +3,9 @@ import { Download, FileDown, Map } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
+import { SPEC_LABELS } from '../../lib/symbolSpec'
 import { PdfExportDialog } from '../PdfExportDialog'
+import type { EventSpec } from '../../types'
 
 interface Props { onGoHome: () => void }
 
@@ -11,6 +13,7 @@ export function Header({ onGoHome }: Props) {
   const project = useStore(s => s.project!)
   const mapFileData = useStore(s => s.mapFileData)
   const updateProjectName = useStore(s => s.updateProjectName)
+  const updateProjectSpec = useStore(s => s.updateProjectSpec)
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
   const mapSaturation = useStore(s => s.editor.mapSaturation)
@@ -74,6 +77,17 @@ export function Header({ onGoHome }: Props) {
           {project.meta.name}
         </span>
       )}
+
+      <select
+        value={project.spec ?? 'isom-2017'}
+        onChange={e => updateProjectSpec(e.target.value as EventSpec)}
+        className="text-[10px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 hidden sm:block"
+        title="Event specification"
+      >
+        {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
+          <option key={key} value={key}>{label}</option>
+        ))}
+      </select>
 
       {/* Mobile saturation slider */}
       <div className="md:hidden flex items-center gap-1 ml-auto mr-2">
