@@ -8,12 +8,15 @@ import JSZip from 'jszip'
 import type { Project, MapType } from '../types'
 
 const VALID_MAP_TYPES: MapType[] = ['ocad', 'pdf', 'bitmap']
+const VALID_SPECS = ['isom-2017', 'issprm-2019']
 
 function validateProject(raw: unknown): Project {
   if (raw == null || typeof raw !== 'object') throw new Error('project.json is not an object')
   const obj = raw as Record<string, unknown>
 
   if (typeof obj.version !== 'string') throw new Error('Missing or invalid version')
+
+  if (obj.spec != null && !VALID_SPECS.includes(obj.spec as string)) obj.spec = undefined
 
   const meta = obj.meta
   if (meta == null || typeof meta !== 'object') throw new Error('Missing meta')

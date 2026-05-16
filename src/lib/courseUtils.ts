@@ -1,4 +1,5 @@
-import type { Control, Course, MapConfig, MapPoint, ControlType } from '../types'
+import type { Control, Course, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
+import { getSymbolDims } from './symbolSpec'
 
 export function defaultControlLabel(control: { type: string; code: number; label?: string }): string {
   if (control.label) return control.label
@@ -9,10 +10,6 @@ export function defaultControlLabel(control: { type: string; code: number; label
 
 const DEFAULT_PX_PER_MM = 4
 
-/**
- * Map-unit-per-mm for ISOM symbol sizing.
- * OCAD: 100 units/mm. Bitmap/PDF: derived from scaleMeasurement or ~4px/mm fallback.
- */
 export function unitsPerMm(map: MapConfig): number {
   if (map.type === 'ocad') return 100
   if (map.scaleMeasurement) {
@@ -27,13 +24,11 @@ export function unitsPerMm(map: MapConfig): number {
   return DEFAULT_PX_PER_MM
 }
 
-const CIRCLE_R_MM  = 2.5
-const TRIANGLE_MM  = 6.0
-
-export function defaultLabelOffset(type: ControlType, upm: number, controlScale: number): MapPoint {
-  const cr = CIRCLE_R_MM * upm * controlScale
+export function defaultLabelOffset(type: ControlType, upm: number, controlScale: number, spec: EventSpec = 'isom-2017'): MapPoint {
+  const dims = getSymbolDims(spec)
+  const cr = dims.controlR * upm * controlScale
   if (type === 'start') {
-    const side = TRIANGLE_MM * upm * controlScale
+    const side = dims.startSide * upm * controlScale
     const halfSide = side / 2
     const h = side * Math.sqrt(3) / 2
     return { x: halfSide * 1.1, y: -h * 0.4 }

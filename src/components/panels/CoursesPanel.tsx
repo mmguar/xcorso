@@ -4,7 +4,8 @@ import { useStore } from '../../store'
 import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
-import type { Course } from '../../types'
+import { SPEC_LABELS } from '../../lib/symbolSpec'
+import type { Course, EventSpec } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
   useRenderTracker('CourseEditor')
@@ -15,6 +16,7 @@ function CourseEditor({ course }: { course: Course }) {
   const updateCourseColor = useStore(s => s.updateCourseColor)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
   const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
+  const updateCourseSpec = useStore(s => s.updateCourseSpec)
   const deleteCourse = useStore(s => s.deleteCourse)
   const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
   const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
@@ -53,6 +55,17 @@ function CourseEditor({ course }: { course: Course }) {
         <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border">
           {course.type === 'score' ? 'Score-O' : 'Linear'}
         </span>
+        <select
+          value={course.spec ?? ''}
+          onChange={e => updateCourseSpec(course.id, (e.target.value || undefined) as EventSpec | undefined)}
+          className="text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 max-w-[5.5rem]"
+          title="Course specification (inherits from project if blank)"
+        >
+          <option value="">Project default</option>
+          {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
         <button
           onClick={() => deleteCourse(course.id)}
           className="text-gray-300 hover:text-red-500 transition-colors"

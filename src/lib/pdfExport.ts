@@ -1,23 +1,10 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
 import { computeCourseDistances } from './distance'
-
-// ── ISOM 2017-2 symbol dimensions (mm on paper) ────────────────────────────
-
-const CONTROL_R = 2.5
-const CONTROL_SW = 0.35
-
-const START_SIDE = 6.0
-const START_SW = 0.35
-
-const FINISH_R_OUTER = 2.5
-const FINISH_R_INNER = 1.75
-const FINISH_SW = 0.35
-
-const LEG_W = 0.35
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from './symbolSpec'
 
 export const MARGIN = 10
 const TILE_OVERLAP = 15
@@ -148,6 +135,49 @@ async function rasterizeMap(loadedMap: LoadedMap, opacity = 1): Promise<string> 
   ctx.globalAlpha = opacity
   ctx.drawImage(img, 0, 0)
   return canvas.toDataURL('image/jpeg', 0.92)
+}
+
+/**
+ * svg2pdf resolves inline `style` blocks via the browser selector engine. Running it on SVG
+ * attached to the main document can leave engine state that breaks fills on a later export.
+ * A one-off iframe document matches “open file then export” every time.
+ */
+async function svg2pdfInIsolatedDocument(
+  svg: SVGElement,
+  pdf: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): Promise<void> {
+  const markup = new XMLSerializer().serializeToString(svg)
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('title', 'pdf map svg')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.setAttribute('sandbox', 'allow-same-origin')
+  iframe.style.cssText =
+    'position:fixed;left:-10000px;top:0;width:10px;height:10px;border:0;opacity:0;pointer-events:none'
+  document.body.appendChild(iframe)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const ms = 10_000
+      const to = window.setTimeout(() => reject(new Error('PDF SVG iframe load timeout')), ms)
+      iframe.onload = () => {
+        window.clearTimeout(to)
+        resolve()
+      }
+      iframe.srcdoc =
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">' +
+        markup +
+        '</body></html>'
+    })
+    const idoc = iframe.contentDocument
+    const mounted = idoc?.body?.querySelector('svg')
+    if (!mounted) throw new Error('PDF SVG iframe: no root <svg>')
+    await pdf.svg(mounted as SVGElement, { x, y, width: w, height: h })
+  } finally {
+    iframe.remove()
+  }
 }
 
 // ── Bounding box ────────────────────────────────────────────────────────────
@@ -390,19 +420,16 @@ function setColor(doc: jsPDF, hex: string) {
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
 
-function symbolScaleFactor(printScale: number): number {
-  return 15000 / printScale
-}
-
-function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number) {
-  const sf = symbolScaleFactor(printScale)
-  const startSide = START_SIDE * sf
-  const startSw = START_SW * sf
-  const finishOuter = FINISH_R_OUTER * sf
-  const finishInner = FINISH_R_INNER * sf
-  const finishSw = FINISH_SW * sf
-  const controlR = CONTROL_R * sf
-  const controlSw = CONTROL_SW * sf
+function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec) {
+  const dims = getSymbolDims(spec)
+  const sf = specScaleFactor(spec, printScale)
+  const startSide = dims.startSide * sf
+  const startSw = dims.strokeW * sf
+  const finishOuter = dims.finishROuter * sf
+  const finishInner = dims.finishRInner * sf
+  const finishSw = dims.strokeW * sf
+  const controlR = dims.controlR * sf
+  const controlSw = dims.strokeW * sf
 
   if (type === 'start') {
     const h = startSide * Math.sqrt(3) / 2
@@ -423,19 +450,21 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   }
 }
 
-function clipR(type: string, printScale: number): number {
-  const sf = symbolScaleFactor(printScale)
-  if (type === 'start') return (START_SIDE * sf) * Math.sqrt(3) / 2 * 2 / 3
-  if (type === 'finish') return FINISH_R_OUTER * sf
-  return CONTROL_R * sf
+function clipR(type: string, printScale: number, spec: EventSpec): number {
+  const dims = getSymbolDims(spec)
+  const sf = specScaleFactor(spec, printScale)
+  if (type === 'start') return (dims.startSide * sf) * Math.sqrt(3) / 2 * 2 / 3
+  if (type === 'finish') return dims.finishROuter * sf
+  return dims.controlR * sf
 }
 
-function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, bendPoints?: Pos[]) {
-  const sf = symbolScaleFactor(printScale)
-  doc.setLineWidth(LEG_W * sf)
+function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[]) {
+  const dims = getSymbolDims(spec)
+  const sf = specScaleFactor(spec, printScale)
+  doc.setLineWidth(dims.legW * sf)
   doc.setLineCap(1)
-  const fromR = clipR(fromType, printScale)
-  const toR = clipR(toType, printScale)
+  const fromR = clipR(fromType, printScale, spec)
+  const toR = clipR(toType, printScale, spec)
 
   if (bendPoints && bendPoints.length > 0) {
     const pts: Pos[] = [from, ...bendPoints, to]
@@ -496,11 +525,12 @@ function clipPolyline(pts: Pos[], startClip: number, endClip: number): Pos[] {
   return result
 }
 
-function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, labelOffsetMm?: Pos) {
-  const sf = symbolScaleFactor(printScale)
-  const controlR = CONTROL_R * sf
-  const startSide = START_SIDE * sf
-  const finishOuter = FINISH_R_OUTER * sf
+function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
+  const dims = getSymbolDims(spec)
+  const sf = specScaleFactor(spec, printScale)
+  const controlR = dims.controlR * sf
+  const startSide = dims.startSide * sf
+  const finishOuter = dims.finishROuter * sf
   const fontSizePt = controlR * 1.1 * 2.8346456693
 
   doc.setFontSize(fontSizePt)
@@ -525,10 +555,8 @@ function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale
   doc.text(label, pos.x + ox, pos.y + oy)
 }
 
-// ── Annotations (ISOM 2017-2, mm on paper — matches AnnotationsLayer `dims` / unitsPerMm) ──
-
-function annotationDimsMm(mapScale: number) {
-  const s = mapScale > 0 ? 15000 / mapScale : 1.5
+function annotationDimsMm(mapScale: number, spec: EventSpec) {
+  const s = mapScale > 0 ? specScaleFactor(spec, mapScale) : 1.5
   return {
     routeLineW: 0.35 * s,
     routeXArm: 1.5 * s,
@@ -581,9 +609,9 @@ function walkPath(points: Pos[], spacing: number): { x: number; y: number; angle
   return marks
 }
 
-function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number) {
+function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
   if (points.length < 2) return
-  const d = annotationDimsMm(mapScale)
+  const d = annotationDimsMm(mapScale, spec)
 
   doc.setLineCap(1)
   doc.setLineJoin(1)
@@ -609,8 +637,8 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number) {
 
 // ── Crossing point ──────────────────────────────────────────────────────────
 
-function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: number) {
-  const d = annotationDimsMm(mapScale)
+function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: number, spec: EventSpec) {
+  const d = annotationDimsMm(mapScale, spec)
   const hw = d.crossHalf
   const hh = d.crossH
   const { x, y } = center
@@ -651,9 +679,9 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: 
 
 // ── Out-of-bounds area ──────────────────────────────────────────────────────
 
-function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number) {
+function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
   if (points.length < 3) return
-  const d = annotationDimsMm(mapScale)
+  const d = annotationDimsMm(mapScale, spec)
 
   // Bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -806,27 +834,51 @@ export async function exportCoursePdf(
   const printableW = pw - 2 * MARGIN
   const printableH = ph - 2 * MARGIN
 
+  if (loadedMap?.type === 'svg') await import('svg2pdf.js')
   const doc = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] })
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
   const courses = project.courses.filter(c => options.courseIds.includes(c.id))
 
-  let svgMapElement: SVGElement | null = null
+  /** After svg2pdf fails once, use raster fallback for remaining pages. */
+  let svgEmbedDisabled = false
   let mapDataUrl: string | null = null
 
-  if (loadedMap) {
-    if (loadedMap.type === 'svg') {
-      const svgEl = loadedMap.content as SVGElement
-      svgMapElement = svgEl.cloneNode(true) as SVGElement
-      const opacity = options.mapOpacity ?? 1
-      if (opacity < 1) {
-        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-        g.setAttribute('opacity', String(opacity))
-        while (svgMapElement.firstChild) g.appendChild(svgMapElement.firstChild)
-        svgMapElement.appendChild(g)
-      }
-    } else {
-      try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
+  if (loadedMap && loadedMap.type !== 'svg') {
+    try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
+  }
+
+  /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */
+  function prepareSvgForPdfEmbed(): SVGElement {
+    const svgEl = loadedMap!.content as SVGElement
+    let xml = new XMLSerializer().serializeToString(svgEl)
+    if (!/^<svg[^>]*\sxmlns=/.test(xml)) {
+      xml = xml.replace(/^<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"')
     }
+    const parsed = new DOMParser().parseFromString(xml, 'image/svg+xml')
+    const parseErr = parsed.querySelector('parsererror')
+    const docEl = parsed.documentElement
+    const root =
+      !parseErr && docEl && docEl.namespaceURI === 'http://www.w3.org/2000/svg'
+        ? (docEl as unknown as SVGElement)
+        : (svgEl.cloneNode(true) as SVGElement)
+
+    // ocad2geojson sets fill="transparent" on the root <svg>. svg2pdf.js treats
+    // this as rgba(0,0,0,0) whose alpha zero poisons the PDF graphics-state
+    // opacity for every descendant — even those with their own solid fill.
+    // Replacing with "none" avoids the opacity side-effect while keeping the
+    // same visual result (unfilled by default).
+    if (root.getAttribute('fill') === 'transparent') {
+      root.setAttribute('fill', 'none')
+    }
+
+    const opacity = options.mapOpacity ?? 1
+    if (opacity < 1) {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+      g.setAttribute('opacity', String(opacity))
+      while (root.firstChild) g.appendChild(root.firstChild)
+      root.appendChild(g)
+    }
+    return root
   }
 
   async function embedMap(toPage: (pt: MapPoint) => Pos) {
@@ -835,13 +887,13 @@ export async function exportCoursePdf(
     const br = toPage({ x: loadedMap.bounds.maxX, y: loadedMap.bounds.maxY })
     const w = br.x - tl.x
     const h = br.y - tl.y
-    if (svgMapElement) {
+    if (loadedMap.type === 'svg' && !svgEmbedDisabled) {
       try {
-        await import('svg2pdf.js')
-        await doc.svg(svgMapElement, { x: tl.x, y: tl.y, width: w, height: h })
+        const svg = prepareSvgForPdfEmbed()
+        await svg2pdfInIsolatedDocument(svg, doc, tl.x, tl.y, w, h)
         return
       } catch {
-        svgMapElement = null
+        svgEmbedDisabled = true
         if (!mapDataUrl) try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch {}
       }
     }
@@ -886,23 +938,24 @@ export async function exportCoursePdf(
           const mapScale = project.map.scale
           const ctrlColor = '#7B2FBE'
           const annColor = '#a626ff'
+          const allCtrlSpec = resolveSpec(project.spec)
 
           setColor(doc, annColor)
           for (const ann of project.annotations) {
             if (ann.type === 'forbidden_route') {
-              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale)
+              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
             } else if (ann.type === 'crossing_point' && ann.points[0]) {
-              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale)
+              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, allCtrlSpec)
             } else if (ann.type === 'out_of_bounds') {
-              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale)
+              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
             }
           }
 
           setColor(doc, ctrlColor)
           for (const ctrl of project.controls) {
             const pos = toPage(ctrl.position)
-            drawControlSymbol(doc, ctrl.type, pos, options.printScale)
-            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, options.printScale)
+            drawControlSymbol(doc, ctrl.type, pos, options.printScale, allCtrlSpec)
+            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, options.printScale, allCtrlSpec)
           }
 
           // Overlays
@@ -914,7 +967,7 @@ export async function exportCoursePdf(
           doc.setTextColor(130, 130, 130)
           const tileLabel = cols * rows > 1
             ? `All controls  —  1:${options.printScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : `All controls  —  1:${options.printScale.toLocaleString()}`
+            : ``
           doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
@@ -961,16 +1014,17 @@ export async function exportCoursePdf(
 
         const mapScale = project.map.scale
         const annColor = '#a626ff'
+        const courseSpec = resolveSpec(project.spec, course.spec)
         setColor(doc, annColor)
 
         // Annotations
         for (const ann of project.annotations) {
           if (ann.type === 'forbidden_route') {
-            drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale)
+            drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
           } else if (ann.type === 'crossing_point' && ann.points[0]) {
-            drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale)
+            drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, courseSpec)
           } else if (ann.type === 'out_of_bounds') {
-            drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale)
+            drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
           }
         }
 
@@ -984,7 +1038,7 @@ export async function exportCoursePdf(
             if (!from || !to) continue
             setColor(doc, course.color)
             const bends = course.controls[i + 1].legBendPoints?.map(p => toPage(p))
-            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, bends)
+            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends)
           }
         }
 
@@ -1001,9 +1055,9 @@ export async function exportCoursePdf(
 
           const pos = toPage(ctrl.position)
           setColor(doc, course.color)
-          drawControlSymbol(doc, ctrl.type, pos, courseScale)
+          drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec)
           const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
-          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, loMm)
+          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
         }
 
         // Overlays
@@ -1023,7 +1077,7 @@ export async function exportCoursePdf(
         doc.setTextColor(130, 130, 130)
         const tileLabel = cols * rows > 1
           ? `${course.name}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-          : `${course.name}  —  1:${courseScale.toLocaleString()}`
+          : ``
         doc.text(tileLabel, MARGIN, MARGIN + 3)
       }
     }
