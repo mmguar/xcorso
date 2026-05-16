@@ -17,7 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
-import { columns, getColumnSymbols, columnFields } from '../lib/iofSymbols'
+import { columns, getColumnSymbols, columnFields, isDimensionText } from '../lib/iofSymbols'
 import { defaultControlLabel } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
@@ -219,6 +219,7 @@ function SortableDescRow({
         const field = columnFields[col.id]
         const value = desc[field]
         const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
+        const isDimText = col.id === 'F' && value && isDimensionText(value)
 
         return (
           <td
@@ -227,7 +228,10 @@ function SortableDescRow({
             style={{ width: CELL, height: CELL, padding: 0 }}
             onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
           >
-            {value && <IofSymbolIcon code={value} size={CELL - 4} />}
+            {value && (isDimText
+              ? <span className="text-[9px] font-bold leading-none">{value}</span>
+              : <IofSymbolIcon code={value} size={CELL - 4} />
+            )}
           </td>
         )
       })}
@@ -251,6 +255,8 @@ function SymbolPicker({
 }) {
   const symbols = getColumnSymbols(column)
   const [search, setSearch] = useState('')
+  const currentIsDimension = column === 'F' && current != null && isDimensionText(current)
+  const [dimValue, setDimValue] = useState(currentIsDimension ? current : '')
 
   const filtered = search
     ? symbols.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.includes(search))
@@ -261,14 +267,16 @@ function SymbolPicker({
   return (
     <div className="mt-1 border border-gray-300 rounded-lg bg-white shadow-lg p-2 max-h-64 overflow-y-auto">
       <div className="flex items-center gap-2 mb-2">
-        <input
-          type="text"
-          placeholder="Search..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-          autoFocus
-        />
+        {column !== 'F' && (
+          <input
+            type="text"
+            placeholder="Search..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            autoFocus
+          />
+        )}
         {current && (
           <button onClick={onClear} className="text-xs text-red-500 hover:text-red-700 shrink-0">
             Clear
@@ -278,6 +286,34 @@ function SymbolPicker({
           Close
         </button>
       </div>
+
+      {column === 'F' && (
+        <div className="mb-2">
+          <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">Dimensions</div>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              placeholder="e.g. 2.5 or 8 x 4"
+              value={dimValue}
+              onChange={e => setDimValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && dimValue.trim()) onSelect(dimValue.trim()) }}
+              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              autoFocus
+            />
+            <button
+              onClick={() => { if (dimValue.trim()) onSelect(dimValue.trim()) }}
+              className="text-xs bg-orange-500 text-white rounded px-2 py-1 hover:bg-orange-600 shrink-0"
+            >
+              Set
+            </button>
+          </div>
+          <div className="text-[9px] text-gray-400 mt-0.5 px-1">Height/depth, size (W×H), or slope (e.g. 0.5 / 3)</div>
+        </div>
+      )}
+
+      {column === 'F' && (
+        <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">Combinations</div>
+      )}
 
       {grouped ? (
         Object.entries(grouped).map(([group, syms]) => (
