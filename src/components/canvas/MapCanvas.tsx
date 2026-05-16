@@ -10,11 +10,10 @@ import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap } from '../../lib/courseUtils'
 import type { Annotation, AnnotationType, Control, MapPoint, Viewport } from '../../types'
+import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
 
 const TAP_PX    = 8
 const HIT_PX    = 20
-const CIRCLE_R_MM  = 2.5
-const TRIANGLE_MM  = 6.0
 const HIT_TOLERANCE_PX = 8
 const MIN_SCALE = 0.05
 const MAX_SCALE = 50
@@ -119,14 +118,17 @@ export function MapCanvas({ loadedMap }: Props) {
 
     function controlHitRadius(control: Control): number {
       const v = vpRef.current
-      const map = useStore.getState().project?.map
+      const state = useStore.getState()
+      const map = state.project?.map
       if (!map) return HIT_PX
       const upm = unitsPerMm(map)
+      const spec = resolveSpec(state.project?.spec, state.project?.courses.find(c => c.id === state.editor.selectedCourseId)?.spec)
+      const dims = getSymbolDims(spec)
       let symbolR: number
       if (control.type === 'start') {
-        symbolR = TRIANGLE_MM * upm * Math.sqrt(3) / 2 * 2 / 3
+        symbolR = dims.startSide * upm * Math.sqrt(3) / 2 * 2 / 3
       } else {
-        symbolR = CIRCLE_R_MM * upm
+        symbolR = dims.controlR * upm
       }
       const symbolScreenR = symbolR * v.scale
       return Math.max(HIT_PX, symbolScreenR + HIT_TOLERANCE_PX)
@@ -375,17 +377,19 @@ export function MapCanvas({ loadedMap }: Props) {
       let best: { courseId: string; courseControlId: string; controlId: string; labelX: number; labelY: number } | null = null
       let bestDist = Infinity
 
+      const labelSpec = resolveSpec(proj.spec, course.spec)
+      const labelDims = getSymbolDims(labelSpec)
+
       for (const cc of course.controls) {
         const ctrl = controlMap.get(cc.controlId)
         if (!ctrl) continue
-        const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale)
+        const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec)
         const labelMapX = ctrl.position.x + offset.x
         const labelMapY = ctrl.position.y + offset.y
         const labelScreenX = v.x + labelMapX * v.scale
         const labelScreenY = v.y + labelMapY * v.scale
 
-        // Estimate text bounding box in screen pixels
-        const cr = CIRCLE_R_MM * upm * controlScale
+        const cr = labelDims.controlR * upm * controlScale
         const fontSize = cr * 1.1 * v.scale
         let labelText: string
         if (seqMap && ctrl.type === 'control') {
@@ -909,12 +913,14 @@ export function MapCanvas({ loadedMap }: Props) {
             map={project.map}
             showBendHandles={activeTool === 'bend'}
             appearance={appearance}
+            projectSpec={project.spec}
           />
           <AnnotationsLayer
             annotations={project.annotations}
             pendingPoints={pendingAnnotationPoints}
             pendingType={getAnnotationType()}
             map={project.map}
+            spec={resolveSpec(project.spec, selectedCourse?.spec)}
           />
           <OverlaysLayer
             scaleBars={project.scaleBars}
@@ -928,7 +934,8 @@ export function MapCanvas({ loadedMap }: Props) {
         </g>
         {showGapRing && hoverScreenPt && (() => {
           const upm = unitsPerMm(project.map)
-          const r = CIRCLE_R_MM * upm * appearance.controlScale * vp.scale
+          const gapSpec = resolveSpec(project.spec, selectedCourse?.spec)
+          const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
           const circumference = 2 * Math.PI * r
           const gapFraction = gapSize / 360
           const gapLen = circumference * gapFraction

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   Annotation, AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
-  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel,
+  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
@@ -40,9 +40,10 @@ interface AppState {
 
 interface AppActions {
   // Project lifecycle
-  createProject: (name: string, mapConfig: Project['map'], mapData: ArrayBuffer) => void
+  createProject: (name: string, mapConfig: Project['map'], mapData: ArrayBuffer, spec?: EventSpec) => void
   loadProject: (project: Project, mapData: ArrayBuffer | null) => void
   updateProjectName: (name: string) => void
+  updateProjectSpec: (spec: EventSpec) => void
 
   // Map
   setMapScale: (scale: number, source: 'ocad' | 'manual') => void
@@ -73,6 +74,7 @@ interface AppActions {
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
   updateCourseClimb: (id: string, climb: number | undefined) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
+  updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
   // Classes
   addClass: (name: string, courseId: string) => RaceClass
@@ -205,11 +207,12 @@ export const useStore = create<Store>((set, get) => {
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
-    createProject: (name, mapConfig, mapData) => {
+    createProject: (name, mapConfig, mapData, spec) => {
       const now = new Date().toISOString()
       const project: Project = {
         version: '1.0',
         meta: { name, createdAt: now, updatedAt: now },
+        spec,
         map: mapConfig,
         controls: [],
         courses: [],
@@ -229,6 +232,10 @@ export const useStore = create<Store>((set, get) => {
 
     updateProjectName: (name) => {
       mutateProject(p => { p.meta.name = name })
+    },
+
+    updateProjectSpec: (spec) => {
+      mutateProject(p => { p.spec = spec })
     },
 
     // ── Map ──────────────────────────────────────────────────────────────
@@ -508,6 +515,13 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.showPoints = showPoints
+      })
+    },
+
+    updateCourseSpec: (id, spec) => {
+      mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.spec = spec
       })
     },
 

@@ -11,6 +11,8 @@ export interface MapPoint {
 
 // ─── Map ────────────────────────────────────────────────────────────────────
 
+export type EventSpec = 'isom-2017' | 'issprm-2019'
+
 export type MapType = 'ocad' | 'pdf' | 'bitmap'
 
 export type MapStorage =
@@ -90,6 +92,7 @@ export interface Course {
   id: string
   name: string
   type: CourseType
+  spec?: EventSpec           // per-course override (falls back to project.spec)
   controls: CourseControl[]  // ordered for linear; unordered for score
   scoreTimeLimit?: number    // minutes, score-O only
   climb?: number             // metres, manually set
@@ -149,6 +152,7 @@ export interface ProjectMeta {
 export interface Project {
   version: '1.0'
   meta: ProjectMeta
+  spec?: EventSpec
   map: MapConfig
   controls: Control[]
   courses: Course[]
