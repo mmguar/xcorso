@@ -279,7 +279,7 @@ export function PdfExportDialog({ onClose }: Props) {
   const activePreviewId = previewCourseId && previewIds.includes(previewCourseId)
     ? previewCourseId
     : previewIds[0] ?? null
-  const activeScale = activePreviewId && activePreviewId !== ALL_CONTROLS_ID
+  const activeScale = activePreviewId && activePreviewId 
     ? scaleOverrides[activePreviewId] ?? printScale
     : printScale
   const preview = activePreviewId
@@ -492,7 +492,7 @@ export function PdfExportDialog({ onClose }: Props) {
                 })}
               </div>
             )}
-            {activePreviewId !== ALL_CONTROLS_ID && (
+            {activePreviewId  && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">Scale:</span>
                 <span className="text-xs text-gray-500">1 :</span>
@@ -500,7 +500,7 @@ export function PdfExportDialog({ onClose }: Props) {
                   type="text"
                   inputMode="numeric"
                   value={scaleOverrides[activePreviewId] != null ? String(scaleOverrides[activePreviewId]) : ''}
-                  placeholder={String(printScale)}
+                  placeholder={String(parseInt(String(printScale)))}
                   onChange={e => {
                     const raw = e.target.value
                     if (raw === '') {
@@ -522,7 +522,7 @@ export function PdfExportDialog({ onClose }: Props) {
                     onClick={() => setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })}
                     className="text-[11px] text-orange-600 hover:text-orange-800"
                   >
-                    Reset to 1:{printScale.toLocaleString()}
+                    Reset to 1:{parseInt(printScale.toLocaleString())}
                   </button>
                 )}
               </div>

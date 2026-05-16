@@ -241,7 +241,8 @@ export function checkFit(project: Project, options: PdfExportOptions): CourseFit
   const results: CourseFitInfo[] = []
 
   if (options.allControls) {
-    const bounds = allControlsBoundsMm(project.controls, project.map, options.printScale)
+    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
     results.push({
       courseId: ALL_CONTROLS_ID,
       courseName: 'All controls',
@@ -335,7 +336,8 @@ export function checkTiling(project: Project, options: PdfExportOptions): Course
   const results: CourseTileInfo[] = []
 
   if (options.allControls) {
-    const bounds = allControlsBoundsMm(project.controls, project.map, options.printScale)
+    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
     if (bounds) {
       const cols = tileCount(bounds.width, printableW)
       const rows = tileCount(bounds.height, printableH)
@@ -904,7 +906,8 @@ export async function exportCoursePdf(
 
   // All controls page (no legs, just control symbols with codes)
   if (options.allControls && project.controls.length > 0) {
-    const bounds = allControlsBoundsMm(project.controls, project.map, options.printScale)
+    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
     if (bounds) {
       const useTiling = options.tiling && (bounds.width > printableW || bounds.height > printableH)
       const cols = useTiling ? tileCount(bounds.width, printableW) : 1
@@ -929,7 +932,7 @@ export async function exportCoursePdf(
           const cy = ph / 2
 
           function toPage(pt: MapPoint): Pos {
-            const mm = mapToMm(pt, project.map, options.printScale)
+            const mm = mapToMm(pt, project.map, acScale)
             return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
 
@@ -954,19 +957,19 @@ export async function exportCoursePdf(
           setColor(doc, ctrlColor)
           for (const ctrl of project.controls) {
             const pos = toPage(ctrl.position)
-            drawControlSymbol(doc, ctrl.type, pos, options.printScale, allCtrlSpec)
-            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, options.printScale, allCtrlSpec)
+            drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec)
+            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec)
           }
 
           // Overlays
-          for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, options.printScale)
+          for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
 
           doc.setFontSize(8)
           doc.setFont('helvetica', 'normal')
           doc.setTextColor(130, 130, 130)
           const tileLabel = cols * rows > 1
-            ? `All controls  —  1:${options.printScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
+            ? `All controls  —  1:${acScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
             : ``
           doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
