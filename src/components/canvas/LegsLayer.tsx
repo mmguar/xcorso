@@ -9,6 +9,7 @@ import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings, 
 import { unitsPerMm } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
+import { clipPolylineStart, clipPolylineEnd } from '../../lib/geometry'
 
 interface Props {
   course: Course | null
@@ -38,42 +39,6 @@ function polylineLength(pts: MapPoint[]): number {
     len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
   }
   return len
-}
-
-function clipPolylineStart(pts: MapPoint[], clipDist: number): MapPoint[] {
-  let remaining = clipDist
-  let startIdx = 0
-  for (let i = 0; i < pts.length - 1; i++) {
-    const segLen = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y)
-    if (remaining < segLen) {
-      const t = remaining / segLen
-      const clipped: MapPoint = {
-        x: pts[i].x + t * (pts[i + 1].x - pts[i].x),
-        y: pts[i].y + t * (pts[i + 1].y - pts[i].y),
-      }
-      return [clipped, ...pts.slice(i + 1)]
-    }
-    remaining -= segLen
-    startIdx = i + 1
-  }
-  return pts.slice(startIdx)
-}
-
-function clipPolylineEnd(pts: MapPoint[], clipDist: number): MapPoint[] {
-  let remaining = clipDist
-  for (let i = pts.length - 1; i > 0; i--) {
-    const segLen = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-    if (remaining < segLen) {
-      const t = remaining / segLen
-      const clipped: MapPoint = {
-        x: pts[i].x + t * (pts[i - 1].x - pts[i].x),
-        y: pts[i].y + t * (pts[i - 1].y - pts[i].y),
-      }
-      return [...pts.slice(0, i), clipped]
-    }
-    remaining -= segLen
-  }
-  return pts.slice(0, 1)
 }
 
 function legGapsToDashArray(gaps: LegGap[], lineLen: number): string | null {

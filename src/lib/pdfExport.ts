@@ -5,6 +5,7 @@ import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescript
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from './symbolSpec'
+import { walkPath, clipPolyline } from './geometry'
 
 export const MARGIN = 10
 const TILE_OVERLAP = 15
@@ -489,43 +490,6 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   }
 }
 
-function clipPolyline(pts: Pos[], startClip: number, endClip: number): Pos[] {
-  if (pts.length < 2) return pts
-  // Clip start
-  let result = pts
-  let remaining = startClip
-  for (let i = 0; i < result.length - 1; i++) {
-    const segLen = Math.hypot(result[i + 1].x - result[i].x, result[i + 1].y - result[i].y)
-    if (remaining < segLen) {
-      const t = remaining / segLen
-      const clipped: Pos = {
-        x: result[i].x + t * (result[i + 1].x - result[i].x),
-        y: result[i].y + t * (result[i + 1].y - result[i].y),
-      }
-      result = [clipped, ...result.slice(i + 1)]
-      break
-    }
-    remaining -= segLen
-    if (i === result.length - 2) return []
-  }
-  // Clip end
-  remaining = endClip
-  for (let i = result.length - 1; i > 0; i--) {
-    const segLen = Math.hypot(result[i].x - result[i - 1].x, result[i].y - result[i - 1].y)
-    if (remaining < segLen) {
-      const t = remaining / segLen
-      const clipped: Pos = {
-        x: result[i].x + t * (result[i - 1].x - result[i].x),
-        y: result[i].y + t * (result[i - 1].y - result[i].y),
-      }
-      result = [...result.slice(0, i), clipped]
-      break
-    }
-    remaining -= segLen
-    if (i === 1) return []
-  }
-  return result
-}
 
 function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
   const dims = getSymbolDims(spec)
@@ -573,43 +537,6 @@ function annotationDimsMm(mapScale: number, spec: EventSpec) {
 }
 
 // ── Forbidden route ─────────────────────────────────────────────────────────
-
-function walkPath(points: Pos[], spacing: number): { x: number; y: number; angle: number }[] {
-  if (points.length < 2) return []
-
-  const segs: { len: number; angle: number }[] = []
-  let totalLen = 0
-  for (let i = 1; i < points.length; i++) {
-    const dx = points[i].x - points[i - 1].x
-    const dy = points[i].y - points[i - 1].y
-    const len = Math.sqrt(dx * dx + dy * dy)
-    segs.push({ len, angle: Math.atan2(dy, dx) })
-    totalLen += len
-  }
-
-  const marks: { x: number; y: number; angle: number }[] = []
-  const count = Math.max(2, Math.round(totalLen / spacing))
-  const step = totalLen / count
-
-  let dist = step / 2
-  while (dist < totalLen) {
-    let cum = 0
-    for (let i = 0; i < segs.length; i++) {
-      if (cum + segs[i].len >= dist) {
-        const t = (dist - cum) / segs[i].len
-        marks.push({
-          x: points[i].x + t * (points[i + 1].x - points[i].x),
-          y: points[i].y + t * (points[i + 1].y - points[i].y),
-          angle: segs[i].angle,
-        })
-        break
-      }
-      cum += segs[i].len
-    }
-    dist += step
-  }
-  return marks
-}
 
 function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
   if (points.length < 2) return
