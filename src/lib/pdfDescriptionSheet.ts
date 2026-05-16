@@ -149,6 +149,16 @@ function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
   }
 }
 
+// ── Draw dimension text in a cell ───────────────────────────────────────────
+
+function drawDimensionText(doc: jsPDF, text: string, cx: number, cy: number) {
+  doc.setFont('helvetica', 'bold')
+  const fontSize = text.length > 5 ? 4.5 : 5.5
+  doc.setFontSize(fontSize)
+  doc.setTextColor(0, 0, 0)
+  doc.text(text, cx, cy + fontSize * 0.12, { align: 'center' })
+}
+
 // ── Draw a small start triangle in column A ─────────────────────────────────
 
 function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
@@ -279,11 +289,14 @@ export function drawDescriptionSheetOverlay(
       const field = columnFields[colId]
       const symCode = (desc as any)[field]
       if (!symCode) continue
-      const sym = getSymbol(symCode)
-      if (!sym) continue
       const cellCx = gridX + (ci + 2) * CELL + CELL / 2
       const cellCy = y + CELL / 2
-      drawIofSymbol(doc, sym, cellCx, cellCy)
+      const sym = getSymbol(symCode)
+      if (sym) {
+        drawIofSymbol(doc, sym, cellCx, cellCy)
+      } else {
+        drawDimensionText(doc, symCode, cellCx, cellCy)
+      }
     }
 
     y += CELL
@@ -405,12 +418,14 @@ export function drawDescriptionSheet(
       const symCode = desc[field]
       if (!symCode) continue
 
-      const sym = getSymbol(symCode)
-      if (!sym) continue
-
       const cellCx = gridX + (ci + 2) * CELL + CELL / 2
       const cellCy = y + CELL / 2
-      drawIofSymbol(doc, sym, cellCx, cellCy)
+      const sym = getSymbol(symCode)
+      if (sym) {
+        drawIofSymbol(doc, sym, cellCx, cellCy)
+      } else {
+        drawDimensionText(doc, symCode, cellCx, cellCy)
+      }
     }
 
     y += CELL

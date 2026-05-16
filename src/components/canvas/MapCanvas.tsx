@@ -42,7 +42,13 @@ export function MapCanvas({ loadedMap }: Props) {
   }
 
   // ── Store ──────────────────────────────────────────────────────────────────
-  const project  = useStore(s => s.project!)
+  const controls = useStore(s => s.project!.controls)
+  const courses = useStore(s => s.project!.courses)
+  const annotations = useStore(s => s.project!.annotations)
+  const map = useStore(s => s.project!.map)
+  const scaleBars = useStore(s => s.project!.scaleBars)
+  const textLabels = useStore(s => s.project!.textLabels)
+  const projectSpec = useStore(s => s.project!.spec)
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
@@ -71,9 +77,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
-  const [hoverScreenPt, setHoverScreenPt] = useState<{ x: number; y: number } | null>(null)
-  const hoverScreenPtRef = useRef(hoverScreenPt)
-  hoverScreenPtRef.current = hoverScreenPt
+  const gapRingRef = useRef<SVGGElement>(null)
 
   // ── Fit to screen on map load ──────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -756,7 +760,7 @@ export function MapCanvas({ loadedMap }: Props) {
           commitAnnotation('crossing_point')
           break
         case 'place-scalebar':
-          addScaleBar(mapPt, project.map.scale)
+          addScaleBar(mapPt, useStore.getState().project!.map.scale)
           break
         case 'place-text':
           addTextLabel(mapPt)
@@ -828,22 +832,29 @@ export function MapCanvas({ loadedMap }: Props) {
       }
     }
 
-    function onHover(e: PointerEvent) {
+    function updateGapRing(e: PointerEvent) {
       if (e.pointerType === 'touch') return
-      const state = useStore.getState()
-      if (state.editor.activeTool !== 'gap') {
-        if (hoverScreenPtRef.current != null) setHoverScreenPt(null)
+      const g = gapRingRef.current
+      if (!g) return
+      if (useStore.getState().editor.activeTool !== 'gap') {
+        g.style.display = 'none'
         return
       }
       const rect = div.getBoundingClientRect()
-      setHoverScreenPt({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      const sx = e.clientX - rect.left
+      const sy = e.clientY - rect.top
+      g.setAttribute('transform', `translate(${sx},${sy})`)
+      g.style.display = ''
     }
-    function onLeave() { setHoverScreenPt(null) }
+    function onLeave() {
+      const g = gapRingRef.current
+      if (g) g.style.display = 'none'
+    }
 
     div.addEventListener('wheel',        onWheel,   { passive: false })
     div.addEventListener('pointerdown',  onDown)
     div.addEventListener('pointermove',  onMove)
-    div.addEventListener('pointermove',  onHover)
+    div.addEventListener('pointermove',  updateGapRing)
     div.addEventListener('pointerup',    onUp)
     div.addEventListener('pointercancel', onCancel)
     div.addEventListener('dblclick',     onDblClick)
@@ -855,7 +866,7 @@ export function MapCanvas({ loadedMap }: Props) {
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
-      div.removeEventListener('pointermove',  onHover)
+      div.removeEventListener('pointermove',  updateGapRing)
       div.removeEventListener('pointerup',    onUp)
       div.removeEventListener('pointercancel', onCancel)
       div.removeEventListener('dblclick',     onDblClick)
@@ -873,10 +884,8 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const gapSize = useStore(s => s.editor.gapSize)
-  const selectedCourse = project.courses.find(c => c.id === selectedCourseId) ?? null
+  const selectedCourse = courses.find(c => c.id === selectedCourseId) ?? null
   const isCourseMode = !!selectedCourseId
-
-  const showGapRing = activeTool === 'gap' && hoverScreenPt != null
 
   const cursor = activeTool === 'bend' ? 'crosshair'
     : activeTool === 'gap' ? 'none'
@@ -909,51 +918,50 @@ export function MapCanvas({ loadedMap }: Props) {
         <g ref={overlayGRef}>
           <LegsLayer
             course={selectedCourse}
-            controls={project.controls}
-            map={project.map}
+            controls={controls}
+            map={map}
             showBendHandles={activeTool === 'bend'}
             appearance={appearance}
-            projectSpec={project.spec}
+            projectSpec={projectSpec}
           />
           <AnnotationsLayer
-            annotations={project.annotations}
+            annotations={annotations}
             pendingPoints={pendingAnnotationPoints}
             pendingType={getAnnotationType()}
-            map={project.map}
-            spec={resolveSpec(project.spec, selectedCourse?.spec)}
+            map={map}
+            spec={resolveSpec(projectSpec, selectedCourse?.spec)}
           />
           <OverlaysLayer
-            scaleBars={project.scaleBars}
-            textLabels={project.textLabels}
-            map={project.map}
+            scaleBars={scaleBars}
+            textLabels={textLabels}
+            map={map}
             selectedOverlayId={selectedOverlayId}
           />
           <ControlsLayer
-            controls={project.controls}
+            controls={controls}
           />
         </g>
-        {showGapRing && hoverScreenPt && (() => {
-          const upm = unitsPerMm(project.map)
-          const gapSpec = resolveSpec(project.spec, selectedCourse?.spec)
+        {activeTool === 'gap' && (() => {
+          const upm = unitsPerMm(map)
+          const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
           const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
           const circumference = 2 * Math.PI * r
           const gapFraction = gapSize / 360
           const gapLen = circumference * gapFraction
           const arcLen = circumference - gapLen
           const sw = Math.max(1, 0.35 * upm * appearance.lineWidth * vp.scale)
-          const { x, y } = hoverScreenPt
           return (
-            <g style={{ pointerEvents: 'none' }}>
+            <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
               <circle
-                cx={x} cy={y} r={r}
+                r={r}
                 fill="none"
                 stroke="#ea580c"
                 strokeWidth={sw}
                 strokeDasharray={`${arcLen} ${gapLen}`}
                 strokeDashoffset={arcLen / 2 + circumference / 4}
               />
-              <line x1={x - 4} y1={y} x2={x + 4} y2={y} stroke="#ea580c" strokeWidth={1} />
-              <line x1={x} y1={y - 4} x2={x} y2={y + 4} stroke="#ea580c" strokeWidth={1} />
+              <line x1={-4} y1={0} x2={4} y2={0} stroke="#ea580c" strokeWidth={1} />
+              <line x1={0} y1={-4} x2={0} y2={4} stroke="#ea580c" strokeWidth={1} />
             </g>
           )
         })()}

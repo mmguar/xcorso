@@ -9,7 +9,9 @@ import { memo, useId } from 'react'
 import type { Annotation, MapConfig, MapPoint, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
-import { symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
+import { symbolScaleFactor as specScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
+import type { AnnotationDims } from '../../lib/symbolSpec'
+import { walkPath } from '../../lib/geometry'
 
 interface Props {
   annotations: Annotation[]
@@ -19,62 +21,14 @@ interface Props {
   spec: EventSpec
 }
 
-function dims(upm: number, scale: number, spec: EventSpec) {
-  const sf = specScaleFactor(spec, scale)
-  return {
-    routeLineW:  0.35 * upm * sf,
-    routeXArm:   1.5  * upm * sf,
-    routeXW:     0.35 * upm * sf,
-    routeXSpace: 5.0  * upm * sf,
-    crossW:      0.6  * upm * sf,
-    crossHalf:   1.5  * upm * sf,
-    crossH:      1.5  * upm * sf,
-    hatchSpace:  1.2  * upm * sf,
-    hatchW:      0.2  * upm * sf,
-    boundaryW:   0.7  * upm * sf,
-  }
+function dims(upm: number, scale: number, spec: EventSpec): AnnotationDims {
+  const sf = specScaleFactor(spec, scale) * upm
+  return getAnnotationDims(sf)
 }
 
 
 // ── 711 Out-of-bounds route ──────────────────────────────────────────────────
 // Thin connecting line with X marks placed at regular intervals along the path.
-
-function walkPath(points: MapPoint[], spacing: number): { x: number; y: number; angle: number }[] {
-  if (points.length < 2) return []
-
-  const segs: { len: number; angle: number }[] = []
-  let totalLen = 0
-  for (let i = 1; i < points.length; i++) {
-    const dx = points[i].x - points[i - 1].x
-    const dy = points[i].y - points[i - 1].y
-    const len = Math.sqrt(dx * dx + dy * dy)
-    segs.push({ len, angle: Math.atan2(dy, dx) })
-    totalLen += len
-  }
-
-  const marks: { x: number; y: number; angle: number }[] = []
-  const count = Math.max(2, Math.round(totalLen / spacing))
-  const actualSpacing = totalLen / count
-
-  let dist = actualSpacing / 2
-  while (dist < totalLen) {
-    let cumLen = 0
-    for (let i = 0; i < segs.length; i++) {
-      if (cumLen + segs[i].len >= dist) {
-        const t = (dist - cumLen) / segs[i].len
-        marks.push({
-          x: points[i].x + t * (points[i + 1].x - points[i].x),
-          y: points[i].y + t * (points[i + 1].y - points[i].y),
-          angle: segs[i].angle,
-        })
-        break
-      }
-      cumLen += segs[i].len
-    }
-    dist += actualSpacing
-  }
-  return marks
-}
 
 function ForbiddenRoute({ points, upm, scale, color, spec }: {
   points: MapPoint[]; upm: number; scale: number; color: string; spec: EventSpec

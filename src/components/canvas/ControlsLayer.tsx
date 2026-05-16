@@ -109,8 +109,8 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
   const innerR = dims.finishRInner * upm * scaleFactor * scale
   const { x, y } = control.position
   const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
-  const outerCirc = 2 * Math.PI * scaleFactor * cr
-  const innerCirc = 2 * Math.PI * scaleFactor * innerR
+  const outerCirc = 2 * Math.PI * cr
+  const innerCirc = 2 * Math.PI * innerR
   const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
   const innerDash = control.gaps?.length ? gapsToDashArray(control.gaps, innerCirc) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
@@ -148,7 +148,7 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
   const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
   const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
   const { x, y } = control.position
-  const circumference = 2 * Math.PI * cr * scaleFactor
+  const circumference = 2 * Math.PI * cr
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1

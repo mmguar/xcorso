@@ -175,25 +175,37 @@ function nextTypeCode(controls: Control[], type: ControlType): number {
   return Math.max(...codes) + 1
 }
 
+function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
+  const getType = (id: string) => controls.find(c => c.id === id)?.type
+  const finishIdx = course.controls.findIndex(cc => getType(cc.controlId) === 'finish')
+  const insertIdx = finishIdx >= 0 ? finishIdx : course.controls.length
+  course.controls.splice(insertIdx, 0, ...entries)
+}
+
 export const useStore = create<Store>((set, get) => {
-  function mutateProject(fn: (p: Project) => void) {
+  function pushUndoSnapshot() {
     const { project, undoStack } = get()
     if (!project) return
+    set({
+      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
+      redoStack: [],
+    })
+  }
+
+  function mutateProject(fn: (p: Project) => void) {
+    const { project } = get()
+    if (!project) return
+    pushUndoSnapshot()
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
-    set({
-      project: p,
-      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), project],
-      redoStack: [],
-    })
+    set({ project: p })
   }
 
   function mutateProjectSilent(fn: (p: Project) => void) {
     const { project } = get()
     if (!project) return
     fn(project)
-    project.meta.updatedAt = new Date().toISOString()
     set({ project: { ...project } as Project })
   }
 
@@ -257,8 +269,7 @@ export const useStore = create<Store>((set, get) => {
 
     setMapDimensions: (width, height) => {
       mutateProjectSilent(p => {
-        p.map.width = width
-        p.map.height = height
+        p.map = { ...p.map, width, height }
       })
     },
 
@@ -276,14 +287,7 @@ export const useStore = create<Store>((set, get) => {
       return control
     },
 
-    beginMoveControl: () => {
-      const { project, undoStack } = get()
-      if (!project) return
-      set({
-        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
-        redoStack: [],
-      })
-    },
+    beginMoveControl: () => pushUndoSnapshot(),
 
     moveControl: (id, position) => {
       mutateProjectSilent(p => {
@@ -436,9 +440,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        const fi = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
-        const ii = fi >= 0 ? fi : c.controls.length
-        c.controls.splice(ii, 0, { id: uuidv4(), controlId })
+        insertBeforeFinish(c, p.controls, [{ id: uuidv4(), controlId }])
       })
     },
 
@@ -454,11 +456,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        const getType = (id: string) => p.controls.find(ctrl => ctrl.id === id)?.type
-        const finishIdx = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
-        const insertIdx = finishIdx >= 0 ? finishIdx : c.controls.length
-        const newEntries = regularControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id }))
-        c.controls.splice(insertIdx, 0, ...newEntries)
+        insertBeforeFinish(c, p.controls, regularControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
       })
     },
 
@@ -473,11 +471,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        const getType = (id: string) => p.controls.find(ctrl => ctrl.id === id)?.type
-        const finishIdx = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
-        const insertIdx = finishIdx >= 0 ? finishIdx : c.controls.length
-        const newEntries = validControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id }))
-        c.controls.splice(insertIdx, 0, ...newEntries)
+        insertBeforeFinish(c, p.controls, validControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
       })
     },
 
@@ -626,14 +620,7 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
-    beginMoveLegBendPoint: () => {
-      const { project, undoStack } = get()
-      if (!project) return
-      set({
-        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
-        redoStack: [],
-      })
-    },
+    beginMoveLegBendPoint: () => pushUndoSnapshot(),
 
     moveLegBendPoint: (courseId, courseControlId, index, position) => {
       mutateProjectSilent(p => {
@@ -673,14 +660,7 @@ export const useStore = create<Store>((set, get) => {
 
     // ── Course label offsets ─────────────────────────────────────────────
 
-    beginMoveCourseLabel: () => {
-      const { project, undoStack } = get()
-      if (!project) return
-      set({
-        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
-        redoStack: [],
-      })
-    },
+    beginMoveCourseLabel: () => pushUndoSnapshot(),
 
     moveCourseLabel: (courseId, courseControlId, offset) => {
       mutateProjectSilent(p => {
@@ -749,14 +729,7 @@ export const useStore = create<Store>((set, get) => {
       }))
     },
 
-    beginMoveOverlay: () => {
-      const { project, undoStack } = get()
-      if (!project) return
-      set({
-        undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
-        redoStack: [],
-      })
-    },
+    beginMoveOverlay: () => pushUndoSnapshot(),
 
     moveScaleBar: (id, position) => {
       mutateProjectSilent(p => {

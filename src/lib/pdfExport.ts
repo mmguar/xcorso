@@ -4,7 +4,8 @@ import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap } from './courseUtils'
 import { computeCourseDistances } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from './symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
+import { walkPath, clipPolyline } from './geometry'
 
 export const MARGIN = 10
 const TILE_OVERLAP = 15
@@ -241,7 +242,8 @@ export function checkFit(project: Project, options: PdfExportOptions): CourseFit
   const results: CourseFitInfo[] = []
 
   if (options.allControls) {
-    const bounds = allControlsBoundsMm(project.controls, project.map, options.printScale)
+    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
     results.push({
       courseId: ALL_CONTROLS_ID,
       courseName: 'All controls',
@@ -335,7 +337,8 @@ export function checkTiling(project: Project, options: PdfExportOptions): Course
   const results: CourseTileInfo[] = []
 
   if (options.allControls) {
-    const bounds = allControlsBoundsMm(project.controls, project.map, options.printScale)
+    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
     if (bounds) {
       const cols = tileCount(bounds.width, printableW)
       const rows = tileCount(bounds.height, printableH)
@@ -487,43 +490,6 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   }
 }
 
-function clipPolyline(pts: Pos[], startClip: number, endClip: number): Pos[] {
-  if (pts.length < 2) return pts
-  // Clip start
-  let result = pts
-  let remaining = startClip
-  for (let i = 0; i < result.length - 1; i++) {
-    const segLen = Math.hypot(result[i + 1].x - result[i].x, result[i + 1].y - result[i].y)
-    if (remaining < segLen) {
-      const t = remaining / segLen
-      const clipped: Pos = {
-        x: result[i].x + t * (result[i + 1].x - result[i].x),
-        y: result[i].y + t * (result[i + 1].y - result[i].y),
-      }
-      result = [clipped, ...result.slice(i + 1)]
-      break
-    }
-    remaining -= segLen
-    if (i === result.length - 2) return []
-  }
-  // Clip end
-  remaining = endClip
-  for (let i = result.length - 1; i > 0; i--) {
-    const segLen = Math.hypot(result[i].x - result[i - 1].x, result[i].y - result[i - 1].y)
-    if (remaining < segLen) {
-      const t = remaining / segLen
-      const clipped: Pos = {
-        x: result[i].x + t * (result[i - 1].x - result[i].x),
-        y: result[i].y + t * (result[i - 1].y - result[i].y),
-      }
-      result = [...result.slice(0, i), clipped]
-      break
-    }
-    remaining -= segLen
-    if (i === 1) return []
-  }
-  return result
-}
 
 function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
   const dims = getSymbolDims(spec)
@@ -531,7 +497,7 @@ function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale
   const controlR = dims.controlR * sf
   const startSide = dims.startSide * sf
   const finishOuter = dims.finishROuter * sf
-  const fontSizePt = controlR * 1.1 * 2.8346456693
+  const fontSizePt = controlR * 1.1 * MM_TO_PT
 
   doc.setFontSize(fontSizePt)
   doc.setFont('helvetica', 'bold')
@@ -557,57 +523,10 @@ function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale
 
 function annotationDimsMm(mapScale: number, spec: EventSpec) {
   const s = mapScale > 0 ? specScaleFactor(spec, mapScale) : 1.5
-  return {
-    routeLineW: 0.35 * s,
-    routeXArm: 1.5 * s,
-    routeXW: 0.35 * s,
-    routeXSpace: 5.0 * s,
-    crossW: 0.6 * s,
-    crossHalf: 1.5 * s,
-    crossH: 1.5 * s,
-    hatchSpace: 1.2 * s,
-    hatchW: 0.2 * s,
-  }
+  return getAnnotationDims(s)
 }
 
 // ── Forbidden route ─────────────────────────────────────────────────────────
-
-function walkPath(points: Pos[], spacing: number): { x: number; y: number; angle: number }[] {
-  if (points.length < 2) return []
-
-  const segs: { len: number; angle: number }[] = []
-  let totalLen = 0
-  for (let i = 1; i < points.length; i++) {
-    const dx = points[i].x - points[i - 1].x
-    const dy = points[i].y - points[i - 1].y
-    const len = Math.sqrt(dx * dx + dy * dy)
-    segs.push({ len, angle: Math.atan2(dy, dx) })
-    totalLen += len
-  }
-
-  const marks: { x: number; y: number; angle: number }[] = []
-  const count = Math.max(2, Math.round(totalLen / spacing))
-  const step = totalLen / count
-
-  let dist = step / 2
-  while (dist < totalLen) {
-    let cum = 0
-    for (let i = 0; i < segs.length; i++) {
-      if (cum + segs[i].len >= dist) {
-        const t = (dist - cum) / segs[i].len
-        marks.push({
-          x: points[i].x + t * (points[i + 1].x - points[i].x),
-          y: points[i].y + t * (points[i + 1].y - points[i].y),
-          angle: segs[i].angle,
-        })
-        break
-      }
-      cum += segs[i].len
-    }
-    dist += step
-  }
-  return marks
-}
 
 function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
   if (points.length < 2) return
@@ -786,7 +705,7 @@ function drawScaleBar(
   // Ticks and labels
   doc.setTextColor(0, 0, 0)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(textH * 0.7 * 2.83) // mm to pt
+  doc.setFontSize(textH * 0.7 * MM_TO_PT)
 
   const fmtDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
 
@@ -803,7 +722,7 @@ function drawScaleBar(
   }
 
   // Scale text
-  doc.setFontSize(textH * 0.8 * 2.83)
+  doc.setFontSize(textH * 0.8 * MM_TO_PT)
   doc.text(`1:${scaleDen.toLocaleString()}`, origin.x + boxW / 2, barY + barH + textH + pad * 0.3, { align: 'center' })
 }
 
@@ -818,7 +737,7 @@ function drawTextLabel(
   const [r, g, b] = hexToRgb(tl.color)
   doc.setTextColor(r, g, b)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(tl.fontSizeMm * 2.83) // mm to pt
+  doc.setFontSize(tl.fontSizeMm * MM_TO_PT)
   doc.text(tl.text, pos.x, pos.y)
 }
 
@@ -904,7 +823,8 @@ export async function exportCoursePdf(
 
   // All controls page (no legs, just control symbols with codes)
   if (options.allControls && project.controls.length > 0) {
-    const bounds = allControlsBoundsMm(project.controls, project.map, options.printScale)
+    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
     if (bounds) {
       const useTiling = options.tiling && (bounds.width > printableW || bounds.height > printableH)
       const cols = useTiling ? tileCount(bounds.width, printableW) : 1
@@ -929,7 +849,7 @@ export async function exportCoursePdf(
           const cy = ph / 2
 
           function toPage(pt: MapPoint): Pos {
-            const mm = mapToMm(pt, project.map, options.printScale)
+            const mm = mapToMm(pt, project.map, acScale)
             return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
 
@@ -954,19 +874,19 @@ export async function exportCoursePdf(
           setColor(doc, ctrlColor)
           for (const ctrl of project.controls) {
             const pos = toPage(ctrl.position)
-            drawControlSymbol(doc, ctrl.type, pos, options.printScale, allCtrlSpec)
-            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, options.printScale, allCtrlSpec)
+            drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec)
+            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec)
           }
 
           // Overlays
-          for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, options.printScale)
+          for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
 
           doc.setFontSize(8)
           doc.setFont('helvetica', 'normal')
           doc.setTextColor(130, 130, 130)
           const tileLabel = cols * rows > 1
-            ? `All controls  —  1:${options.printScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
+            ? `All controls  —  1:${acScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
             : ``
           doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
