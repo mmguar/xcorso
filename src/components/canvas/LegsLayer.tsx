@@ -4,7 +4,7 @@
  * Lines are clipped at the edge of each control symbol so they don't overlap.
  */
 
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
@@ -221,7 +221,7 @@ export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBe
   useRenderTracker('LegsLayer')
   if (!course) return null
   const spec = resolveSpec(projectSpec, course.spec)
-  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
   const upm = unitsPerMm(map)
   const elements = renderLegs(course, controlMap, map.scale, upm, showBendHandles, appearance, spec)
   if (elements.length === 0) return null

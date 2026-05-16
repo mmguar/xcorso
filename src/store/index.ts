@@ -175,6 +175,13 @@ function nextTypeCode(controls: Control[], type: ControlType): number {
   return Math.max(...codes) + 1
 }
 
+function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
+  const getType = (id: string) => controls.find(c => c.id === id)?.type
+  const finishIdx = course.controls.findIndex(cc => getType(cc.controlId) === 'finish')
+  const insertIdx = finishIdx >= 0 ? finishIdx : course.controls.length
+  course.controls.splice(insertIdx, 0, ...entries)
+}
+
 export const useStore = create<Store>((set, get) => {
   function pushUndoSnapshot() {
     const { project, undoStack } = get()
@@ -433,9 +440,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        const fi = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
-        const ii = fi >= 0 ? fi : c.controls.length
-        c.controls.splice(ii, 0, { id: uuidv4(), controlId })
+        insertBeforeFinish(c, p.controls, [{ id: uuidv4(), controlId }])
       })
     },
 
@@ -451,11 +456,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        const getType = (id: string) => p.controls.find(ctrl => ctrl.id === id)?.type
-        const finishIdx = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
-        const insertIdx = finishIdx >= 0 ? finishIdx : c.controls.length
-        const newEntries = regularControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id }))
-        c.controls.splice(insertIdx, 0, ...newEntries)
+        insertBeforeFinish(c, p.controls, regularControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
       })
     },
 
@@ -470,11 +471,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        const getType = (id: string) => p.controls.find(ctrl => ctrl.id === id)?.type
-        const finishIdx = c.controls.findIndex(cc => getType(cc.controlId) === 'finish')
-        const insertIdx = finishIdx >= 0 ? finishIdx : c.controls.length
-        const newEntries = validControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id }))
-        c.controls.splice(insertIdx, 0, ...newEntries)
+        insertBeforeFinish(c, p.controls, validControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
       })
     },
 
