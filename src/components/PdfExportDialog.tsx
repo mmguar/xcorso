@@ -1,14 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '../store'
-import {
-  exportCoursePdf, checkFit, checkTiling, canExportPdf, PAGE_SIZES, MARGIN,
-  suggestFitScale, coursePreviewMm, mapToMm, ALL_CONTROLS_ID,
-} from '../lib/pdfExport'
-import type { PdfExportOptions, CoursePreview, DescMode } from '../lib/pdfExport'
+import { useMemo, useRef } from 'react'
+import { PAGE_SIZES, MARGIN, ALL_CONTROLS_ID } from '../lib/pdfExport'
+import type { CoursePreview, DescMode } from '../lib/pdfExport'
 import type { LoadedMap } from '../lib/mapLoader'
 import type { MapConfig } from '../types'
-import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
-import { downloadBlob } from '../lib/projectFile'
+import { mapToMm } from '../lib/pdfExport'
+import { usePdfExportState } from './usePdfExportState'
 
 // ── Map image bounds (mm on paper) ────────────────────────────────────────
 
@@ -91,13 +87,11 @@ function PrintPreview({
   const frameX = pcx + offsetX * mmScale - frameW / 2
   const frameY = pcy + offsetY * mmScale - frameH / 2
 
-  // Page outline (full page including margins)
   const fullW = pageW * mmScale
   const fullH = pageH * mmScale
   const fullX = frameX - MARGIN * mmScale
   const fullY = frameY - MARGIN * mmScale
 
-  // Sheet rectangle in page coordinates
   const hasSheet = sheetW != null && sheetH != null && sheetX != null && sheetY != null && onSheetChange != null
   const sRectW = hasSheet ? sheetW! * mmScale : 0
   const sRectH = hasSheet ? sheetH! * mmScale : 0
@@ -147,9 +141,7 @@ function PrintPreview({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Page background */}
       <rect x={fullX} y={fullY} width={fullW} height={fullH} fill="white" stroke="#d1d5db" strokeWidth={1} />
-      {/* Map image or tint fallback (clipped to printable area) */}
       <clipPath id="printable-clip">
         <rect x={frameX} y={frameY} width={frameW} height={frameH} />
       </clipPath>
@@ -167,7 +159,6 @@ function PrintPreview({
       ) : (
         <rect x={frameX} y={frameY} width={frameW} height={frameH} fill="#f3e8ff" opacity={0.5} />
       )}
-      {/* Page frame (printable area) */}
       <rect
         x={frameX} y={frameY}
         width={frameW} height={frameH}
@@ -176,7 +167,6 @@ function PrintPreview({
         strokeWidth={1.5}
         strokeDasharray="4 3"
       />
-      {/* Controls */}
       {positions.map((c, i) => (
         <circle
           key={i}
@@ -187,7 +177,6 @@ function PrintPreview({
           opacity={0.7}
         />
       ))}
-      {/* Description sheet */}
       {hasSheet && (
         <rect
           x={sRectX} y={sRectY}
@@ -219,111 +208,8 @@ interface Props {
 }
 
 export function PdfExportDialog({ onClose }: Props) {
-  const project = useStore(s => s.project!)
-  const loadedMap = useStore(s => s.loadedMap)
-
-  const [pageSize, setPageSize] = useState('a4')
-  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
-  const [printScale, setPrintScale] = useState(project.map.scale)
-  const [scaleInput, setScaleInput] = useState(String(project.map.scale))
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(project.courses.map(c => c.id)),
-  )
-  const [allControls, setAllControls] = useState(false)
-  const [descModes, setDescModes] = useState<Record<string, DescMode>>({})
-  const [scaleOverrides, setScaleOverrides] = useState<Record<string, number>>({})
-  const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
-  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
-  const [tiling, setTiling] = useState(false)
-  const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
-  const [mapOpacity, setMapOpacity] = useState(1)
-  const [exporting, setExporting] = useState(false)
-
-  const options: PdfExportOptions = {
-    pageSize,
-    orientation,
-    printScale,
-    scaleOverrides,
-    courseIds: [...selectedIds],
-    allControls,
-    descModes,
-    offsets,
-    sheetPositions,
-    tiling,
-    mapOpacity,
-  }
-
-  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
-  const pw = orientation === 'landscape' ? base.h : base.w
-  const ph = orientation === 'landscape' ? base.w : base.h
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
-
-  const fitScale = suggestFitScale(project, [...selectedIds], pageSize, orientation, allControls)
-  const fitInfo = checkFit(project, options)
-  const tileInfo = checkTiling(project, options)
-  const hasSelection = selectedIds.size > 0 || allControls
-  const anyOverflow = fitInfo.some(f => !f.fits)
-  const descPages = project.courses
-    .filter(c => selectedIds.has(c.id) && descModes[c.id] === 'separate')
-    .reduce((sum, c) => sum + descriptionSheetPageCount(c, project.controls, ph), 0)
-  const totalPages = (tiling
-    ? tileInfo.reduce((sum, t) => sum + t.totalPages, 0)
-    : fitInfo.length) + descPages
-  const scalable = canExportPdf(project.map)
-
-  const previewIds = [
-    ...(allControls ? [ALL_CONTROLS_ID] : []),
-    ...project.courses.filter(c => selectedIds.has(c.id)).map(c => c.id),
-  ]
-  const activePreviewId = previewCourseId && previewIds.includes(previewCourseId)
-    ? previewCourseId
-    : previewIds[0] ?? null
-  const activeScale = activePreviewId && activePreviewId 
-    ? scaleOverrides[activePreviewId] ?? printScale
-    : printScale
-  const preview = activePreviewId
-    ? coursePreviewMm(project, activePreviewId, activeScale)
-    : null
-  const mapImage = useMapPreviewBounds(loadedMap, project.map, activeScale)
-
-  const activeOffset = activePreviewId ? offsets[activePreviewId] ?? { x: 0, y: 0 } : { x: 0, y: 0 }
-  const hasOffset = activeOffset.x !== 0 || activeOffset.y !== 0
-
-  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && descModes[activePreviewId] === 'on-map'
-    ? project.courses.find(c => c.id === activePreviewId)
-    : null
-  const sheetSize = previewCourse
-    ? descriptionSheetSize(previewCourse, project.controls)
-    : null
-  const activeSheetPos = activePreviewId ? sheetPositions[activePreviewId] ?? { x: MARGIN, y: MARGIN } : { x: MARGIN, y: MARGIN }
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [onClose])
-
-  async function handleExport() {
-    setExporting(true)
-    try {
-      const blob = await exportCoursePdf(project, options, loadedMap)
-      downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
-      onClose()
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  function toggleCourse(id: string) {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
-  }
+  const s = usePdfExportState(onClose)
+  const mapImage = useMapPreviewBounds(s.loadedMap, s.project.map, s.activeScale)
 
   return (
     <div
@@ -336,7 +222,7 @@ export function PdfExportDialog({ onClose }: Props) {
       >
         <h2 className="text-lg font-bold text-gray-900">Export Course PDF</h2>
 
-        {!scalable && (
+        {!s.scalable && (
           <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             Map has no scale calibration. Use the Measure Scale tool first so the
             PDF can be printed at the correct size.
@@ -348,8 +234,8 @@ export function PdfExportDialog({ onClose }: Props) {
           <div className="flex-1 flex flex-col gap-1">
             <label className="text-xs font-medium text-gray-500">Page size</label>
             <select
-              value={pageSize}
-              onChange={e => setPageSize(e.target.value)}
+              value={s.pageSize}
+              onChange={e => s.setPageSize(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             >
               {Object.entries(PAGE_SIZES).map(([k, v]) => (
@@ -363,9 +249,9 @@ export function PdfExportDialog({ onClose }: Props) {
               {(['portrait', 'landscape'] as const).map(o => (
                 <button
                   key={o}
-                  onClick={() => setOrientation(o)}
+                  onClick={() => s.setOrientation(o)}
                   className={`px-3 text-sm transition-colors ${
-                    orientation === o
+                    s.orientation === o
                       ? 'bg-orange-600 text-white'
                       : 'bg-white text-gray-600 hover:bg-gray-50'
                   }`}
@@ -385,30 +271,20 @@ export function PdfExportDialog({ onClose }: Props) {
             <input
               type="text"
               inputMode="numeric"
-              value={parseInt(scaleInput)}
-              onChange={e => setScaleInput(e.target.value)}
-              onBlur={() => {
-                const v = parseInt(scaleInput)
-                if (!isNaN(v) && v > 0) { setPrintScale(v); setScaleInput(String(v)) }
-                else setScaleInput(String(printScale))
-              }}
+              value={parseInt(s.scaleInput)}
+              onChange={e => s.setScaleInput(e.target.value)}
+              onBlur={s.handleScaleBlur}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
               className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
-            {printScale !== project.map.scale && (
-              <button
-                onClick={() => { setPrintScale(project.map.scale); setScaleInput(String(project.map.scale)) }}
-                className="text-xs text-orange-600 hover:text-orange-800"
-              >
-                Reset to 1:{parseInt(project.map.scale.toLocaleString())}
+            {s.printScale !== s.project.map.scale && (
+              <button onClick={s.resetScale} className="text-xs text-orange-600 hover:text-orange-800">
+                Reset to 1:{parseInt(s.project.map.scale.toLocaleString())}
               </button>
             )}
-            {fitScale && fitScale !== printScale && (
-              <button
-                onClick={() => { setPrintScale(fitScale); setScaleInput(String(fitScale)) }}
-                className="text-xs text-orange-600 hover:text-orange-800"
-              >
-                Fit to page (1:{parseInt(fitScale.toLocaleString())})
+            {s.fitScale && s.fitScale !== s.printScale && (
+              <button onClick={s.applyFitScale} className="text-xs text-orange-600 hover:text-orange-800">
+                Fit to page (1:{parseInt(s.fitScale.toLocaleString())})
               </button>
             )}
           </div>
@@ -418,26 +294,26 @@ export function PdfExportDialog({ onClose }: Props) {
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-500">
             Map opacity
-            <span className="text-gray-400 font-normal"> — {Math.round(mapOpacity * 100)}%</span>
+            <span className="text-gray-400 font-normal"> — {Math.round(s.mapOpacity * 100)}%</span>
           </label>
           <input
             type="range"
             min={0}
             max={1}
             step={0.01}
-            value={mapOpacity}
-            onChange={e => setMapOpacity(parseFloat(e.target.value))}
+            value={s.mapOpacity}
+            onChange={e => s.setMapOpacity(parseFloat(e.target.value))}
             className="w-full accent-orange-600"
           />
         </div>
 
         {/* Tiling */}
-        {anyOverflow && hasSelection && (
+        {s.anyOverflow && s.hasSelection && (
           <label className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={tiling}
-              onChange={e => setTiling(e.target.checked)}
+              checked={s.tiling}
+              onChange={e => s.setTiling(e.target.checked)}
               className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
             />
             <div className="flex-1">
@@ -448,37 +324,30 @@ export function PdfExportDialog({ onClose }: Props) {
         )}
 
         {/* Print frame preview */}
-        {preview && hasSelection && activePreviewId && (
+        {s.preview && s.hasSelection && s.activePreviewId && (
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-gray-500">
                 Page position
                 <span className="text-gray-400 font-normal"> &mdash; drag to reposition</span>
               </label>
-              {hasOffset && (
-                <button
-                  onClick={() => setOffsets(prev => {
-                    const next = { ...prev }
-                    delete next[activePreviewId]
-                    return next
-                  })}
-                  className="text-xs text-orange-600 hover:text-orange-800"
-                >
+              {s.hasOffset && (
+                <button onClick={s.resetOffset} className="text-xs text-orange-600 hover:text-orange-800">
                   Re-center
                 </button>
               )}
             </div>
-            {previewIds.length > 1 && (
+            {s.previewIds.length > 1 && (
               <div className="flex gap-1 flex-wrap">
-                {previewIds.map(id => {
-                  const course = id === ALL_CONTROLS_ID ? null : project.courses.find(c => c.id === id)
+                {s.previewIds.map(id => {
+                  const course = id === ALL_CONTROLS_ID ? null : s.project.courses.find(c => c.id === id)
                   const label = id === ALL_CONTROLS_ID ? 'All controls' : (course?.name ?? id)
                   const color = id === ALL_CONTROLS_ID ? '#ea580c' : (course?.color ?? '#7B2FBE')
-                  const isActive = id === activePreviewId
+                  const isActive = id === s.activePreviewId
                   return (
                     <button
                       key={id}
-                      onClick={() => setPreviewCourseId(id)}
+                      onClick={() => s.setPreviewCourseId(id)}
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                         isActive
                           ? 'bg-orange-100 text-orange-700 ring-1 ring-orange-300'
@@ -492,58 +361,46 @@ export function PdfExportDialog({ onClose }: Props) {
                 })}
               </div>
             )}
-            {activePreviewId  && (
+            {s.activePreviewId && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">Scale:</span>
                 <span className="text-xs text-gray-500">1 :</span>
                 <input
                   type="text"
                   inputMode="numeric"
-                  value={scaleOverrides[activePreviewId] != null ? String(scaleOverrides[activePreviewId]) : ''}
-                  placeholder={String(parseInt(String(printScale)))}
-                  onChange={e => {
-                    const raw = e.target.value
-                    if (raw === '') {
-                      setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
-                    } else {
-                      const v = parseInt(raw)
-                      if (!isNaN(v) && v > 0) setScaleOverrides(prev => ({ ...prev, [activePreviewId]: v }))
-                    }
-                  }}
-                  onBlur={e => {
-                    if (e.target.value === '') return
-                    const v = parseInt(e.target.value)
-                    if (isNaN(v) || v <= 0) setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
-                  }}
+                  value={s.scaleOverrides[s.activePreviewId] != null ? String(s.scaleOverrides[s.activePreviewId]) : ''}
+                  placeholder={String(parseInt(String(s.printScale)))}
+                  onChange={e => s.setActiveScaleOverride(e.target.value)}
+                  onBlur={e => s.blurActiveScaleOverride(e.target.value)}
                   className="w-20 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
                 />
-                {scaleOverrides[activePreviewId] != null && (
+                {s.scaleOverrides[s.activePreviewId] != null && (
                   <button
-                    onClick={() => setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })}
+                    onClick={s.resetActiveScaleOverride}
                     className="text-[11px] text-orange-600 hover:text-orange-800"
                   >
-                    Reset to 1:{parseInt(printScale.toLocaleString())}
+                    Reset to 1:{parseInt(s.printScale.toLocaleString())}
                   </button>
                 )}
               </div>
             )}
             <PrintPreview
-              preview={preview}
-              pageW={pw}
-              pageH={ph}
-              printableW={printableW}
-              printableH={printableH}
-              offsetX={activeOffset.x}
-              offsetY={activeOffset.y}
-              onOffsetChange={(x, y) => setOffsets(prev => ({ ...prev, [activePreviewId]: { x, y } }))}
+              preview={s.preview}
+              pageW={s.pw}
+              pageH={s.ph}
+              printableW={s.printableW}
+              printableH={s.printableH}
+              offsetX={s.activeOffset.x}
+              offsetY={s.activeOffset.y}
+              onOffsetChange={s.setActiveOffset}
               mapImage={mapImage}
-              dotColor={activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (project.courses.find(c => c.id === activePreviewId)?.color ?? '#7B2FBE')}
-              {...(sheetSize ? {
-                sheetW: sheetSize.width,
-                sheetH: sheetSize.height,
-                sheetX: activeSheetPos.x,
-                sheetY: activeSheetPos.y,
-                onSheetChange: (x: number, y: number) => setSheetPositions(prev => ({ ...prev, [activePreviewId]: { x, y } })),
+              dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === s.activePreviewId)?.color ?? '#7B2FBE')}
+              {...(s.sheetSize ? {
+                sheetW: s.sheetSize.width,
+                sheetH: s.sheetSize.height,
+                sheetX: s.activeSheetPos.x,
+                sheetY: s.activeSheetPos.y,
+                onSheetChange: s.setActiveSheetPos,
               } : {})}
             />
           </div>
@@ -554,48 +411,42 @@ export function PdfExportDialog({ onClose }: Props) {
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-gray-500">
               Courses
-              {hasSelection && (
+              {s.hasSelection && (
                 <span className="text-gray-400 font-normal">
-                  {' '}&mdash; {totalPages} {totalPages === 1 ? 'page' : 'pages'} total
+                  {' '}&mdash; {s.totalPages} {s.totalPages === 1 ? 'page' : 'pages'} total
                 </span>
               )}
             </label>
             <div className="flex gap-2">
-              <button
-                onClick={() => setSelectedIds(new Set(project.courses.map(c => c.id)))}
-                className="text-xs text-orange-600 hover:text-orange-800"
-              >All</button>
-              <button
-                onClick={() => setSelectedIds(new Set())}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >None</button>
+              <button onClick={s.selectAll} className="text-xs text-orange-600 hover:text-orange-800">All</button>
+              <button onClick={s.selectNone} className="text-xs text-gray-400 hover:text-gray-600">None</button>
             </div>
           </div>
 
           <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-48 overflow-y-auto">
-            {project.controls.length > 0 && (
+            {s.project.controls.length > 0 && (
               <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={allControls}
-                  onChange={e => setAllControls(e.target.checked)}
+                  checked={s.allControls}
+                  onChange={e => s.setAllControls(e.target.checked)}
                   className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
                 />
                 <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-orange-600" />
                 <span className="text-sm flex-1 truncate">All controls</span>
-                {allControls && (() => {
-                  const fit = fitInfo.find(f => f.courseId === ALL_CONTROLS_ID)
-                  const tile = tileInfo.find(t => t.courseId === ALL_CONTROLS_ID)
+                {s.allControls && (() => {
+                  const fit = s.fitInfo.find(f => f.courseId === ALL_CONTROLS_ID)
+                  const tile = s.tileInfo.find(t => t.courseId === ALL_CONTROLS_ID)
                   if (!fit) return null
                   return (
                     <span className={`text-xs shrink-0 ${
                       fit.fits ? 'text-green-600'
-                        : tiling ? 'text-blue-600'
+                        : s.tiling ? 'text-blue-600'
                         : 'text-amber-600'
                     }`}>
                       {fit.fits
                         ? 'fits'
-                        : tiling && tile
+                        : s.tiling && tile
                           ? `${tile.cols}×${tile.rows} pages`
                           : `${Math.round(fit.widthMm)}×${Math.round(fit.heightMm)} mm`}
                     </span>
@@ -603,21 +454,21 @@ export function PdfExportDialog({ onClose }: Props) {
                 })()}
               </label>
             )}
-            {project.courses.length === 0 && !allControls ? (
+            {s.project.courses.length === 0 && !s.allControls ? (
               <div className="px-4 py-3 text-sm text-gray-400">No courses to export</div>
             ) : (
-              project.courses.map(course => {
-                const fit = fitInfo.find(f => f.courseId === course.id)
-                const tile = tileInfo.find(t => t.courseId === course.id)
-                const checked = selectedIds.has(course.id)
-                const courseScale = scaleOverrides[course.id]
+              s.project.courses.map(course => {
+                const fit = s.fitInfo.find(f => f.courseId === course.id)
+                const tile = s.tileInfo.find(t => t.courseId === course.id)
+                const checked = s.selectedIds.has(course.id)
+                const courseScale = s.scaleOverrides[course.id]
                 return (
                   <div key={course.id} className="hover:bg-gray-50">
                     <label className="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() => toggleCourse(course.id)}
+                        onChange={() => s.toggleCourse(course.id)}
                         className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
                       />
                       <div
@@ -627,11 +478,11 @@ export function PdfExportDialog({ onClose }: Props) {
                       <span className="text-sm flex-1 truncate">{course.name}</span>
                       {checked && (
                         <select
-                          value={descModes[course.id] ?? 'none'}
+                          value={s.descModes[course.id] ?? 'none'}
                           onClick={e => e.stopPropagation()}
                           onChange={e => {
                             e.stopPropagation()
-                            setDescModes(prev => ({ ...prev, [course.id]: e.target.value as DescMode }))
+                            s.setDescModes(prev => ({ ...prev, [course.id]: e.target.value as DescMode }))
                           }}
                           className="text-[11px] border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
                         >
@@ -643,12 +494,12 @@ export function PdfExportDialog({ onClose }: Props) {
                       {fit && checked && (
                         <span className={`text-xs shrink-0 ${
                           fit.fits ? 'text-green-600'
-                            : tiling ? 'text-blue-600'
+                            : s.tiling ? 'text-blue-600'
                             : 'text-amber-600'
                         }`}>
                           {fit.fits
                             ? `fits${courseScale ? ` (1:${courseScale.toLocaleString()})` : ''}`
-                            : tiling && tile
+                            : s.tiling && tile
                               ? `${tile.cols}×${tile.rows} pages`
                               : `${Math.round(fit.widthMm)}×${Math.round(fit.heightMm)} mm`}
                         </span>
@@ -662,17 +513,13 @@ export function PdfExportDialog({ onClose }: Props) {
         </div>
 
         {/* Bulk description mode */}
-        {selectedIds.size > 0 && (
+        {s.selectedIds.size > 0 && (
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span className="font-medium">Set all descriptions:</span>
             {([['none', 'None'], ['separate', '+ page'], ['on-map', 'On map']] as const).map(([mode, label]) => (
               <button
                 key={mode}
-                onClick={() => {
-                  const next: Record<string, DescMode> = { ...descModes }
-                  for (const id of selectedIds) next[id] = mode
-                  setDescModes(next)
-                }}
+                onClick={() => s.setAllDescModes(mode)}
                 className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-orange-50 hover:text-orange-700 transition-colors"
               >
                 {label}
@@ -681,10 +528,10 @@ export function PdfExportDialog({ onClose }: Props) {
           </div>
         )}
 
-        {anyOverflow && !tiling && hasSelection && (
+        {s.anyOverflow && !s.tiling && s.hasSelection && (
           <p className="text-xs text-amber-600">
-            {fitScale
-              ? `Some courses exceed the printable area at this scale. Use "Fit to page" above for 1:${fitScale.toLocaleString()}, or enable tiling.`
+            {s.fitScale
+              ? `Some courses exceed the printable area at this scale. Use "Fit to page" above for 1:${s.fitScale.toLocaleString()}, or enable tiling.`
               : 'Some courses exceed the printable area and no common scale fits on a single page. Enable tiling, or try a larger page size or landscape orientation.'}
           </p>
         )}
@@ -698,11 +545,11 @@ export function PdfExportDialog({ onClose }: Props) {
             Cancel
           </button>
           <button
-            onClick={handleExport}
-            disabled={!hasSelection || !scalable || exporting}
+            onClick={s.handleExport}
+            disabled={!s.hasSelection || !s.scalable || s.exporting}
             className="flex-1 bg-orange-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {exporting ? 'Exporting…' : 'Export PDF'}
+            {s.exporting ? 'Exporting…' : 'Export PDF'}
           </button>
         </div>
       </div>
