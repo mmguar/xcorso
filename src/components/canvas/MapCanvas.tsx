@@ -34,11 +34,13 @@ export function MapCanvas({ loadedMap }: Props) {
   const fitScaleRef = useRef<number>(MIN_SCALE)
   const mapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
+  const rectCacheRef = useRef<DOMRect | null>(null)
+
   function syncTransform() {
     const v = vpRef.current
-    const t = `translate(${v.x},${v.y}) scale(${v.scale})`
-    mapGRef.current?.setAttribute('transform', t)
-    overlayGRef.current?.setAttribute('transform', t)
+    const t = `translate(${v.x}px,${v.y}px) scale(${v.scale})`
+    if (mapGRef.current) mapGRef.current.style.transform = t
+    if (overlayGRef.current) overlayGRef.current.style.transform = t
   }
   function setVp(next: Viewport) {
     vpRef.current = next
@@ -84,6 +86,18 @@ export function MapCanvas({ loadedMap }: Props) {
   // Keep <g> transforms in sync after any React re-render
   useLayoutEffect(syncTransform)
 
+  // ── Cache bounding rect via ResizeObserver ─────────────────────────────────
+  useLayoutEffect(() => {
+    const el = divRef.current
+    if (!el) return
+    rectCacheRef.current = el.getBoundingClientRect()
+    const ro = new ResizeObserver(() => { rectCacheRef.current = el.getBoundingClientRect() })
+    ro.observe(el)
+    const onScroll = () => { rectCacheRef.current = el.getBoundingClientRect() }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => { ro.disconnect(); window.removeEventListener('scroll', onScroll) }
+  }, [])
+
   // ── All native event listeners in one place ────────────────────────────────
   useLayoutEffect(() => {
     const el = divRef.current
@@ -95,6 +109,11 @@ export function MapCanvas({ loadedMap }: Props) {
     let pinchDist = 0
     let vpDirty = false
     let wheelTimer: ReturnType<typeof setTimeout> | null = null
+    let pendingRaf = 0
+
+    function getRect(): DOMRect {
+      return rectCacheRef.current ?? div.getBoundingClientRect()
+    }
 
     let dragControlId: string | null = null
     let dragOffset: { dx: number; dy: number } | null = null
@@ -118,7 +137,7 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Wheel ────────────────────────────────────────────────────────────────
     function onWheel(e: WheelEvent) {
       e.preventDefault()
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
       const v = vpRef.current
@@ -149,7 +168,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const state = useStore.getState()
         const cid = state.editor.selectedCourseId
         if (cid) {
-          const rect = div.getBoundingClientRect()
+          const rect = getRect()
           const proj = state.project
           if (proj) {
             const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid)
@@ -177,7 +196,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (!proj) return
 
       if (activeTool === 'bend' && pos.size === 1) {
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
         const bpHit = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
@@ -187,7 +206,7 @@ export function MapCanvas({ loadedMap }: Props) {
         }
       }
       if (activeTool === 'select' && pos.size === 1) {
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
         const labelHit = findLabelAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale)
@@ -242,7 +261,7 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveLegBendPoint()
           dragBendStarted = true
         }
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         useStore.getState().moveLegBendPoint(dragBend.courseId, dragBend.courseControlId, dragBend.bendIndex, mapPt)
         return
@@ -255,7 +274,7 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveCourseLabel()
           dragLabelStarted = true
         }
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
         if (ctrl) {
@@ -272,7 +291,7 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveControl()
           dragStarted = true
         }
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         useStore.getState().moveControl(dragControlId, {
           x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy,
@@ -287,7 +306,7 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveOverlay()
           dragOverlayStarted = true
         }
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
         if (dragOverlay.kind === 'scalebar') {
@@ -304,11 +323,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const v = vpRef.current
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
         vpDirty = true
-        syncTransform()
       } else if (pos.size === 2) {
         const [a, b] = [...pos.values()]
         const dist = Math.hypot(b.x - a.x, b.y - a.y)
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const cx = mid.x - rect.left
         const cy = mid.y - rect.top
@@ -318,8 +336,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const ratio = ns / v.scale
         vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
         vpDirty = true
-        syncTransform()
         pinchDist = dist
+      }
+      if (vpDirty && !pendingRaf) {
+        pendingRaf = requestAnimationFrame(() => { pendingRaf = 0; syncTransform() })
       }
     }
 
@@ -332,6 +352,8 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (vpDirty && pos.size === 0) {
         vpDirty = false
+        if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
+        syncTransform()
         setVpState(vpRef.current)
       }
 
@@ -354,7 +376,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) return
 
       // ── It's a tap ──────────────────────────────────────────────────────────
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
       const mapPt = screenToMap(sx, sy, vpRef.current)
@@ -453,6 +475,8 @@ export function MapCanvas({ loadedMap }: Props) {
       down.delete(e.pointerId)
       if (vpDirty && pos.size === 0) {
         vpDirty = false
+        if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
+        syncTransform()
         setVpState(vpRef.current)
       }
     }
@@ -473,7 +497,7 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool, selectedCourseId } = state.editor
       const proj = state.project
       if (!proj) return
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
 
@@ -509,7 +533,7 @@ export function MapCanvas({ loadedMap }: Props) {
         g.style.display = 'none'
         return
       }
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
       g.setAttribute('transform', `translate(${sx},${sy})`)
@@ -532,6 +556,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
     return () => {
       if (wheelTimer) clearTimeout(wheelTimer)
+      if (pendingRaf) cancelAnimationFrame(pendingRaf)
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
@@ -568,23 +593,22 @@ export function MapCanvas({ loadedMap }: Props) {
       className="w-full h-full overflow-hidden bg-gray-100 relative"
       style={{ cursor, touchAction: 'none', userSelect: 'none' }}
     >
-      {/* Map layer — separate SVG so CSS filter doesn't force huge raster buffer */}
+      {/* Map layer — separate SVG so overlay layers aren't affected by filter */}
       <svg
         width="100%" height="100%"
-        style={{
-          display: 'block',
-          position: 'absolute',
-          inset: 0,
-          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
-        }}
+        style={{ display: 'block', position: 'absolute', inset: 0 }}
       >
-        <g ref={mapGRef}>
+        <g ref={mapGRef} style={{
+          willChange: 'transform',
+          transformOrigin: '0 0',
+          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+        }}>
           <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
       </svg>
       {/* Overlay layers — controls, legs, annotations (no filter) */}
       <svg width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
-        <g ref={overlayGRef}>
+        <g ref={overlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           <LegsLayer
             course={selectedCourse}
             controls={controls}
