@@ -8,13 +8,17 @@ import { AnnotationsLayer } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap } from '../../lib/courseUtils'
-import type { Annotation, AnnotationType, Control, MapPoint, Viewport } from '../../types'
+import { unitsPerMm } from '../../lib/courseUtils'
+import type { AnnotationType, MapPoint, Viewport } from '../../types'
 import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
+import {
+  screenToMap,
+  findControlAt, findBendPointAt,
+  findAnnotationAt, findOverlayAt, findLabelAt,
+} from './hitTesting'
+import { handleGapTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
 const TAP_PX    = 8
-const HIT_PX    = 20
-const HIT_TOLERANCE_PX = 8
 const MIN_SCALE = 0.05
 const MAX_SCALE = 50
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -30,11 +34,13 @@ export function MapCanvas({ loadedMap }: Props) {
   const fitScaleRef = useRef<number>(MIN_SCALE)
   const mapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
+  const rectCacheRef = useRef<DOMRect | null>(null)
+
   function syncTransform() {
     const v = vpRef.current
-    const t = `translate(${v.x},${v.y}) scale(${v.scale})`
-    mapGRef.current?.setAttribute('transform', t)
-    overlayGRef.current?.setAttribute('transform', t)
+    const t = `translate(${v.x}px,${v.y}px) scale(${v.scale})`
+    if (mapGRef.current) mapGRef.current.style.transform = t
+    if (overlayGRef.current) overlayGRef.current.style.transform = t
   }
   function setVp(next: Viewport) {
     vpRef.current = next
@@ -54,24 +60,6 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const appearance = useStore(s => s.editor.appearance)
   const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
-  const addControl               = useStore(s => s.addControl)
-  const setSelectedControl       = useStore(s => s.setSelectedControl)
-  const addAnnotationPoint       = useStore(s => s.addAnnotationPoint)
-  const commitAnnotation         = useStore(s => s.commitAnnotation)
-  const addControlToCourse       = useStore(s => s.addControlToCourse)
-  const removeControlFromCourse  = useStore(s => s.removeControlFromCourse)
-  const setMapScaleMeasurement   = useStore(s => s.setMapScaleMeasurement)
-  const setActiveTool            = useStore(s => s.setActiveTool)
-  const addControlGap            = useStore(s => s.addControlGap)
-  const addLegGap                = useStore(s => s.addLegGap)
-  const clearControlGaps         = useStore(s => s.clearControlGaps)
-  const clearLegGaps             = useStore(s => s.clearLegGaps)
-  const addLegBendPoint          = useStore(s => s.addLegBendPoint)
-  const removeLegBendPoint       = useStore(s => s.removeLegBendPoint)
-  const clearLegBendPoints       = useStore(s => s.clearLegBendPoints)
-  const addScaleBar              = useStore(s => s.addScaleBar)
-  const addTextLabel             = useStore(s => s.addTextLabel)
-  const setSelectedOverlay       = useStore(s => s.setSelectedOverlay)
 
   const [useRaster, setUseRaster] = useState(true)
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
@@ -98,6 +86,18 @@ export function MapCanvas({ loadedMap }: Props) {
   // Keep <g> transforms in sync after any React re-render
   useLayoutEffect(syncTransform)
 
+  // ── Cache bounding rect via ResizeObserver ─────────────────────────────────
+  useLayoutEffect(() => {
+    const el = divRef.current
+    if (!el) return
+    rectCacheRef.current = el.getBoundingClientRect()
+    const ro = new ResizeObserver(() => { rectCacheRef.current = el.getBoundingClientRect() })
+    ro.observe(el)
+    const onScroll = () => { rectCacheRef.current = el.getBoundingClientRect() }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => { ro.disconnect(); window.removeEventListener('scroll', onScroll) }
+  }, [])
+
   // ── All native event listeners in one place ────────────────────────────────
   useLayoutEffect(() => {
     const el = divRef.current
@@ -109,245 +109,10 @@ export function MapCanvas({ loadedMap }: Props) {
     let pinchDist = 0
     let vpDirty = false
     let wheelTimer: ReturnType<typeof setTimeout> | null = null
+    let pendingRaf = 0
 
-    function screenToMap(sx: number, sy: number): MapPoint {
-      const v = vpRef.current
-      return { x: (sx - v.x) / v.scale, y: (sy - v.y) / v.scale }
-    }
-
-    function controlToScreen(c: Control): { x: number; y: number } {
-      const v = vpRef.current
-      return { x: v.x + c.position.x * v.scale, y: v.y + c.position.y * v.scale }
-    }
-
-    function controlHitRadius(control: Control): number {
-      const v = vpRef.current
-      const state = useStore.getState()
-      const map = state.project?.map
-      if (!map) return HIT_PX
-      const upm = unitsPerMm(map)
-      const spec = resolveSpec(state.project?.spec, state.project?.courses.find(c => c.id === state.editor.selectedCourseId)?.spec)
-      const dims = getSymbolDims(spec)
-      let symbolR: number
-      if (control.type === 'start') {
-        symbolR = dims.startSide * upm * Math.sqrt(3) / 2 * 2 / 3
-      } else {
-        symbolR = dims.controlR * upm
-      }
-      const symbolScreenR = symbolR * v.scale
-      return Math.max(HIT_PX, symbolScreenR + HIT_TOLERANCE_PX)
-    }
-
-    function findControlAt(screenX: number, screenY: number): Control | null {
-      const controls = useStore.getState().project?.controls ?? []
-      let best: Control | null = null
-      let bestDist = Infinity
-      for (const c of controls) {
-        const s = controlToScreen(c)
-        const d = Math.hypot(screenX - s.x, screenY - s.y)
-        const hitR = controlHitRadius(c)
-        if (d < hitR && d < bestDist) { best = c; bestDist = d }
-      }
-      return best
-    }
-
-    function distToSegment(p: MapPoint, a: MapPoint, b: MapPoint): number {
-      const dx = b.x - a.x, dy = b.y - a.y
-      const lenSq = dx * dx + dy * dy
-      if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y)
-      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq))
-      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-    }
-
-    function findLegAt(screenX: number, screenY: number): { courseId: string; courseControlId: string; t: number; segmentIndex: number } | null {
-      const state = useStore.getState()
-      const proj = state.project
-      if (!proj) return null
-      const courseId = state.editor.selectedCourseId
-      const course = courseId ? proj.courses.find(c => c.id === courseId) : null
-      if (!course || course.type === 'score' || course.controls.length < 2) return null
-      const controlMap = new Map(proj.controls.map(c => [c.id, c]))
-      const mapPt = screenToMap(screenX, screenY)
-      const hitR = HIT_PX / vpRef.current.scale
-
-      for (let i = 1; i < course.controls.length; i++) {
-        const fromCtrl = controlMap.get(course.controls[i - 1].controlId)
-        const toCtrl = controlMap.get(course.controls[i].controlId)
-        if (!fromCtrl || !toCtrl) continue
-
-        const cc = course.controls[i]
-        const bendPts = cc.legBendPoints
-        const pts: MapPoint[] = bendPts?.length
-          ? [fromCtrl.position, ...bendPts, toCtrl.position]
-          : [fromCtrl.position, toCtrl.position]
-
-        let totalLen = 0
-        for (let j = 1; j < pts.length; j++) totalLen += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y)
-
-        let cumLen = 0
-        for (let j = 0; j < pts.length - 1; j++) {
-          const a = pts[j], b = pts[j + 1]
-          const d = distToSegment(mapPt, a, b)
-          const segLen = Math.hypot(b.x - a.x, b.y - a.y)
-          if (d < hitR) {
-            const dx = b.x - a.x, dy = b.y - a.y
-            const lenSq = dx * dx + dy * dy
-            const segT = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((mapPt.x - a.x) * dx + (mapPt.y - a.y) * dy) / lenSq))
-            const t = totalLen === 0 ? 0 : (cumLen + segT * segLen) / totalLen
-            return { courseId: course.id, courseControlId: cc.id, t, segmentIndex: j }
-          }
-          cumLen += segLen
-        }
-      }
-      return null
-    }
-
-    function findBendPointAt(screenX: number, screenY: number): { courseId: string; courseControlId: string; bendIndex: number } | null {
-      const state = useStore.getState()
-      const proj = state.project
-      if (!proj) return null
-      const courseId = state.editor.selectedCourseId
-      const course = courseId ? proj.courses.find(c => c.id === courseId) : null
-      if (!course || course.controls.length < 2) return null
-      const mapPt = screenToMap(screenX, screenY)
-      const hitR = HIT_PX / vpRef.current.scale
-
-      for (const cc of course.controls) {
-        if (!cc.legBendPoints) continue
-        for (let j = 0; j < cc.legBendPoints.length; j++) {
-          const bp = cc.legBendPoints[j]
-          if (Math.hypot(mapPt.x - bp.x, mapPt.y - bp.y) < hitR) {
-            return { courseId: course.id, courseControlId: cc.id, bendIndex: j }
-          }
-        }
-      }
-      return null
-    }
-
-    function handleGapTap(sx: number, sy: number) {
-      const gapSize = useStore.getState().editor.gapSize
-      const mapPt = screenToMap(sx, sy)
-      const hitControl = findControlAt(sx, sy)
-
-      if (hitControl) {
-        const dx = mapPt.x - hitControl.position.x
-        const dy = mapPt.y - hitControl.position.y
-        const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360
-        const halfGap = gapSize / 2
-        const startAngle = (angle - halfGap + 360) % 360
-        const endAngle = (angle + halfGap) % 360
-        addControlGap(hitControl.id, { startAngle, endAngle })
-        return
-      }
-
-      const legHit = findLegAt(sx, sy)
-      if (legHit) {
-        const legFraction = gapSize / 360
-        const halfGap = legFraction / 2
-        const start = Math.max(0, legHit.t - halfGap)
-        const end = Math.min(1, legHit.t + halfGap)
-        addLegGap(legHit.courseId, legHit.courseControlId, { start, end })
-      }
-    }
-
-    function handleGapRightClick(sx: number, sy: number) {
-      const hitControl = findControlAt(sx, sy)
-      if (hitControl && hitControl.gaps?.length) {
-        clearControlGaps(hitControl.id)
-        return
-      }
-      const legHit = findLegAt(sx, sy)
-      if (legHit) {
-        clearLegGaps(legHit.courseId, legHit.courseControlId)
-      }
-    }
-
-    function handleBendTap(sx: number, sy: number) {
-      const bpHit = findBendPointAt(sx, sy)
-      if (bpHit) return // tapping an existing bend point does nothing; drag or right-click it
-
-      const legHit = findLegAt(sx, sy)
-      if (!legHit) return
-      const mapPt = screenToMap(sx, sy)
-
-      // Find where in the bend points array to insert (based on segment index)
-      const state = useStore.getState()
-      const course = state.project?.courses.find(c => c.id === legHit.courseId)
-      if (!course) return
-      const cc = course.controls.find(c => c.id === legHit.courseControlId)
-      if (!cc) return
-
-      // segmentIndex 0 = from control to first bend point (or to control if none)
-      // Insert the new point at segmentIndex position in the bend points array
-      const insertIdx = legHit.segmentIndex
-      addLegBendPoint(legHit.courseId, legHit.courseControlId, mapPt, insertIdx)
-    }
-
-    function handleBendRightClick(sx: number, sy: number) {
-      const bpHit = findBendPointAt(sx, sy)
-      if (bpHit) {
-        removeLegBendPoint(bpHit.courseId, bpHit.courseControlId, bpHit.bendIndex)
-        return
-      }
-      const legHit = findLegAt(sx, sy)
-      if (legHit) {
-        clearLegBendPoints(legHit.courseId, legHit.courseControlId)
-      }
-    }
-
-    function findAnnotationAt(screenX: number, screenY: number): Annotation | null {
-      const annotations = useStore.getState().project?.annotations ?? []
-      const mapPt = screenToMap(screenX, screenY)
-      const hitR = HIT_PX / vpRef.current.scale
-      for (const ann of annotations) {
-        if (ann.type === 'crossing_point') {
-          const p = ann.points[0]
-          if (p && Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < hitR) return ann
-        } else {
-          for (let i = 1; i < ann.points.length; i++) {
-            if (distToSegment(mapPt, ann.points[i - 1], ann.points[i]) < hitR) return ann
-          }
-          if (ann.type === 'out_of_bounds' && ann.points.length >= 3) {
-            if (distToSegment(mapPt, ann.points[ann.points.length - 1], ann.points[0]) < hitR) return ann
-          }
-        }
-      }
-      return null
-    }
-
-    function findOverlayAt(screenX: number, screenY: number): { id: string; kind: 'scalebar' | 'text' } | null {
-      const proj = useStore.getState().project
-      if (!proj) return null
-      const mapPt = screenToMap(screenX, screenY)
-      const upm = unitsPerMm(proj.map)
-
-      for (const sb of proj.scaleBars) {
-        const segMmOnPaper = (sb.segmentLengthM * 1000) / sb.scale
-        const segU = segMmOnPaper * upm
-        const totalU = segU * sb.segments
-        const pad = 1.5 * upm
-        const textH = 2.5 * upm
-        const barH = 2.0 * upm
-        const tickH = 0.5 * upm
-        const boxW = totalU + pad * 2
-        const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
-        if (mapPt.x >= sb.position.x && mapPt.x <= sb.position.x + boxW &&
-            mapPt.y >= sb.position.y && mapPt.y <= sb.position.y + boxH) {
-          return { id: sb.id, kind: 'scalebar' }
-        }
-      }
-
-      for (const tl of proj.textLabels) {
-        const fontSize = tl.fontSizeMm * upm
-        const w = tl.text.length * fontSize * 0.65
-        const h = fontSize * 1.3
-        if (mapPt.x >= tl.position.x && mapPt.x <= tl.position.x + w &&
-            mapPt.y >= tl.position.y - fontSize && mapPt.y <= tl.position.y - fontSize + h) {
-          return { id: tl.id, kind: 'text' }
-        }
-      }
-
-      return null
+    function getRect(): DOMRect {
+      return rectCacheRef.current ?? div.getBoundingClientRect()
     }
 
     let dragControlId: string | null = null
@@ -363,64 +128,6 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
 
-    function findLabelAt(screenX: number, screenY: number): { courseId: string; courseControlId: string; controlId: string; labelX: number; labelY: number } | null {
-      const state = useStore.getState()
-      const proj = state.project
-      if (!proj) return null
-      const courseId = state.editor.selectedCourseId
-      if (!courseId) return null
-      const course = proj.courses.find(c => c.id === courseId)
-      if (!course) return null
-      const map = proj.map
-      const upm = unitsPerMm(map)
-      const controlScale = state.editor.appearance.controlScale
-      const v = vpRef.current
-      const controlMap = new Map(proj.controls.map(c => [c.id, c]))
-      const seqMap = course.type === 'linear' ? buildSequenceMap(course, proj.controls) : null
-
-      let best: { courseId: string; courseControlId: string; controlId: string; labelX: number; labelY: number } | null = null
-      let bestDist = Infinity
-
-      const labelSpec = resolveSpec(proj.spec, course.spec)
-      const labelDims = getSymbolDims(labelSpec)
-
-      for (const cc of course.controls) {
-        const ctrl = controlMap.get(cc.controlId)
-        if (!ctrl) continue
-        const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec)
-        const labelMapX = ctrl.position.x + offset.x
-        const labelMapY = ctrl.position.y + offset.y
-        const labelScreenX = v.x + labelMapX * v.scale
-        const labelScreenY = v.y + labelMapY * v.scale
-
-        const cr = labelDims.controlR * upm * controlScale
-        const fontSize = cr * 1.1 * v.scale
-        let labelText: string
-        if (seqMap && ctrl.type === 'control') {
-          labelText = String(seqMap.get(ctrl.id) ?? defaultControlLabel(ctrl))
-        } else {
-          labelText = defaultControlLabel(ctrl)
-        }
-        const textW = labelText.length * fontSize * 0.7
-        const textH = fontSize
-        const pad = Math.max(HIT_PX * 0.5, 4)
-
-        // textAnchor="start", dominantBaseline="auto" → anchor is at left baseline
-        // Text extends right by textW, upward by ~textH from anchor
-        if (screenX >= labelScreenX - pad && screenX <= labelScreenX + textW + pad &&
-            screenY >= labelScreenY - textH - pad && screenY <= labelScreenY + pad) {
-          const cx = labelScreenX + textW / 2
-          const cy = labelScreenY - textH / 2
-          const d = Math.hypot(screenX - cx, screenY - cy)
-          if (d < bestDist) {
-            best = { courseId, courseControlId: cc.id, controlId: cc.controlId, labelX: labelMapX, labelY: labelMapY }
-            bestDist = d
-          }
-        }
-      }
-      return best
-    }
-
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
     function clearLongPress() {
@@ -430,7 +137,7 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Wheel ────────────────────────────────────────────────────────────────
     function onWheel(e: WheelEvent) {
       e.preventDefault()
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
       const v = vpRef.current
@@ -458,67 +165,74 @@ export function MapCanvas({ loadedMap }: Props) {
 
       longPressFired = false
       if (e.pointerType === 'touch' && pos.size === 1) {
-        const { selectedCourseId: cid } = useStore.getState().editor
+        const state = useStore.getState()
+        const cid = state.editor.selectedCourseId
         if (cid) {
-          const rect = div.getBoundingClientRect()
-          const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top)
-          if (hit) {
-            longPressTimer = setTimeout(() => {
-              longPressTimer = null
-              longPressFired = true
-              const course = useStore.getState().project?.courses.find(c => c.id === cid)
-              if (!course) return
-              for (let i = course.controls.length - 1; i >= 0; i--) {
-                if (course.controls[i].controlId === hit.id) {
-                  removeControlFromCourse(cid, course.controls[i].id)
-                  return
+          const rect = getRect()
+          const proj = state.project
+          if (proj) {
+            const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid)
+            if (hit) {
+              longPressTimer = setTimeout(() => {
+                longPressTimer = null
+                longPressFired = true
+                const course = useStore.getState().project?.courses.find(c => c.id === cid)
+                if (!course) return
+                for (let i = course.controls.length - 1; i >= 0; i--) {
+                  if (course.controls[i].controlId === hit.id) {
+                    useStore.getState().removeControlFromCourse(cid, course.controls[i].id)
+                    return
+                  }
                 }
-              }
-            }, 500)
+              }, 500)
+            }
           }
         }
       }
 
-      const { activeTool } = useStore.getState().editor
+      const state = useStore.getState()
+      const { activeTool } = state.editor
+      const proj = state.project
+      if (!proj) return
+
       if (activeTool === 'bend' && pos.size === 1) {
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
-        const bpHit = findBendPointAt(sx, sy)
+        const bpHit = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
         if (bpHit) {
           dragBend = bpHit
           dragBendStarted = false
         }
       }
       if (activeTool === 'select' && pos.size === 1) {
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
-        const labelHit = findLabelAt(sx, sy)
+        const labelHit = findLabelAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale)
         if (labelHit) {
-          const mapPt = screenToMap(sx, sy)
+          const mapPt = screenToMap(sx, sy, vpRef.current)
           dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
           dragLabelStarted = false
         } else {
-          const hit = findControlAt(sx, sy)
+          const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
           if (hit) {
-            const mapPt = screenToMap(sx, sy)
+            const mapPt = screenToMap(sx, sy, vpRef.current)
             dragControlId = hit.id
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
             dragStarted = false
           } else {
-            const overlayHit = findOverlayAt(sx, sy)
+            const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
             if (overlayHit) {
-              const mapPt = screenToMap(sx, sy)
-              const proj = useStore.getState().project
-              let pos: { x: number; y: number } | undefined
+              const mapPt = screenToMap(sx, sy, vpRef.current)
+              let oPos: { x: number; y: number } | undefined
               if (overlayHit.kind === 'scalebar') {
-                pos = proj?.scaleBars.find(s => s.id === overlayHit.id)?.position
+                oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
               } else {
-                pos = proj?.textLabels.find(t => t.id === overlayHit.id)?.position
+                oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
               }
-              if (pos) {
-                dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - pos.x, dy: mapPt.y - pos.y }
+              if (oPos) {
+                dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
                 dragOverlayStarted = false
               }
             }
@@ -547,8 +261,8 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveLegBendPoint()
           dragBendStarted = true
         }
-        const rect = div.getBoundingClientRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         useStore.getState().moveLegBendPoint(dragBend.courseId, dragBend.courseControlId, dragBend.bendIndex, mapPt)
         return
       }
@@ -560,8 +274,8 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveCourseLabel()
           dragLabelStarted = true
         }
-        const rect = div.getBoundingClientRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
         if (ctrl) {
           const offset = { x: mapPt.x - dragLabel.dx - ctrl.position.x, y: mapPt.y - dragLabel.dy - ctrl.position.y }
@@ -577,8 +291,8 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveControl()
           dragStarted = true
         }
-        const rect = div.getBoundingClientRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         useStore.getState().moveControl(dragControlId, {
           x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy,
         })
@@ -592,8 +306,8 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveOverlay()
           dragOverlayStarted = true
         }
-        const rect = div.getBoundingClientRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top)
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
         if (dragOverlay.kind === 'scalebar') {
           useStore.getState().moveScaleBar(dragOverlay.id, newPos)
@@ -609,11 +323,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const v = vpRef.current
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
         vpDirty = true
-        syncTransform()
       } else if (pos.size === 2) {
         const [a, b] = [...pos.values()]
         const dist = Math.hypot(b.x - a.x, b.y - a.y)
-        const rect = div.getBoundingClientRect()
+        const rect = getRect()
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const cx = mid.x - rect.left
         const cy = mid.y - rect.top
@@ -623,8 +336,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const ratio = ns / v.scale
         vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
         vpDirty = true
-        syncTransform()
         pinchDist = dist
+      }
+      if (vpDirty && !pendingRaf) {
+        pendingRaf = requestAnimationFrame(() => { pendingRaf = 0; syncTransform() })
       }
     }
 
@@ -637,133 +352,106 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (vpDirty && pos.size === 0) {
         vpDirty = false
+        if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
+        syncTransform()
         setVpState(vpRef.current)
       }
 
       if (longPressFired) { longPressFired = false; return }
 
-      // End label drag
-      if (dragLabel && dragLabelStarted) {
-        dragLabel = null
-        dragLabelStarted = false
-        return
-      }
-      dragLabel = null
-      dragLabelStarted = false
+      if (dragLabel && dragLabelStarted) { dragLabel = null; dragLabelStarted = false; return }
+      dragLabel = null; dragLabelStarted = false
 
-      // End bend point drag
-      if (dragBend && dragBendStarted) {
-        dragBend = null
-        dragBendStarted = false
-        return
-      }
-      dragBend = null
-      dragBendStarted = false
+      if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
+      dragBend = null; dragBendStarted = false
 
-      // End control drag
-      if (dragControlId && dragStarted) {
-        dragControlId = null
-        dragOffset = null
-        dragStarted = false
-        return
-      }
-      dragControlId = null
-      dragOffset = null
-      dragStarted = false
+      if (dragControlId && dragStarted) { dragControlId = null; dragOffset = null; dragStarted = false; return }
+      dragControlId = null; dragOffset = null; dragStarted = false
 
-      // End overlay drag
-      if (dragOverlay && dragOverlayStarted) {
-        dragOverlay = null
-        dragOverlayStarted = false
-        return
-      }
-      dragOverlay = null
-      dragOverlayStarted = false
+      if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
+      dragOverlay = null; dragOverlayStarted = false
 
       if (!start) return
       if (e.pointerType === 'mouse' && e.button !== 0) return
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) return
 
       // ── It's a tap ──────────────────────────────────────────────────────────
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
-      const mapPt = screenToMap(sx, sy)
-      const { activeTool, selectedCourseId } = useStore.getState().editor
+      const mapPt = screenToMap(sx, sy, vpRef.current)
+      const state = useStore.getState()
+      const { activeTool, selectedCourseId } = state.editor
+      const proj = state.project
+      if (!proj) return
       const ms = measureStartRef.current
-      const hitControl = findControlAt(sx, sy)
+      const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId)
 
-      // Gap tool
       if (activeTool === 'gap') {
-        handleGapTap(sx, sy)
+        handleGapTap(sx, sy, vpRef.current, proj, selectedCourseId)
         return
       }
 
-      // Bend tool
       if (activeTool === 'bend') {
-        handleBendTap(sx, sy)
+        handleBendTap(sx, sy, vpRef.current, proj, selectedCourseId)
         return
       }
 
-      // Delete tool
       if (activeTool === 'delete') {
         if (hitControl) {
-          useStore.getState().deleteControl(hitControl.id)
+          state.deleteControl(hitControl.id)
         } else {
-          const hitOverlay = findOverlayAt(sx, sy)
+          const hitOverlay = findOverlayAt(sx, sy, vpRef.current, proj)
           if (hitOverlay) {
-            if (hitOverlay.kind === 'scalebar') useStore.getState().deleteScaleBar(hitOverlay.id)
-            else useStore.getState().deleteTextLabel(hitOverlay.id)
+            if (hitOverlay.kind === 'scalebar') state.deleteScaleBar(hitOverlay.id)
+            else state.deleteTextLabel(hitOverlay.id)
           } else {
-            const hitAnn = findAnnotationAt(sx, sy)
-            if (hitAnn) useStore.getState().deleteAnnotation(hitAnn.id)
+            const hitAnn = findAnnotationAt(sx, sy, vpRef.current, proj)
+            if (hitAnn) state.deleteAnnotation(hitAnn.id)
           }
         }
         return
       }
 
-      // Control hit always takes priority
       if (hitControl) {
         if (selectedCourseId) {
-          addControlToCourse(selectedCourseId, hitControl.id)
+          state.addControlToCourse(selectedCourseId, hitControl.id)
         } else {
-          setSelectedControl(hitControl.id)
-          setSelectedOverlay(null)
+          state.setSelectedControl(hitControl.id)
+          state.setSelectedOverlay(null)
         }
         return
       }
 
-      // Overlay hit (select mode only, outside course mode)
       if (!selectedCourseId && activeTool === 'select') {
-        const overlayHit = findOverlayAt(sx, sy)
+        const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
         if (overlayHit) {
-          setSelectedOverlay(overlayHit.id)
-          setSelectedControl(null)
+          state.setSelectedOverlay(overlayHit.id)
+          state.setSelectedControl(null)
           return
         }
       }
 
-      // In course-building mode, background taps deselect
       if (selectedCourseId) {
-        setSelectedControl(null)
+        state.setSelectedControl(null)
         return
       }
 
       switch (activeTool) {
-        case 'place-start':   addControl('start',   mapPt); break
-        case 'place-finish':  addControl('finish',  mapPt); break
-        case 'place-control': addControl('control', mapPt); break
-        case 'forbidden-route': addAnnotationPoint(mapPt); break
-        case 'out-of-bounds': addAnnotationPoint(mapPt); break
+        case 'place-start':   state.addControl('start',   mapPt); break
+        case 'place-finish':  state.addControl('finish',  mapPt); break
+        case 'place-control': state.addControl('control', mapPt); break
+        case 'forbidden-route': state.addAnnotationPoint(mapPt); break
+        case 'out-of-bounds': state.addAnnotationPoint(mapPt); break
         case 'crossing-point':
-          addAnnotationPoint(mapPt)
-          commitAnnotation('crossing_point')
+          state.addAnnotationPoint(mapPt)
+          state.commitAnnotation('crossing_point')
           break
         case 'place-scalebar':
-          addScaleBar(mapPt, useStore.getState().project!.map.scale)
+          state.addScaleBar(mapPt, proj.map.scale)
           break
         case 'place-text':
-          addTextLabel(mapPt)
+          state.addTextLabel(mapPt)
           break
         case 'measure-scale':
           if (!ms) {
@@ -774,8 +462,8 @@ export function MapCanvas({ loadedMap }: Props) {
           }
           break
         case 'select':
-          setSelectedControl(null)
-          setSelectedOverlay(null)
+          state.setSelectedControl(null)
+          state.setSelectedOverlay(null)
           break
       }
     }
@@ -787,6 +475,8 @@ export function MapCanvas({ loadedMap }: Props) {
       down.delete(e.pointerId)
       if (vpDirty && pos.size === 0) {
         vpDirty = false
+        if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
+        syncTransform()
         setVpState(vpRef.current)
       }
     }
@@ -794,39 +484,42 @@ export function MapCanvas({ loadedMap }: Props) {
     function onDblClick() {
       const { activeTool, pendingAnnotationPoints } = useStore.getState().editor
       if (activeTool === 'forbidden-route' && pendingAnnotationPoints.length >= 2) {
-        commitAnnotation('forbidden_route')
+        useStore.getState().commitAnnotation('forbidden_route')
       } else if (activeTool === 'out-of-bounds' && pendingAnnotationPoints.length >= 3) {
-        commitAnnotation('out_of_bounds')
+        useStore.getState().commitAnnotation('out_of_bounds')
       }
     }
 
     // ── Right-click ────────────────────────────────────────────────────────
     function onContextMenu(e: MouseEvent) {
       e.preventDefault()
-      const { activeTool, selectedCourseId } = useStore.getState().editor
-      const rect = div.getBoundingClientRect()
+      const state = useStore.getState()
+      const { activeTool, selectedCourseId } = state.editor
+      const proj = state.project
+      if (!proj) return
+      const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
 
       if (activeTool === 'gap') {
-        handleGapRightClick(sx, sy)
+        handleGapRightClick(sx, sy, vpRef.current, proj, selectedCourseId)
         return
       }
 
       if (activeTool === 'bend') {
-        handleBendRightClick(sx, sy)
+        handleBendRightClick(sx, sy, vpRef.current, proj, selectedCourseId)
         return
       }
 
       if (!selectedCourseId) return
-      const hit = findControlAt(sx, sy)
+      const hit = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId)
       if (!hit) return
 
-      const course = useStore.getState().project?.courses.find(c => c.id === selectedCourseId)
+      const course = proj.courses.find(c => c.id === selectedCourseId)
       if (!course) return
       for (let i = course.controls.length - 1; i >= 0; i--) {
         if (course.controls[i].controlId === hit.id) {
-          removeControlFromCourse(selectedCourseId, course.controls[i].id)
+          state.removeControlFromCourse(selectedCourseId, course.controls[i].id)
           return
         }
       }
@@ -840,7 +533,7 @@ export function MapCanvas({ loadedMap }: Props) {
         g.style.display = 'none'
         return
       }
-      const rect = div.getBoundingClientRect()
+      const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
       g.setAttribute('transform', `translate(${sx},${sy})`)
@@ -863,6 +556,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
     return () => {
       if (wheelTimer) clearTimeout(wheelTimer)
+      if (pendingRaf) cancelAnimationFrame(pendingRaf)
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
@@ -899,23 +593,22 @@ export function MapCanvas({ loadedMap }: Props) {
       className="w-full h-full overflow-hidden bg-gray-100 relative"
       style={{ cursor, touchAction: 'none', userSelect: 'none' }}
     >
-      {/* Map layer — separate SVG so CSS filter doesn't force huge raster buffer */}
+      {/* Map layer — separate SVG so overlay layers aren't affected by filter */}
       <svg
         width="100%" height="100%"
-        style={{
-          display: 'block',
-          position: 'absolute',
-          inset: 0,
-          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
-        }}
+        style={{ display: 'block', position: 'absolute', inset: 0 }}
       >
-        <g ref={mapGRef}>
+        <g ref={mapGRef} style={{
+          willChange: 'transform',
+          transformOrigin: '0 0',
+          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+        }}>
           <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
       </svg>
       {/* Overlay layers — controls, legs, annotations (no filter) */}
       <svg width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
-        <g ref={overlayGRef}>
+        <g ref={overlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           <LegsLayer
             course={selectedCourse}
             controls={controls}
@@ -1004,17 +697,17 @@ export function MapCanvas({ loadedMap }: Props) {
       {scaleDialogPoints && (
         <ScaleInputDialog
           onConfirm={m => {
-            setMapScaleMeasurement(scaleDialogPoints.p1, scaleDialogPoints.p2, m, loadedMap.renderScale)
+            useStore.getState().setMapScaleMeasurement(scaleDialogPoints.p1, scaleDialogPoints.p2, m, loadedMap.renderScale)
             setScaleDialogPoints(null)
             measureStartRef.current = null
             setMeasureStart(null)
-            setActiveTool('select')
+            useStore.getState().setActiveTool('select')
           }}
           onCancel={() => {
             setScaleDialogPoints(null)
             measureStartRef.current = null
             setMeasureStart(null)
-            setActiveTool('select')
+            useStore.getState().setActiveTool('select')
           }}
         />
       )}

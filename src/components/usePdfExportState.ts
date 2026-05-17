@@ -1,0 +1,232 @@
+import { useEffect, useState } from 'react'
+import { useStore } from '../store'
+import {
+  checkFit, checkTiling, canExportPdf, PAGE_SIZES, MARGIN,
+  suggestFitScale, coursePreviewMm, ALL_CONTROLS_ID, exportCoursePdf,
+} from '../lib/pdfExport'
+import type { PdfExportOptions, DescMode } from '../lib/pdfExport'
+import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
+import { downloadBlob } from '../lib/projectFile'
+
+export function usePdfExportState(onClose: () => void) {
+  const project = useStore(s => s.project!)
+  const loadedMap = useStore(s => s.loadedMap)
+
+  const [pageSize, setPageSize] = useState('a4')
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
+  const [printScale, setPrintScale] = useState(project.map.scale)
+  const [scaleInput, setScaleInput] = useState(String(project.map.scale))
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(project.courses.map(c => c.id)),
+  )
+  const [allControls, setAllControls] = useState(false)
+  const [descModes, setDescModes] = useState<Record<string, DescMode>>({})
+  const [scaleOverrides, setScaleOverrides] = useState<Record<string, number>>({})
+  const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
+  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [tiling, setTiling] = useState(false)
+  const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
+  const [mapOpacity, setMapOpacity] = useState(1)
+  const [exporting, setExporting] = useState(false)
+
+  const options: PdfExportOptions = {
+    pageSize,
+    orientation,
+    printScale,
+    scaleOverrides,
+    courseIds: [...selectedIds],
+    allControls,
+    descModes,
+    offsets,
+    sheetPositions,
+    tiling,
+    mapOpacity,
+  }
+
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const printableW = pw - 2 * MARGIN
+  const printableH = ph - 2 * MARGIN
+
+  const fitScale = suggestFitScale(project, [...selectedIds], pageSize, orientation, allControls)
+  const fitInfo = checkFit(project, options)
+  const tileInfo = checkTiling(project, options)
+  const hasSelection = selectedIds.size > 0 || allControls
+  const anyOverflow = fitInfo.some(f => !f.fits)
+  const descPages = project.courses
+    .filter(c => selectedIds.has(c.id) && descModes[c.id] === 'separate')
+    .reduce((sum, c) => sum + descriptionSheetPageCount(c, project.controls, ph), 0)
+  const totalPages = (tiling
+    ? tileInfo.reduce((sum, t) => sum + t.totalPages, 0)
+    : fitInfo.length) + descPages
+  const scalable = canExportPdf(project.map)
+
+  const previewIds = [
+    ...(allControls ? [ALL_CONTROLS_ID] : []),
+    ...project.courses.filter(c => selectedIds.has(c.id)).map(c => c.id),
+  ]
+  const activePreviewId = previewCourseId && previewIds.includes(previewCourseId)
+    ? previewCourseId
+    : previewIds[0] ?? null
+  const activeScale = activePreviewId
+    ? scaleOverrides[activePreviewId] ?? printScale
+    : printScale
+  const preview = activePreviewId
+    ? coursePreviewMm(project, activePreviewId, activeScale)
+    : null
+
+  const activeOffset = activePreviewId ? offsets[activePreviewId] ?? { x: 0, y: 0 } : { x: 0, y: 0 }
+  const hasOffset = activeOffset.x !== 0 || activeOffset.y !== 0
+
+  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && descModes[activePreviewId] === 'on-map'
+    ? project.courses.find(c => c.id === activePreviewId)
+    : null
+  const sheetSize = previewCourse
+    ? descriptionSheetSize(previewCourse, project.controls)
+    : null
+  const activeSheetPos = activePreviewId ? sheetPositions[activePreviewId] ?? { x: MARGIN, y: MARGIN } : { x: MARGIN, y: MARGIN }
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [onClose])
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const blob = await exportCoursePdf(project, options, loadedMap)
+      downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+      onClose()
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  function toggleCourse(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(project.courses.map(c => c.id)))
+  }
+
+  function selectNone() {
+    setSelectedIds(new Set())
+  }
+
+  function resetOffset() {
+    if (!activePreviewId) return
+    setOffsets(prev => {
+      const next = { ...prev }
+      delete next[activePreviewId]
+      return next
+    })
+  }
+
+  function setActiveOffset(x: number, y: number) {
+    if (!activePreviewId) return
+    setOffsets(prev => ({ ...prev, [activePreviewId]: { x, y } }))
+  }
+
+  function setActiveSheetPos(x: number, y: number) {
+    if (!activePreviewId) return
+    setSheetPositions(prev => ({ ...prev, [activePreviewId]: { x, y } }))
+  }
+
+  function setActiveScaleOverride(value: string) {
+    if (!activePreviewId) return
+    if (value === '') {
+      setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
+    } else {
+      const v = parseInt(value)
+      if (!isNaN(v) && v > 0) setScaleOverrides(prev => ({ ...prev, [activePreviewId]: v }))
+    }
+  }
+
+  function resetActiveScaleOverride() {
+    if (!activePreviewId) return
+    setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
+  }
+
+  function blurActiveScaleOverride(value: string) {
+    if (!activePreviewId) return
+    if (value === '') return
+    const v = parseInt(value)
+    if (isNaN(v) || v <= 0) resetActiveScaleOverride()
+  }
+
+  function setAllDescModes(mode: DescMode) {
+    const next: Record<string, DescMode> = { ...descModes }
+    for (const id of selectedIds) next[id] = mode
+    setDescModes(next)
+  }
+
+  function handleScaleBlur() {
+    const v = parseInt(scaleInput)
+    if (!isNaN(v) && v > 0) { setPrintScale(v); setScaleInput(String(v)) }
+    else setScaleInput(String(printScale))
+  }
+
+  function resetScale() {
+    setPrintScale(project.map.scale)
+    setScaleInput(String(project.map.scale))
+  }
+
+  function applyFitScale() {
+    if (!fitScale) return
+    setPrintScale(fitScale)
+    setScaleInput(String(fitScale))
+  }
+
+  return {
+    project,
+    loadedMap,
+
+    // Page config
+    pageSize, setPageSize,
+    orientation, setOrientation,
+    printScale, scaleInput, setScaleInput,
+    handleScaleBlur, resetScale, applyFitScale,
+
+    // Selection
+    selectedIds, allControls, setAllControls,
+    toggleCourse, selectAll, selectNone,
+
+    // Description modes
+    descModes, setDescModes, setAllDescModes,
+
+    // Scale overrides
+    scaleOverrides, setActiveScaleOverride, resetActiveScaleOverride, blurActiveScaleOverride,
+
+    // Offsets & positioning
+    offsets, activeOffset, hasOffset, resetOffset, setActiveOffset,
+    sheetPositions, activeSheetPos, setActiveSheetPos,
+    sheetSize,
+
+    // Map
+    mapOpacity, setMapOpacity,
+
+    // Tiling
+    tiling, setTiling,
+
+    // Preview
+    previewIds, activePreviewId, setPreviewCourseId,
+    activeScale, preview,
+
+    // Derived
+    pw, ph, printableW, printableH,
+    fitScale, fitInfo, tileInfo,
+    hasSelection, anyOverflow, totalPages, scalable,
+
+    // Actions
+    exporting, handleExport,
+  }
+}
