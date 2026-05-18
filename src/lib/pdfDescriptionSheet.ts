@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Course, Control, ControlDescription } from '../types'
+import type { Course, Control, ControlDescription, FinishType } from '../types'
 import { getSymbol, columnFields } from './iofSymbols'
 import type { SymbolDef, IofColumn } from './iofSymbols'
 
@@ -20,8 +20,9 @@ const INSET = 0.82
 const COL_HEADER_H = CELL * 0.6
 
 function fmtDist(m: number): string {
-  if (m < 1000) return `${Math.round(m)} m`
-  return `${(m / 1000).toFixed(2)} km`
+  const rounded = Math.round(m / 10) * 10
+  if (rounded < 1000) return `${rounded} m`
+  return `${(rounded / 1000).toFixed(1)} km`
 }
 
 function maxControlRows(pageH: number): number {
@@ -173,13 +174,100 @@ function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
   doc.stroke()
 }
 
-// ── Draw a small finish double-circle in column A ───────────────────────────
+// ── Draw IOF finish row (16.1/16.2/16.3) ───────────────────────────────────
 
-function drawFinishSymbol(doc: jsPDF, cx: number, cy: number) {
-  doc.setLineWidth(0.2)
+function drawFinishIofRow(
+  doc: jsPDF,
+  gridX: number,
+  y: number,
+  finishType: FinishType,
+  distM?: number,
+) {
   doc.setDrawColor(0, 0, 0)
-  doc.circle(cx, cy, CELL * 0.25, 'S')
-  doc.circle(cx, cy, CELL * 0.17, 'S')
+  doc.setLineWidth(LINE_W)
+  doc.rect(gridX, y, GRID_W, CELL, 'S')
+
+  const cy = y + CELL / 2
+  const circleX = gridX + CELL * 0.55
+  const finishCx = gridX + GRID_W - CELL * 0.55
+  const midX = gridX + GRID_W / 2
+  const circleR = CELL * 0.28
+  const finishRInner = CELL * 0.18
+  const sw = 0.2
+
+  const chevronW = CELL * 0.14
+  const chevronH = circleR
+  const hasLeftChevron = finishType !== 'taped'
+  const hasLines = finishType !== 'navigate'
+
+  doc.setLineWidth(sw)
+  doc.setDrawColor(0, 0, 0)
+
+  // Last control circle
+  doc.circle(circleX, cy, circleR, 'S')
+
+  // Finish double circle
+  doc.circle(finishCx, cy, circleR, 'S')
+  doc.circle(finishCx, cy, finishRInner, 'S')
+
+  function drawChevron(tipX: number, dir: '<' | '>') {
+    doc.setLineWidth(sw)
+    doc.setLineCap(1)
+    const backX = dir === '<' ? tipX + chevronW : tipX - chevronW
+    doc.line(backX, cy - chevronH, tipX, cy)
+    doc.line(tipX, cy, backX, cy + chevronH)
+  }
+
+  const contentLeft = circleX + circleR + 0.5
+  const contentRight = finishCx - circleR - 0.5
+
+  // Left chevron < (navigate / funnel)
+  if (hasLeftChevron) {
+    drawChevron(contentLeft, '<')
+  }
+
+  // Right chevron > (always)
+  drawChevron(contentRight, '>')
+
+  // Distance text
+  if (distM != null) {
+    doc.setFontSize(5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 0, 0)
+    doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
+  }
+
+  // Dashes (taped: 3+3, funnel: 2+3, navigate: none)
+  if (hasLines) {
+    const leftDashCount = finishType === 'funnel' ? 2 : 3
+    const rightDashCount = 3
+    const dashGapRatio = 1.8
+    const textHalfW = distM != null ? CELL * 0.55 : 0
+
+    const leftStart = contentLeft + (hasLeftChevron ? chevronW + 0.3 : 0)
+    const leftEnd = midX - textHalfW - 0.3
+    const leftTotal = leftEnd - leftStart
+    const leftDashLen = leftTotal / (leftDashCount + (leftDashCount - 1) / dashGapRatio)
+    const leftGapLen = leftDashLen / dashGapRatio
+
+    doc.setLineWidth(sw)
+    doc.setLineCap(1)
+    for (let i = 0; i < leftDashCount; i++) {
+      const x1 = leftStart + i * (leftDashLen + leftGapLen)
+      doc.line(x1, cy, x1 + leftDashLen, cy)
+    }
+
+    const rightStart = midX + textHalfW + 0.3
+    const rightEnd = contentRight - chevronW - 0.3
+    const rightTotal = rightEnd - rightStart
+    const rightDashLen = rightTotal / (rightDashCount + (rightDashCount - 1) / dashGapRatio)
+    const rightGapLen = rightDashLen / dashGapRatio
+
+    for (let i = 0; i < rightDashCount; i++) {
+      const x1 = rightStart + i * (rightDashLen + rightGapLen)
+      doc.line(x1, cy, x1 + rightDashLen, cy)
+    }
+  }
 }
 
 // ── Size calculation ────────────────────────────────────────────────────────
@@ -205,6 +293,7 @@ export function drawDescriptionSheetOverlay(
   originX: number,
   originY: number,
   distanceM?: number,
+  legDistances?: number[],
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -251,8 +340,13 @@ export function drawDescriptionSheetOverlay(
   }
   y += COL_HEADER_H
 
-  // Control rows
-  for (const ctrl of resolved) {
+  // Separate finish from other controls
+  const nonFinish = resolved.filter(c => c.type !== 'finish')
+  const finish = resolved.find(c => c.type === 'finish')
+  const finishIdx = resolved.findIndex(c => c.type === 'finish')
+
+  // Control rows (non-finish)
+  for (const ctrl of nonFinish) {
     if (ctrl.type === 'control') seq++
     const desc = ctrl.description ?? {}
 
@@ -266,8 +360,6 @@ export function drawDescriptionSheetOverlay(
     const aCy = y + CELL / 2
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
-    } else if (ctrl.type === 'finish') {
-      drawFinishSymbol(doc, aCx, aCy)
     } else {
       doc.setFontSize(7)
       doc.setFont('helvetica', 'bold')
@@ -280,8 +372,7 @@ export function drawDescriptionSheetOverlay(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
-      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     for (let ci = 0; ci < COL_IDS.length; ci++) {
@@ -301,6 +392,13 @@ export function drawDescriptionSheetOverlay(
 
     y += CELL
   }
+
+  // Finish row (IOF 16.1/16.2/16.3)
+  if (finish) {
+    const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
+    y += CELL
+  }
 }
 
 // ── Main export (separate pages) ────────────────────────────────────────────
@@ -313,6 +411,7 @@ export function drawDescriptionSheet(
   pageW: number,
   pageH: number,
   distanceM?: number,
+  legDistances?: number[],
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -368,9 +467,13 @@ export function drawDescriptionSheet(
     drawColumnHeaders()
   }
 
+  const nonFinish = resolved.filter(c => c.type !== 'finish')
+  const finish = resolved.find(c => c.type === 'finish')
+  const finishIdx = resolved.findIndex(c => c.type === 'finish')
+
   startPage()
 
-  for (const ctrl of resolved) {
+  for (const ctrl of nonFinish) {
     if (rowOnPage >= maxRows) {
       doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
       startPage()
@@ -387,13 +490,11 @@ export function drawDescriptionSheet(
       doc.rect(gridX + c * CELL, y, CELL, CELL, 'S')
     }
 
-    // Column A: sequence / start / finish
+    // Column A: sequence / start
     const aCx = gridX + CELL / 2
     const aCy = y + CELL / 2
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
-    } else if (ctrl.type === 'finish') {
-      drawFinishSymbol(doc, aCx, aCy)
     } else {
       doc.setFontSize(7)
       doc.setFont('helvetica', 'bold')
@@ -407,8 +508,7 @@ export function drawDescriptionSheet(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
-      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     // Columns C-H: IOF symbols
@@ -430,5 +530,15 @@ export function drawDescriptionSheet(
 
     y += CELL
     rowOnPage++
+  }
+
+  // Finish row (IOF 16.1/16.2/16.3)
+  if (finish) {
+    if (rowOnPage >= maxRows) {
+      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
+      startPage()
+    }
+    const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
   }
 }
