@@ -22,7 +22,7 @@ import { defaultControlLabel } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
-import type { Course, Control, CourseControl } from '../types'
+import type { Course, Control, CourseControl, FinishType } from '../types'
 
 const CELL = 32
 const BORDER = 'border border-gray-300'
@@ -54,9 +54,20 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
   let seq = 0
   let filteredIdx = 0
   const rows: RowData[] = []
+  let finishRow: RowData | null = null
   for (const cc of course.controls) {
     const ctrl = controlMap.get(cc.controlId)
     if (!ctrl) continue
+    if (ctrl.type === 'finish') {
+      finishRow = {
+        cc,
+        ctrl,
+        seq: 0,
+        legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+      }
+      filteredIdx++
+      continue
+    }
     if (ctrl.type === 'control') seq++
     rows.push({
       cc,
@@ -117,23 +128,33 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                 {showDist && <td />}
               </tr>
 
-              {rows.length === 0 ? (
+              {rows.length === 0 && !finishRow ? (
                 <tr>
                   <td colSpan={8} className="text-center text-xs text-gray-400 py-3">
                     Click controls on the map to add them.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
-                  <SortableDescRow
-                    key={row.cc.id}
-                    row={row}
-                    showDist={showDist}
-                    picker={picker}
-                    setPicker={setPicker}
-                    onRemove={onRemove}
-                  />
-                ))
+                <>
+                  {rows.map((row) => (
+                    <SortableDescRow
+                      key={row.cc.id}
+                      row={row}
+                      showDist={showDist}
+                      picker={picker}
+                      setPicker={setPicker}
+                      onRemove={onRemove}
+                    />
+                  ))}
+                  {finishRow && (
+                    <FinishDescRow
+                      row={finishRow}
+                      finishType={course.finishType ?? 'navigate'}
+                      showDist={showDist}
+                      onRemove={onRemove}
+                    />
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -240,6 +261,88 @@ function SortableDescRow({
           {legDist != null ? formatDistance(legDist) : ''}
         </td>
       )}
+    </tr>
+  )
+}
+
+function FinishDescRow({
+  row,
+  finishType,
+  showDist,
+  onRemove,
+}: {
+  row: RowData
+  finishType: FinishType
+  showDist: boolean
+  onRemove?: (ccId: string) => void
+}) {
+  const { cc, legDist } = row
+  const distText = legDist != null ? formatDistance(legDist) : ''
+  const dashed = '5,3.5'
+  const hasLeftArrow = finishType !== 'taped'
+  const hasRightArrow = true
+  const isDashed = finishType !== 'navigate'
+
+  const circleX = 22
+  const finishX = 234
+  const arrowW = 7
+  const textW = distText ? 50 : 0
+
+  const leftLineStart = circleX + 9 + (hasLeftArrow ? arrowW + 2 : 1)
+  const rightLineEnd = finishX - 9 - (hasRightArrow ? arrowW + 2 : 1)
+  const midX = 128
+  const leftLineEnd = midX - textW / 2 - 2
+  const rightLineStart = midX + textW / 2 + 2
+
+  return (
+    <tr className="group">
+      <td
+        colSpan={8}
+        className={`${BORDER} relative`}
+        style={{ height: CELL, padding: 0 }}
+      >
+        <svg viewBox="0 0 256 32" width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+          {/* Last control circle */}
+          <circle cx={circleX} cy="16" r="8" fill="none" stroke="black" strokeWidth="1.8" />
+          {/* Left arrowhead */}
+          {hasLeftArrow && (
+            <polygon
+              points={`${circleX + 10},12 ${circleX + 10 + arrowW},16 ${circleX + 10},20`}
+              fill="black" />
+          )}
+          {/* Left line */}
+          <line x1={leftLineStart} y1="16" x2={leftLineEnd} y2="16"
+            stroke="black" strokeWidth="1.8"
+            strokeDasharray={isDashed ? dashed : 'none'} />
+          {/* Distance text */}
+          {distText && (
+            <text x={midX} y="17" textAnchor="middle" dominantBaseline="central"
+              fontSize="11" fontFamily="sans-serif">{distText}</text>
+          )}
+          {/* Right line */}
+          <line x1={rightLineStart} y1="16" x2={rightLineEnd} y2="16"
+            stroke="black" strokeWidth="1.8"
+            strokeDasharray={isDashed ? dashed : 'none'} />
+          {/* Right arrowhead */}
+          {hasRightArrow && (
+            <polygon
+              points={`${finishX - 10 - arrowW},12 ${finishX - 10},16 ${finishX - 10 - arrowW},20`}
+              fill="black" />
+          )}
+          {/* Finish double circle */}
+          <circle cx={finishX} cy="16" r="8" fill="none" stroke="black" strokeWidth="1.8" />
+          <circle cx={finishX} cy="16" r="5.5" fill="none" stroke="black" strokeWidth="1.8" />
+        </svg>
+        {onRemove && (
+          <button
+            onClick={() => onRemove(cc.id)}
+            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
+          >
+            <X size={8} />
+          </button>
+        )}
+      </td>
+      {showDist && <td />}
     </tr>
   )
 }

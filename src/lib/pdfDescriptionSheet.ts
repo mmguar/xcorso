@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Course, Control, ControlDescription } from '../types'
+import type { Course, Control, ControlDescription, FinishType } from '../types'
 import { getSymbol, columnFields } from './iofSymbols'
 import type { SymbolDef, IofColumn } from './iofSymbols'
 
@@ -173,13 +173,101 @@ function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
   doc.stroke()
 }
 
-// ── Draw a small finish double-circle in column A ───────────────────────────
+// ── Draw IOF finish row (16.1/16.2/16.3) ───────────────────────────────────
 
-function drawFinishSymbol(doc: jsPDF, cx: number, cy: number) {
-  doc.setLineWidth(0.2)
+function drawFinishIofRow(
+  doc: jsPDF,
+  gridX: number,
+  y: number,
+  finishType: FinishType,
+  distM?: number,
+) {
   doc.setDrawColor(0, 0, 0)
-  doc.circle(cx, cy, CELL * 0.25, 'S')
-  doc.circle(cx, cy, CELL * 0.17, 'S')
+  doc.setLineWidth(LINE_W)
+  doc.rect(gridX, y, GRID_W, CELL, 'S')
+
+  const cy = y + CELL / 2
+  const circleX = gridX + CELL * 0.6
+  const finishCx = gridX + GRID_W - CELL * 0.6
+  const midX = gridX + GRID_W / 2
+  const circleR = CELL * 0.22
+  const arrowH = CELL * 0.22
+  const arrowW = CELL * 0.2
+  const sw = 0.25
+
+  // Last control circle
+  doc.setLineWidth(sw)
+  doc.circle(circleX, cy, circleR, 'S')
+
+  // Finish double circle
+  doc.circle(finishCx, cy, circleR, 'S')
+  doc.circle(finishCx, cy, circleR * 0.65, 'S')
+
+  const hasLeftArrow = finishType !== 'taped'
+  const isDashed = finishType !== 'navigate'
+  const dashLen = 0.8
+  const gapLen = 0.5
+
+  function drawArrow(tipX: number) {
+    doc.setFillColor(0, 0, 0)
+    doc.moveTo(tipX, cy)
+    doc.lineTo(tipX - arrowW, cy - arrowH)
+    doc.lineTo(tipX - arrowW, cy + arrowH)
+    doc.lineTo(tipX, cy)
+    doc.fill()
+  }
+
+  function drawDashedLine(x1: number, x2: number) {
+    doc.setLineWidth(sw)
+    let x = x1
+    while (x < x2) {
+      const end = Math.min(x + dashLen, x2)
+      doc.line(x, cy, end, cy)
+      x = end + gapLen
+    }
+  }
+
+  function drawSolidLine(x1: number, x2: number) {
+    doc.setLineWidth(sw)
+    doc.line(x1, cy, x2, cy)
+  }
+
+  // Left arrowhead (navigate/funnel only)
+  const leftLineStart = circleX + circleR + 0.3
+  let lineL = leftLineStart
+  if (hasLeftArrow) {
+    const arrowTip = leftLineStart + arrowW + 0.3
+    drawArrow(arrowTip)
+    lineL = arrowTip + 0.3
+  }
+
+  // Right arrowhead (always)
+  const rightLineEnd = finishCx - circleR - 0.3
+  const arrowTipR = rightLineEnd - 0.3
+  drawArrow(arrowTipR)
+  const lineR = arrowTipR - arrowW - 0.3
+
+  if (distM != null) {
+    const textHalfW = CELL * 0.6
+    const textLeft = midX - textHalfW
+    const textRight = midX + textHalfW
+
+    if (isDashed) {
+      drawDashedLine(lineL, textLeft)
+      drawDashedLine(textRight, lineR)
+    } else {
+      drawSolidLine(lineL, textLeft)
+      drawSolidLine(textRight, lineR)
+    }
+
+    doc.setFontSize(5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 0, 0)
+    doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
+  } else {
+    if (isDashed) drawDashedLine(lineL, lineR)
+    else drawSolidLine(lineL, lineR)
+  }
 }
 
 // ── Size calculation ────────────────────────────────────────────────────────
@@ -205,6 +293,7 @@ export function drawDescriptionSheetOverlay(
   originX: number,
   originY: number,
   distanceM?: number,
+  legDistances?: number[],
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -251,8 +340,13 @@ export function drawDescriptionSheetOverlay(
   }
   y += COL_HEADER_H
 
-  // Control rows
-  for (const ctrl of resolved) {
+  // Separate finish from other controls
+  const nonFinish = resolved.filter(c => c.type !== 'finish')
+  const finish = resolved.find(c => c.type === 'finish')
+  const finishIdx = resolved.findIndex(c => c.type === 'finish')
+
+  // Control rows (non-finish)
+  for (const ctrl of nonFinish) {
     if (ctrl.type === 'control') seq++
     const desc = ctrl.description ?? {}
 
@@ -266,8 +360,6 @@ export function drawDescriptionSheetOverlay(
     const aCy = y + CELL / 2
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
-    } else if (ctrl.type === 'finish') {
-      drawFinishSymbol(doc, aCx, aCy)
     } else {
       doc.setFontSize(7)
       doc.setFont('helvetica', 'bold')
@@ -280,8 +372,7 @@ export function drawDescriptionSheetOverlay(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
-      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     for (let ci = 0; ci < COL_IDS.length; ci++) {
@@ -301,6 +392,13 @@ export function drawDescriptionSheetOverlay(
 
     y += CELL
   }
+
+  // Finish row (IOF 16.1/16.2/16.3)
+  if (finish) {
+    const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
+    y += CELL
+  }
 }
 
 // ── Main export (separate pages) ────────────────────────────────────────────
@@ -313,6 +411,7 @@ export function drawDescriptionSheet(
   pageW: number,
   pageH: number,
   distanceM?: number,
+  legDistances?: number[],
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -368,9 +467,13 @@ export function drawDescriptionSheet(
     drawColumnHeaders()
   }
 
+  const nonFinish = resolved.filter(c => c.type !== 'finish')
+  const finish = resolved.find(c => c.type === 'finish')
+  const finishIdx = resolved.findIndex(c => c.type === 'finish')
+
   startPage()
 
-  for (const ctrl of resolved) {
+  for (const ctrl of nonFinish) {
     if (rowOnPage >= maxRows) {
       doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
       startPage()
@@ -387,13 +490,11 @@ export function drawDescriptionSheet(
       doc.rect(gridX + c * CELL, y, CELL, CELL, 'S')
     }
 
-    // Column A: sequence / start / finish
+    // Column A: sequence / start
     const aCx = gridX + CELL / 2
     const aCy = y + CELL / 2
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
-    } else if (ctrl.type === 'finish') {
-      drawFinishSymbol(doc, aCx, aCy)
     } else {
       doc.setFontSize(7)
       doc.setFont('helvetica', 'bold')
@@ -407,8 +508,7 @@ export function drawDescriptionSheet(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
-      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     // Columns C-H: IOF symbols
@@ -430,5 +530,15 @@ export function drawDescriptionSheet(
 
     y += CELL
     rowOnPage++
+  }
+
+  // Finish row (IOF 16.1/16.2/16.3)
+  if (finish) {
+    if (rowOnPage >= maxRows) {
+      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
+      startPage()
+    }
+    const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
   }
 }
