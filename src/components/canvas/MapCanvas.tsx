@@ -110,6 +110,21 @@ export function MapCanvas({ loadedMap }: Props) {
     let vpDirty = false
     let wheelTimer: ReturnType<typeof setTimeout> | null = null
     let pendingRaf = 0
+    let filterSuspended = false
+
+    function suspendFilter() {
+      if (filterSuspended) return
+      filterSuspended = true
+      if (mapGRef.current) mapGRef.current.removeAttribute('filter')
+    }
+    function restoreFilter() {
+      if (!filterSuspended) return
+      filterSuspended = false
+      const sat = useStore.getState().editor.mapSaturation
+      if (mapGRef.current && sat < 1) {
+        mapGRef.current.setAttribute('filter', 'url(#map-saturate)')
+      }
+    }
 
     function getRect(): DOMRect {
       return rectCacheRef.current ?? div.getBoundingClientRect()
@@ -147,9 +162,10 @@ export function MapCanvas({ loadedMap }: Props) {
       const ns = clamp(v.scale * factor, minScale, MAX_SCALE)
       const ratio = ns / v.scale
       vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
+      suspendFilter()
       syncTransform()
       if (wheelTimer) clearTimeout(wheelTimer)
-      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current) }, 150)
+      wheelTimer = setTimeout(() => { wheelTimer = null; restoreFilter(); setVpState(vpRef.current) }, 150)
     }
 
     // ── Pointer down ─────────────────────────────────────────────────────────
@@ -323,6 +339,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const v = vpRef.current
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
         vpDirty = true
+        suspendFilter()
       } else if (pos.size === 2) {
         const [a, b] = [...pos.values()]
         const dist = Math.hypot(b.x - a.x, b.y - a.y)
@@ -336,6 +353,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const ratio = ns / v.scale
         vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
         vpDirty = true
+        suspendFilter()
         pinchDist = dist
       }
       if (vpDirty && !pendingRaf) {
@@ -356,6 +374,7 @@ export function MapCanvas({ loadedMap }: Props) {
         syncTransform()
         setVpState(vpRef.current)
       }
+      if (pos.size === 0) restoreFilter()
 
       if (longPressFired) { longPressFired = false; return }
 
@@ -479,6 +498,7 @@ export function MapCanvas({ loadedMap }: Props) {
         syncTransform()
         setVpState(vpRef.current)
       }
+      if (pos.size === 0) restoreFilter()
     }
 
     function onDblClick() {
