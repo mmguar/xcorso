@@ -84,9 +84,28 @@ export interface CourseControl {
   legGaps?: LegGap[]         // gaps on the leg leading TO this control
   legBendPoints?: MapPoint[] // intermediate waypoints on the leg leading TO this control
   labelOffset?: MapPoint     // offset from control center to label anchor, in map units
-  // Phase 3 placeholder:
-  // branchId?: string
 }
+
+// ─── Loops & Variations ────────────────────────────────────────────────────
+
+export interface CourseLoop {
+  id: string
+  forkControlId: string      // references Control.id — must appear ≥ N+1 times for N branches
+  branchNames: string[]      // label per branch in master order, e.g. ["A", "B", "C"]
+}
+
+export interface BranchPermutation {
+  loopId: string             // references CourseLoop.id
+  order: number[]            // indices into branchNames, e.g. [1, 0, 2] for "BAC"
+}
+
+export interface CourseVariation {
+  id: string
+  name: string               // e.g. "BAC" — auto-generated or user-set
+  loopOrders: BranchPermutation[]
+}
+
+// ─── Course ────────────────────────────────────────────────────────────────
 
 export interface Course {
   id: string
@@ -98,8 +117,8 @@ export interface Course {
   climb?: number             // metres, manually set
   color: string              // overprint color, default '#7B2FBE'
   showPoints?: boolean       // display [points] next to controls on map
-  // Phase 3 placeholder:
-  // variations?: CourseVariation[]
+  loops?: CourseLoop[]
+  variations?: CourseVariation[]
 }
 
 // ─── Classes ────────────────────────────────────────────────────────────────
