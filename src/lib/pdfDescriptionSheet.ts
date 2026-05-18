@@ -20,8 +20,9 @@ const INSET = 0.82
 const COL_HEADER_H = CELL * 0.6
 
 function fmtDist(m: number): string {
-  if (m < 1000) return `${Math.round(m)} m`
-  return `${(m / 1000).toFixed(2)} km`
+  const rounded = Math.round(m / 10) * 10
+  if (rounded < 1000) return `${rounded} m`
+  return `${(rounded / 1000).toFixed(1)} km`
 }
 
 function maxControlRows(pageH: number): number {
