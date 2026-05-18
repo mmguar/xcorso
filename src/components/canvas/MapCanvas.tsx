@@ -598,11 +598,17 @@ export function MapCanvas({ loadedMap }: Props) {
         width="100%" height="100%"
         style={{ display: 'block', position: 'absolute', inset: 0 }}
       >
+        {mapSaturation < 1 && (
+          <defs>
+            <filter id="map-saturate" colorInterpolationFilters="sRGB">
+              <feColorMatrix type="saturate" values={String(mapSaturation)} />
+            </filter>
+          </defs>
+        )}
         <g ref={mapGRef} style={{
           willChange: 'transform',
           transformOrigin: '0 0',
-          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
-        }}>
+        }} filter={mapSaturation < 1 ? 'url(#map-saturate)' : undefined}>
           <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
       </svg>
