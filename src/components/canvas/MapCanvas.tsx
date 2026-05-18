@@ -36,6 +36,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const mapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
+  const filterSuspendedRef = useRef(false)
 
   function syncTransform() {
     const v = vpRef.current
@@ -116,11 +117,13 @@ export function MapCanvas({ loadedMap }: Props) {
     function suspendFilter() {
       if (filterSuspended) return
       filterSuspended = true
+      filterSuspendedRef.current = true
       if (mapSvgRef.current) mapSvgRef.current.style.filter = 'none'
     }
     function restoreFilter() {
       if (!filterSuspended) return
       filterSuspended = false
+      filterSuspendedRef.current = false
       const sat = useStore.getState().editor.mapSaturation
       if (mapSvgRef.current) {
         mapSvgRef.current.style.filter = sat < 1 ? `saturate(${sat})` : ''
@@ -620,7 +623,7 @@ export function MapCanvas({ loadedMap }: Props) {
         width="100%" height="100%"
         style={{
           display: 'block', position: 'absolute', inset: 0,
-          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+          filter: (!filterSuspendedRef.current && mapSaturation < 1) ? `saturate(${mapSaturation})` : undefined,
         }}
       >
         <g ref={mapGRef} style={{
