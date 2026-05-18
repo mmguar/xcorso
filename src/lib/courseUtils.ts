@@ -39,15 +39,21 @@ export function defaultLabelOffset(type: ControlType, upm: number, controlScale:
   return { x: cr * 1.1, y: -cr * 1.1 }
 }
 
-export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number> {
-  const map = new Map<string, number>()
+export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number[]> {
+  const map = new Map<string, number[]>()
   let seq = 1
   for (const cc of course.controls) {
     const ctrl = controls.find(c => c.id === cc.controlId)
     if (ctrl && ctrl.type === 'control') {
-      if (!map.has(cc.controlId)) map.set(cc.controlId, seq)
+      const existing = map.get(cc.controlId)
+      if (existing) existing.push(seq)
+      else map.set(cc.controlId, [seq])
       seq++
     }
   }
   return map
+}
+
+export function formatSequenceLabel(seqs: number[]): string {
+  return seqs.join('/')
 }

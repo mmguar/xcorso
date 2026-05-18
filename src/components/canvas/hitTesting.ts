@@ -1,5 +1,5 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
-import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap } from '../../lib/courseUtils'
+import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
 
 const HIT_PX = 20
@@ -205,7 +205,8 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     const fontSize = cr * 1.1 * vp.scale
     let labelText: string
     if (seqMap && ctrl.type === 'control') {
-      labelText = String(seqMap.get(ctrl.id) ?? defaultControlLabel(ctrl))
+      const seqs = seqMap.get(ctrl.id)
+      labelText = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(ctrl)
     } else {
       labelText = defaultControlLabel(ctrl)
     }

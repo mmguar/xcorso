@@ -2,7 +2,7 @@ import { memo } from 'react'
 import type { Control, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
-import { defaultControlLabel, buildSequenceMap as buildSeqMap, unitsPerMm } from '../../lib/courseUtils'
+import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import type { SymbolDims } from '../../lib/symbolSpec'
 
@@ -229,7 +229,8 @@ export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
 
         let label: string
         if (sequenceMap && control.type === 'control') {
-          label = String(sequenceMap.get(control.id) ?? defaultControlLabel(control))
+          const seqs = sequenceMap.get(control.id)
+          label = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(control)
         } else {
           label = defaultControlLabel(control)
         }

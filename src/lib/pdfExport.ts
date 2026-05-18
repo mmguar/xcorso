@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
 import { walkPath, clipPolyline } from './geometry'
@@ -652,9 +652,10 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
 
 // ── Labelling ───────────────────────────────────────────────────────────────
 
-function getLabel(c: Control, seqMap: Map<string, number> | null): string {
+function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
   if (seqMap && c.type === 'control') {
-    return String(seqMap.get(c.id) ?? defaultControlLabel(c))
+    const seqs = seqMap.get(c.id)
+    return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
   }
   return defaultControlLabel(c)
 }
