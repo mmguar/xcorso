@@ -3,32 +3,23 @@ import type { LoadedMap } from '../../lib/mapLoader'
 
 interface Props {
   loadedMap: LoadedMap
-  useRaster: boolean
 }
 
 const MAX_CANVAS_DIM = 8192
 
-export function MapCanvasLayer({ loadedMap, useRaster }: Props) {
+export function MapCanvasLayer({ loadedMap }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { bounds } = loadedMap
 
   useEffect(() => {
     let cancelled = false
     const img = new Image()
-    let blobUrl: string | undefined
 
     if (loadedMap.type === 'svg') {
-      if (useRaster && loadedMap.rasterUrl) {
+      if (loadedMap.rasterUrl) {
         img.src = loadedMap.rasterUrl
       } else {
-        const svgEl = loadedMap.content as SVGElement
-        const clone = svgEl.cloneNode(true) as SVGElement
-        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-        clone.setAttribute('width', String(bounds.width))
-        clone.setAttribute('height', String(bounds.height))
-        const xml = new XMLSerializer().serializeToString(clone)
-        blobUrl = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }))
-        img.src = blobUrl
+        return
       }
     } else {
       img.src = loadedMap.content as string
@@ -48,15 +39,13 @@ export function MapCanvasLayer({ loadedMap, useRaster }: Props) {
       canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
     }
 
-    return () => {
-      cancelled = true
-      if (blobUrl) URL.revokeObjectURL(blobUrl)
-    }
-  }, [loadedMap, useRaster, bounds])
+    return () => { cancelled = true }
+  }, [loadedMap, bounds])
 
   return (
-    <>
-      <div style={{
+    <canvas
+      ref={canvasRef}
+      style={{
         position: 'absolute',
         left: bounds.minX,
         top: bounds.minY,
@@ -64,18 +53,7 @@ export function MapCanvasLayer({ loadedMap, useRaster }: Props) {
         height: bounds.height,
         backgroundColor: 'white',
         pointerEvents: 'none',
-      }} />
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute',
-          left: bounds.minX,
-          top: bounds.minY,
-          width: bounds.width,
-          height: bounds.height,
-          pointerEvents: 'none',
-        }}
-      />
-    </>
+      }}
+    />
   )
 }

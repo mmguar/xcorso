@@ -628,7 +628,7 @@ export function MapCanvas({ loadedMap }: Props) {
           pointerEvents: 'none',
         }}
       >
-        <MapCanvasLayer loadedMap={loadedMap} useRaster={useRaster} />
+        <MapCanvasLayer loadedMap={loadedMap} />
       </div>
       {/* HD SVG overlay — true vector quality at rest (OCAD HD mode only) */}
       {!useRaster && loadedMap.type === 'svg' && (
