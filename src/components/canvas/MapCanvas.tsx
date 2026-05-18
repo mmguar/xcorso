@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
+import { MapCanvasLayer } from './MapCanvasLayer'
 import { MapLayer } from './MapLayer'
+import { FpsCounter } from './FpsCounter'
 import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
@@ -32,14 +34,17 @@ export function MapCanvas({ loadedMap }: Props) {
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
   const vpRef = useRef<Viewport>(vp)
   const fitScaleRef = useRef<number>(MIN_SCALE)
-  const mapGRef = useRef<SVGGElement>(null)
+  const mapDivRef = useRef<HTMLDivElement>(null)
+  const hdSvgRef = useRef<SVGSVGElement>(null)
+  const hdMapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
 
   function syncTransform() {
     const v = vpRef.current
     const t = `translate(${v.x}px,${v.y}px) scale(${v.scale})`
-    if (mapGRef.current) mapGRef.current.style.transform = t
+    if (mapDivRef.current) mapDivRef.current.style.transform = t
+    if (hdMapGRef.current) hdMapGRef.current.style.transform = t
     if (overlayGRef.current) overlayGRef.current.style.transform = t
   }
   function setVp(next: Viewport) {
@@ -134,6 +139,18 @@ export function MapCanvas({ loadedMap }: Props) {
       if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null }
     }
 
+    let panning = false
+    function startPanning() {
+      if (panning) return
+      panning = true
+      if (hdSvgRef.current) hdSvgRef.current.style.display = 'none'
+    }
+    function stopPanning() {
+      if (!panning) return
+      panning = false
+      if (hdSvgRef.current) hdSvgRef.current.style.display = ''
+    }
+
     // ── Wheel ────────────────────────────────────────────────────────────────
     function onWheel(e: WheelEvent) {
       e.preventDefault()
@@ -147,9 +164,10 @@ export function MapCanvas({ loadedMap }: Props) {
       const ns = clamp(v.scale * factor, minScale, MAX_SCALE)
       const ratio = ns / v.scale
       vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
+      startPanning()
       syncTransform()
       if (wheelTimer) clearTimeout(wheelTimer)
-      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current) }, 150)
+      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current); stopPanning() }, 150)
     }
 
     // ── Pointer down ─────────────────────────────────────────────────────────
@@ -322,6 +340,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const dy = e.clientY - prev.y
         const v = vpRef.current
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
+        if (!vpDirty) startPanning()
         vpDirty = true
       } else if (pos.size === 2) {
         const [a, b] = [...pos.values()]
@@ -335,6 +354,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const ns = clamp(v.scale * (dist / pinchDist), minScale, MAX_SCALE)
         const ratio = ns / v.scale
         vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
+        if (!vpDirty) startPanning()
         vpDirty = true
         pinchDist = dist
       }
@@ -355,6 +375,7 @@ export function MapCanvas({ loadedMap }: Props) {
         if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
         syncTransform()
         setVpState(vpRef.current)
+        stopPanning()
       }
 
       if (longPressFired) { longPressFired = false; return }
@@ -478,6 +499,7 @@ export function MapCanvas({ loadedMap }: Props) {
         if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
         syncTransform()
         setVpState(vpRef.current)
+        stopPanning()
       }
     }
 
@@ -593,19 +615,40 @@ export function MapCanvas({ loadedMap }: Props) {
       className="w-full h-full overflow-hidden bg-gray-100 relative"
       style={{ cursor, touchAction: 'none', userSelect: 'none' }}
     >
-      {/* Map layer — separate SVG so overlay layers aren't affected by filter */}
-      <svg
-        width="100%" height="100%"
-        style={{ display: 'block', position: 'absolute', inset: 0 }}
-      >
-        <g ref={mapGRef} style={{
+      {/* Map layer — HTML div+canvas for GPU-composited pan/zoom */}
+      <div
+        ref={mapDivRef}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
           willChange: 'transform',
           transformOrigin: '0 0',
           filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
-        }}>
-          <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
-        </g>
-      </svg>
+          pointerEvents: 'none',
+        }}
+      >
+        <MapCanvasLayer loadedMap={loadedMap} />
+      </div>
+      {/* HD SVG overlay — true vector quality at rest (OCAD HD mode only) */}
+      {!useRaster && loadedMap.type === 'svg' && (
+        <svg
+          ref={hdSvgRef}
+          width="100%" height="100%"
+          style={{
+            display: 'block',
+            position: 'absolute',
+            inset: 0,
+            filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+          }}
+        >
+          <g ref={hdMapGRef} style={{
+            transformOrigin: '0 0',
+          }}>
+            <MapLayer loadedMap={loadedMap} useRaster={false} />
+          </g>
+        </svg>
+      )}
       {/* Overlay layers — controls, legs, annotations (no filter) */}
       <svg width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
         <g ref={overlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
@@ -711,6 +754,8 @@ export function MapCanvas({ loadedMap }: Props) {
           }}
         />
       )}
+
+      {import.meta.env.DEV && <FpsCounter />}
     </div>
   )
 }
