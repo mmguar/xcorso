@@ -140,7 +140,8 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                <>
+                {rows.map((row) => (
                   <SortableDescRow
                     key={row.cc.id}
                     row={row}
@@ -151,7 +152,17 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                     onRemove={onRemove}
                     onToggleLoop={toggleCourseLoop}
                   />
-                ))
+                ))}
+                {finishRow && (
+                    <FinishDescRow
+                      row={finishRow}
+                      finishType={course.finishType ?? 'navigate'}
+                      showDist={showDist}
+                      onRemove={onRemove}
+                    />
+                  )}
+                </>
+
               )}
             </tbody>
           </table>

@@ -119,6 +119,7 @@ export interface Course {
   showPoints?: boolean       // display [points] next to controls on map
   loops?: CourseLoop[]
   variations?: CourseVariation[]
+  textDescriptions?: boolean
 }
 
 // ─── Classes ────────────────────────────────────────────────────────────────
