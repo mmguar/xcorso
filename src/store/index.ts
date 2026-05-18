@@ -136,6 +136,7 @@ export const useStore = create<Store>((set, get) => {
         editor: {
           ...state.editor,
           selectedCourseId: id,
+          selectedVariationId: null,
           selectedControlId: id ? null : state.editor.selectedControlId,
           selectedOverlayId: id ? null : state.editor.selectedOverlayId,
           activeTool: id ? (state.editor.activeTool === 'gap' || state.editor.activeTool === 'bend' ? state.editor.activeTool : 'select') : state.editor.activeTool,

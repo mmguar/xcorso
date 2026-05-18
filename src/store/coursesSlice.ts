@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
+import { generateAllPermutations } from '../lib/courseUtils'
 
 function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
   const getType = (id: string) => controls.find(c => c.id === id)?.type
@@ -202,6 +203,53 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const c = p.classes.find(c => c.id === id)
         if (c) c.courseId = courseId
       })
+    },
+
+    toggleCourseLoop: (courseId: string, forkControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        if (!course.loops) course.loops = []
+        const existing = course.loops.findIndex(l => l.forkControlId === forkControlId)
+        if (existing >= 0) {
+          const loopId = course.loops[existing].id
+          course.loops.splice(existing, 1)
+          if (course.loops.length === 0) course.loops = undefined
+          if (course.variations) {
+            course.variations = course.variations
+              .map(v => ({ ...v, loopOrders: v.loopOrders.filter(lo => lo.loopId !== loopId) }))
+            if (course.variations.every(v => v.loopOrders.length === 0)) course.variations = undefined
+          }
+        } else {
+          const forkCount = course.controls.filter(cc => cc.controlId === forkControlId).length
+          if (forkCount < 3) return
+          const branchCount = forkCount - 1
+          const names = Array.from({ length: branchCount }, (_, i) => String.fromCharCode(65 + i))
+          const loop = { id: uuidv4(), forkControlId, branchNames: names }
+          course.loops.push(loop)
+          course.variations = generateAllPermutations(course)
+        }
+      })
+    },
+
+    removeCourseLoop: (courseId: string, loopId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.loops) return
+        course.loops = course.loops.filter(l => l.id !== loopId)
+        if (course.loops.length === 0) course.loops = undefined
+        if (course.variations) {
+          course.variations = course.variations
+            .map(v => ({ ...v, loopOrders: v.loopOrders.filter(lo => lo.loopId !== loopId) }))
+          if (course.variations.every(v => v.loopOrders.length === 0)) course.variations = undefined
+        }
+      })
+    },
+
+    setSelectedVariation: (id: string | null) => {
+      set(state => ({
+        editor: { ...state.editor, selectedVariationId: id },
+      }))
     },
   }
 }

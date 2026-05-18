@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
@@ -10,7 +10,7 @@ import { AnnotationsLayer } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm } from '../../lib/courseUtils'
+import { unitsPerMm, resolveVariation } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport } from '../../types'
 import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
 import {
@@ -606,7 +606,15 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const gapSize = useStore(s => s.editor.gapSize)
-  const selectedCourse = courses.find(c => c.id === selectedCourseId) ?? null
+  const selectedVariationId = useStore(s => s.editor.selectedVariationId)
+  const selectedCourseRaw = courses.find(c => c.id === selectedCourseId) ?? null
+  const selectedCourse = useMemo(() => {
+    if (!selectedCourseRaw || !selectedVariationId) return selectedCourseRaw
+    const variation = selectedCourseRaw.variations?.find(v => v.id === selectedVariationId)
+    if (!variation) return selectedCourseRaw
+    const resolved = resolveVariation(selectedCourseRaw, variation)
+    return { ...selectedCourseRaw, controls: resolved }
+  }, [selectedCourseRaw, selectedVariationId])
   const isCourseMode = !!selectedCourseId
 
   const cursor = activeTool === 'bend' ? 'crosshair'
