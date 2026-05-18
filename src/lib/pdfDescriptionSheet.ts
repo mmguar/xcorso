@@ -197,7 +197,7 @@ function drawFinishIofRow(
   const sw = 0.2
 
   const hasLeftArrow = finishType !== 'taped'
-  const isDashed = finishType !== 'navigate'
+  const hasLines = finishType !== 'navigate'
   const dashLen = 1.6
   const gapLen = 1.0
 
@@ -211,21 +211,21 @@ function drawFinishIofRow(
   doc.circle(finishCx, cy, circleR, 'S')
   doc.circle(finishCx, cy, finishRInner, 'S')
 
-  // Left arrowhead (navigate/funnel only)
-  let lineL = circleX + circleR + 0.4
+  // Left arrowhead < pointing left (navigate/funnel only)
+  const leftArrowBase = circleX + circleR + 0.3
+  let lineL = leftArrowBase
   if (hasLeftArrow) {
-    const tipX = lineL + arrowW
     doc.setFillColor(0, 0, 0)
-    doc.moveTo(tipX, cy)
-    doc.lineTo(lineL, cy - arrowH)
-    doc.lineTo(lineL, cy + arrowH)
-    doc.lineTo(tipX, cy)
+    doc.moveTo(leftArrowBase, cy)
+    doc.lineTo(leftArrowBase + arrowW, cy - arrowH)
+    doc.lineTo(leftArrowBase + arrowW, cy + arrowH)
+    doc.lineTo(leftArrowBase, cy)
     doc.fill()
-    lineL = tipX + 0.3
+    lineL = leftArrowBase + arrowW + 0.3
   }
 
-  // Right arrowhead (always present)
-  const arrowRight = finishCx - circleR - 0.4
+  // Right arrowhead > pointing right (always)
+  const arrowRight = finishCx - circleR - 0.3
   const arrowLeft = arrowRight - arrowW
   doc.setFillColor(0, 0, 0)
   doc.moveTo(arrowRight, cy)
@@ -235,33 +235,32 @@ function drawFinishIofRow(
   doc.fill()
   const lineR = arrowLeft - 0.3
 
-  function drawDashedLine(x1: number, x2: number) {
-    doc.setLineWidth(sw)
-    let x = x1
-    while (x < x2) {
-      const end = Math.min(x + dashLen, x2)
-      doc.line(x, cy, end, cy)
-      x = end + gapLen
+  // Dashed lines (taped/funnel only, navigate has no lines)
+  if (hasLines) {
+    function drawDashedLine(x1: number, x2: number) {
+      doc.setLineWidth(sw)
+      let x = x1
+      while (x < x2) {
+        const end = Math.min(x + dashLen, x2)
+        doc.line(x, cy, end, cy)
+        x = end + gapLen
+      }
+    }
+
+    if (distM != null) {
+      const textHalfW = CELL * 0.55
+      drawDashedLine(lineL, midX - textHalfW)
+      drawDashedLine(midX + textHalfW, lineR)
+    } else {
+      drawDashedLine(lineL, lineR)
     }
   }
 
-  function drawSolidLine(x1: number, x2: number) {
-    doc.setLineWidth(sw)
-    doc.line(x1, cy, x2, cy)
-  }
-
-  const drawLine = isDashed ? drawDashedLine : drawSolidLine
-
   if (distM != null) {
-    const textHalfW = CELL * 0.55
-    drawLine(lineL, midX - textHalfW)
-    drawLine(midX + textHalfW, lineR)
     doc.setFontSize(5.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
-  } else {
-    drawLine(lineL, lineR)
   }
 }
 

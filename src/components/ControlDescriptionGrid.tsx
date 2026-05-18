@@ -291,11 +291,12 @@ function FinishDescRow({
   const arrowH = 3.5
 
   const hasLeftArrow = finishType !== 'taped'
-  const isDashed = finishType !== 'navigate'
+  const hasLines = finishType !== 'navigate'
 
-  const lineStart = circleX + circleR + 1 + (hasLeftArrow ? arrowW + 1 : 0)
-  const arrowTipX = finishX - finishR - 1.5
-  const lineEnd = arrowTipX - arrowW - 1
+  const leftArrowBase = circleX + circleR + 1
+  const rightArrowTip = finishX - finishR - 1.5
+  const lineStart = leftArrowBase + (hasLeftArrow ? arrowW + 1 : 0)
+  const lineEnd = rightArrowTip - arrowW - 1
 
   const midX = W / 2
   const textGap = distText ? 28 : 0
@@ -311,17 +312,22 @@ function FinishDescRow({
           {/* Last control circle */}
           <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
 
-          {/* Left arrowhead (navigate / funnel only) */}
+          {/* Left arrowhead — navigate/funnel: < pointing left */}
           {hasLeftArrow && (
             <polygon
-              points={`${circleX + circleR + 1},${CY} ${circleX + circleR + 1 + arrowW},${CY - arrowH} ${circleX + circleR + 1 + arrowW},${CY + arrowH}`}
+              points={`${leftArrowBase},${CY} ${leftArrowBase + arrowW},${CY - arrowH} ${leftArrowBase + arrowW},${CY + arrowH}`}
               fill="black" />
           )}
 
-          {/* Left line segment */}
-          <line x1={lineStart} y1={CY} x2={midX - textGap} y2={CY}
-            stroke="black" strokeWidth={sw}
-            strokeDasharray={isDashed ? '8,5' : 'none'} />
+          {/* Lines (taped = dashed, funnel = dashed, navigate = none) */}
+          {hasLines && (
+            <>
+              <line x1={lineStart} y1={CY} x2={midX - textGap} y2={CY}
+                stroke="black" strokeWidth={sw} strokeDasharray="8,5" />
+              <line x1={midX + textGap} y1={CY} x2={lineEnd} y2={CY}
+                stroke="black" strokeWidth={sw} strokeDasharray="8,5" />
+            </>
+          )}
 
           {/* Distance text */}
           {distText && (
@@ -329,14 +335,9 @@ function FinishDescRow({
               fontSize="11" fontFamily="sans-serif" fontWeight="normal">{distText}</text>
           )}
 
-          {/* Right line segment */}
-          <line x1={midX + textGap} y1={CY} x2={lineEnd} y2={CY}
-            stroke="black" strokeWidth={sw}
-            strokeDasharray={isDashed ? '8,5' : 'none'} />
-
-          {/* Right arrowhead (always) */}
+          {/* Right arrowhead > pointing right (always) */}
           <polygon
-            points={`${arrowTipX},${CY} ${arrowTipX - arrowW},${CY - arrowH} ${arrowTipX - arrowW},${CY + arrowH}`}
+            points={`${rightArrowTip},${CY} ${rightArrowTip - arrowW},${CY - arrowH} ${rightArrowTip - arrowW},${CY + arrowH}`}
             fill="black" />
 
           {/* Finish double circle */}
