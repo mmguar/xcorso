@@ -180,6 +180,13 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       })
     },
 
+    updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => {
+      h.mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.textDescriptions = textDescriptions
+      })
+    },
+
     updateCourseSpec: (id: string, spec: EventSpec | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
