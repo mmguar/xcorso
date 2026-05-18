@@ -10,8 +10,9 @@
  * - MapPosition: x, y (attributes, doubles), unit (attribute, optional)
  */
 
-import type { Project, Control, ControlType, MapType } from '../types'
+import type { Project, Course, Control, ControlType, MapType } from '../types'
 import { computeCourseDistances } from './distance'
+import { resolveVariation } from './courseUtils'
 
 function xmlEscape(s: string): string {
   return s
@@ -69,8 +70,30 @@ export function exportIofXml(project: Project): string {
     return lines.join('\n')
   }).join('\n')
 
+  // Expand courses with variations into separate IOF courses
+  interface ExportCourse { course: Course; family?: string }
+  const exportCourses: ExportCourse[] = []
+  for (const course of project.courses) {
+    if (course.variations && course.variations.length > 0 && course.loops && course.loops.length > 0) {
+      for (const variation of course.variations) {
+        exportCourses.push({
+          course: {
+            ...course,
+            name: `${course.name} - ${variation.name}`,
+            controls: resolveVariation(course, variation),
+            loops: undefined,
+            variations: undefined,
+          },
+          family: course.name,
+        })
+      }
+    } else {
+      exportCourses.push({ course })
+    }
+  }
+
   // <Course> elements
-  const coursesXml = project.courses.map(course => {
+  const coursesXml = exportCourses.map(({ course, family }) => {
     const resolvedControls = course.controls
       .map(cc => controlMap.get(cc.controlId))
       .filter((c): c is Control => c !== undefined)
@@ -114,6 +137,9 @@ export function exportIofXml(project: Project): string {
     const courseChildren: string[] = [
       `      <Name>${xmlEscape(course.name)}</Name>`,
     ]
+    if (family) {
+      courseChildren.push(`      <CourseFamily>${xmlEscape(family)}</CourseFamily>`)
+    }
     if (distances.total > 0) {
       courseChildren.push(`      <Length>${Math.round(distances.total)}</Length>`)
     }

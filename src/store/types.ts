@@ -9,6 +9,7 @@ export interface EditorState {
   activeTool: ActiveTool
   selectedControlId: string | null
   selectedCourseId: string | null
+  selectedVariationId: string | null
   selectedOverlayId: string | null
   viewport: Viewport
   mapSaturation: number
@@ -60,6 +61,10 @@ export interface AppActions {
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
+
+  toggleCourseLoop: (courseId: string, forkControlId: string) => void
+  removeCourseLoop: (courseId: string, loopId: string) => void
+  setSelectedVariation: (id: string | null) => void
 
   addClass: (name: string, courseId: string) => RaceClass
   deleteClass: (id: string) => void
@@ -138,6 +143,7 @@ export const defaultEditor: EditorState = {
   activeTool: 'select',
   selectedControlId: null,
   selectedCourseId: null,
+  selectedVariationId: null,
   selectedOverlayId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,

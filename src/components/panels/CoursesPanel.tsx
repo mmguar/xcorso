@@ -134,6 +134,9 @@ function CourseEditor({ course }: { course: Course }) {
         />
       </div>
 
+      {/* Variations */}
+      <VariationsSection course={course} />
+
       {/* Climb & finish type */}
       {(distances.total > 0 || course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
         <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
@@ -170,6 +173,45 @@ function CourseEditor({ course }: { course: Course }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function VariationsSection({ course }: { course: Course }) {
+  const variations = course.variations
+  const selectedVariationId = useStore(s => s.editor.selectedVariationId)
+  const setSelectedVariation = useStore(s => s.setSelectedVariation)
+
+  if (!variations || variations.length === 0) return null
+
+  return (
+    <div className="px-3 py-1.5 border-t border-gray-100">
+      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Variations</div>
+      <div className="flex flex-wrap gap-1">
+        <button
+          onClick={() => setSelectedVariation(null)}
+          className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+            selectedVariationId === null
+              ? 'bg-orange-100 border-orange-400 text-orange-700'
+              : 'border-gray-200 text-gray-500 hover:border-orange-300'
+          }`}
+        >
+          Master
+        </button>
+        {variations.map(v => (
+          <button
+            key={v.id}
+            onClick={() => setSelectedVariation(v.id === selectedVariationId ? null : v.id)}
+            className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+              v.id === selectedVariationId
+                ? 'bg-orange-100 border-orange-400 text-orange-700'
+                : 'border-gray-200 text-gray-500 hover:border-orange-300'
+            }`}
+          >
+            {v.name}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

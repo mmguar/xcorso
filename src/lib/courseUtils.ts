@@ -1,4 +1,4 @@
-import type { Control, Course, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
+import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
 import { getSymbolDims } from './symbolSpec'
 
 export function defaultControlLabel(control: { type: string; code: number; label?: string }): string {
@@ -39,15 +39,127 @@ export function defaultLabelOffset(type: ControlType, upm: number, controlScale:
   return { x: cr * 1.1, y: -cr * 1.1 }
 }
 
-export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number> {
-  const map = new Map<string, number>()
+export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number[]> {
+  const map = new Map<string, number[]>()
   let seq = 1
   for (const cc of course.controls) {
     const ctrl = controls.find(c => c.id === cc.controlId)
     if (ctrl && ctrl.type === 'control') {
-      if (!map.has(cc.controlId)) map.set(cc.controlId, seq)
+      const existing = map.get(cc.controlId)
+      if (existing) existing.push(seq)
+      else map.set(cc.controlId, [seq])
       seq++
     }
   }
   return map
+}
+
+export function formatSequenceLabel(seqs: number[]): string {
+  return seqs.join('/')
+}
+
+// ─── Loop utilities ────────────────────────────────────────────────────────
+
+export function extractBranches(course: Course, loop: CourseLoop): CourseControl[][] {
+  const forkIndices: number[] = []
+  for (let i = 0; i < course.controls.length; i++) {
+    if (course.controls[i].controlId === loop.forkControlId) forkIndices.push(i)
+  }
+  const branches: CourseControl[][] = []
+  for (let i = 0; i < forkIndices.length - 1; i++) {
+    branches.push(course.controls.slice(forkIndices[i] + 1, forkIndices[i + 1]))
+  }
+  return branches
+}
+
+export function resolveVariation(course: Course, variation: CourseVariation): CourseControl[] {
+  const loops = course.loops ?? []
+  if (loops.length === 0) return course.controls
+
+  type Span = { start: number; end: number; loopIdx: number }
+  const spans: Span[] = []
+  for (let li = 0; li < loops.length; li++) {
+    const loop = loops[li]
+    const forkIndices: number[] = []
+    for (let i = 0; i < course.controls.length; i++) {
+      if (course.controls[i].controlId === loop.forkControlId) forkIndices.push(i)
+    }
+    if (forkIndices.length < 2) continue
+    spans.push({ start: forkIndices[0], end: forkIndices[forkIndices.length - 1], loopIdx: li })
+  }
+  spans.sort((a, b) => a.start - b.start)
+
+  const result: CourseControl[] = []
+  let cursor = 0
+
+  for (const span of spans) {
+    result.push(...course.controls.slice(cursor, span.start))
+
+    const loop = loops[span.loopIdx]
+    const branches = extractBranches(course, loop)
+    const perm = variation.loopOrders.find(lo => lo.loopId === loop.id)
+    const order = perm ? perm.order : branches.map((_, i) => i)
+
+    const forkCc = course.controls[span.start]
+    for (const branchIdx of order) {
+      result.push(forkCc)
+      if (branchIdx >= 0 && branchIdx < branches.length) {
+        result.push(...branches[branchIdx])
+      }
+    }
+    result.push(course.controls[span.end])
+    cursor = span.end + 1
+  }
+
+  result.push(...course.controls.slice(cursor))
+  return result
+}
+
+export function generateAllPermutations(course: Course): CourseVariation[] {
+  const loops = course.loops ?? []
+  if (loops.length === 0) return []
+
+  function permutations(n: number): number[][] {
+    if (n <= 1) return [[0]]
+    const result: number[][] = []
+    for (const perm of permutations(n - 1)) {
+      for (let i = n - 1; i >= 0; i--) {
+        result.push([...perm.slice(0, i), n - 1, ...perm.slice(i)])
+      }
+    }
+    return result
+  }
+
+  const perLoop = loops.map(loop => {
+    const branchCount = loop.branchNames.length
+    return permutations(branchCount)
+  })
+
+  function cartesian(arrays: number[][][]): number[][][] {
+    if (arrays.length === 0) return [[]]
+    const [first, ...rest] = arrays
+    const restCombos = cartesian(rest)
+    const result: number[][][] = []
+    for (const item of first) {
+      for (const combo of restCombos) {
+        result.push([item, ...combo])
+      }
+    }
+    return result
+  }
+
+  const combos = cartesian(perLoop)
+  return combos.map((combo) => {
+    const nameParts = combo.map((order, li) =>
+      order.map(idx => loops[li].branchNames[idx]).join('')
+    )
+    return {
+      id: crypto.randomUUID(),
+      name: nameParts.join('-'),
+      loopOrders: combo.map((order, li) => ({
+        loopId: loops[li].id,
+        order,
+      })),
+    } satisfies CourseVariation
+  })
 }

@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
 import { walkPath, clipPolyline } from './geometry'
@@ -12,6 +12,36 @@ const TILE_OVERLAP = 15
 const MAX_RASTER_PX = 5000
 
 export const ALL_CONTROLS_ID = '__all_controls__'
+
+interface ExportCourse extends Course {
+  _parentId?: string
+}
+
+function expandVariations(courses: Course[]): ExportCourse[] {
+  const result: ExportCourse[] = []
+  for (const course of courses) {
+    if (course.variations && course.variations.length > 0 && course.loops && course.loops.length > 0) {
+      for (const variation of course.variations) {
+        result.push({
+          ...course,
+          id: `${course.id}__${variation.id}`,
+          _parentId: course.id,
+          name: `${course.name} - ${variation.name}`,
+          controls: resolveVariation(course, variation),
+          loops: undefined,
+          variations: undefined,
+        })
+      }
+    } else {
+      result.push(course)
+    }
+  }
+  return result
+}
+
+function optionKey(course: ExportCourse): string {
+  return course._parentId ?? course.id
+}
 
 // ── Page sizes ──────────────────────────────────────────────────────────────
 
@@ -652,9 +682,10 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
 
 // ── Labelling ───────────────────────────────────────────────────────────────
 
-function getLabel(c: Control, seqMap: Map<string, number> | null): string {
+function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
   if (seqMap && c.type === 'control') {
-    return String(seqMap.get(c.id) ?? defaultControlLabel(c))
+    const seqs = seqMap.get(c.id)
+    return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
   }
   return defaultControlLabel(c)
 }
@@ -756,7 +787,7 @@ export async function exportCoursePdf(
   if (loadedMap?.type === 'svg') await import('svg2pdf.js')
   const doc = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] })
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
-  const courses = project.courses.filter(c => options.courseIds.includes(c.id))
+  const courses = expandVariations(project.courses.filter(c => options.courseIds.includes(c.id)))
 
   /** After svg2pdf fails once, use raster fallback for remaining pages. */
   let svgEmbedDisabled = false
@@ -895,8 +926,9 @@ export async function exportCoursePdf(
   }
 
   for (const course of courses) {
-    const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
-    const descMode = options.descModes?.[course.id] ?? 'none'
+    const oKey = optionKey(course)
+    const courseScale = options.scaleOverrides?.[oKey] ?? options.printScale
+    const descMode = options.descModes?.[oKey] ?? 'none'
     const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
     if (!bounds) continue
 
@@ -911,7 +943,7 @@ export async function exportCoursePdf(
         pageIndex++
 
         // Each tile's viewport center in course-mm space
-        const { x: ox, y: oy } = options.offsets?.[course.id] ?? { x: 0, y: 0 }
+        const { x: ox, y: oy } = options.offsets?.[oKey] ?? { x: 0, y: 0 }
         let viewCenterX: number, viewCenterY: number
         if (useTiling) {
           viewCenterX = bounds.minX + ox + col * (printableW - TILE_OVERLAP) + printableW / 2
@@ -986,7 +1018,7 @@ export async function exportCoursePdf(
 
         // Description sheet overlay on map
         if (descMode === 'on-map' && course.controls.length > 0) {
-          const { x: sx, y: sy } = options.sheetPositions?.[course.id] ?? { x: MARGIN, y: MARGIN }
+          const { x: sx, y: sy } = options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
           const dist = computeCourseDistances(course, project.controls, project.map)
           drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy, dist.total, course.textDescriptions, dist.legs)
         }

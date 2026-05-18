@@ -39,12 +39,15 @@ interface RowData {
   ctrl: Control
   seq: number
   legDist?: number
+  forkEligible?: boolean
+  isLoop?: boolean
 }
 
 export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
   const project = useStore(s => s.project!)
   const updateControlDescription = useStore(s => s.updateControlDescription)
+  const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
 
   const distances = computeCourseDistances(course, project.controls, project.map)
@@ -52,8 +55,17 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
 
   const showDist = distances.legs.length > 0
 
+  // Count occurrences of each controlId to detect fork-eligible controls
+  const controlIdCounts = new Map<string, number>()
+  for (const cc of course.controls) {
+    controlIdCounts.set(cc.controlId, (controlIdCounts.get(cc.controlId) ?? 0) + 1)
+  }
+
+  const loopForkIds = new Set((course.loops ?? []).map(l => l.forkControlId))
+
   let seq = 0
   let filteredIdx = 0
+  const seenControlIds = new Set<string>()
   const rows: RowData[] = []
   let finishRow: RowData | null = null
   for (const cc of course.controls) {
@@ -70,11 +82,15 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
       continue
     }
     if (ctrl.type === 'control') seq++
+    const isFirstOccurrence = !seenControlIds.has(cc.controlId)
+    seenControlIds.add(cc.controlId)
     rows.push({
       cc,
       ctrl,
       seq: ctrl.type === 'control' ? seq : 0,
       legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+      forkEligible: isFirstOccurrence && ctrl.type === 'control' && (controlIdCounts.get(cc.controlId) ?? 0) >= 3,
+      isLoop: loopForkIds.has(cc.controlId),
     })
     filteredIdx++
   }
@@ -137,17 +153,19 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                 </tr>
               ) : (
                 <>
-                  {rows.map((row) => (
-                    <SortableDescRow
-                      key={row.cc.id}
-                      row={row}
-                      showDist={showDist}
-                      picker={picker}
-                      setPicker={setPicker}
-                      onRemove={onRemove}
-                    />
-                  ))}
-                  {finishRow && (
+                {rows.map((row) => (
+                  <SortableDescRow
+                    key={row.cc.id}
+                    row={row}
+                    courseId={course.id}
+                    showDist={showDist}
+                    picker={picker}
+                    setPicker={setPicker}
+                    onRemove={onRemove}
+                    onToggleLoop={toggleCourseLoop}
+                  />
+                ))}
+                {finishRow && (
                     <FinishDescRow
                       row={finishRow}
                       finishType={course.finishType ?? 'navigate'}
@@ -156,6 +174,7 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                     />
                   )}
                 </>
+
               )}
             </tbody>
           </table>
@@ -183,18 +202,22 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
 
 function SortableDescRow({
   row,
+  courseId,
   showDist,
   picker,
   setPicker,
   onRemove,
+  onToggleLoop,
 }: {
   row: RowData
+  courseId: string
   showDist: boolean
   picker: { controlId: string; column: IofColumn } | null
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
+  onToggleLoop?: (courseId: string, controlId: string) => void
 }) {
-  const { cc, ctrl, seq, legDist } = row
+  const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
   const {
     attributes,
     listeners,
@@ -215,54 +238,73 @@ function SortableDescRow({
     : String(seq)
   const desc = ctrl.description ?? {}
 
-  return (
-    <tr ref={setNodeRef} style={style} className="group">
-      <td
-        className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
-        style={{ width: CELL, height: CELL }}
-        {...attributes}
-        {...listeners}
-      >
-        {seqLabel}
-        {onRemove && (
-          <button
-            onClick={() => onRemove(cc.id)}
-            onPointerDown={e => e.stopPropagation()}
-            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
-          >
-            <X size={8} />
-          </button>
-        )}
-      </td>
-      <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
-        {defaultControlLabel(ctrl)}
-      </td>
-      {columns.map(col => {
-        const field = columnFields[col.id]
-        const value = desc[field]
-        const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
-        const isDimText = col.id === 'F' && value && isDimensionText(value)
+  const colCount = 2 + columns.length + (showDist ? 1 : 0)
 
-        return (
-          <td
-            key={col.id}
-            className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
-            style={{ width: CELL, height: CELL, padding: 0 }}
-            onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
-          >
-            {value && (isDimText
-              ? <span className="text-[9px] font-bold leading-none">{value}</span>
-              : <IofSymbolIcon code={value} size={CELL - 4} />
-            )}
-          </td>
-        )
-      })}
-      {showDist && (
-        <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
-          {legDist != null ? formatDistance(legDist) : ''}
+  return (
+    <>
+      <tr ref={setNodeRef} style={style} className="group">
+        <td
+          className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
+          style={{ width: CELL, height: CELL }}
+          {...attributes}
+          {...listeners}
+        >
+          {seqLabel}
+          {onRemove && (
+            <button
+              onClick={() => onRemove(cc.id)}
+              onPointerDown={e => e.stopPropagation()}
+              className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
+            >
+              <X size={8} />
+            </button>
+          )}
         </td>
+        <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
+          {defaultControlLabel(ctrl)}
+        </td>
+        {columns.map(col => {
+          const field = columnFields[col.id]
+          const value = desc[field]
+          const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
+          const isDimText = col.id === 'F' && value && isDimensionText(value)
+
+          return (
+            <td
+              key={col.id}
+              className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
+              style={{ width: CELL, height: CELL, padding: 0 }}
+              onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
+            >
+              {value && (isDimText
+                ? <span className="text-[9px] font-bold leading-none">{value}</span>
+                : <IofSymbolIcon code={value} size={CELL - 4} />
+              )}
+            </td>
+          )
+        })}
+        {showDist && (
+          <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
+            {legDist != null ? formatDistance(legDist) : ''}
+          </td>
+        )}
+      </tr>
+      {forkEligible && (
+        <tr>
+          <td colSpan={colCount} className="py-0.5 px-1">
+            <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isLoop ?? false}
+                onChange={() => onToggleLoop?.(courseId, ctrl.id)}
+                className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+              />
+              Butterfly loop
+            </label>
+          </td>
+        </tr>
       )}
-    </tr>
+    </>
   )
 }
 
