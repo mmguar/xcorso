@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec } from '../types'
+import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
 function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
@@ -163,6 +163,13 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.climb = climb
+      })
+    },
+
+    updateCourseFinishType: (id: string, finishType: FinishType) => {
+      h.mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.finishType = finishType
       })
     },
 

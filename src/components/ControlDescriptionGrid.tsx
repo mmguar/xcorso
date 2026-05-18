@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import {
   DndContext,
@@ -22,7 +22,7 @@ import { defaultControlLabel } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
-import type { Course, Control, CourseControl } from '../types'
+import type { Course, Control, CourseControl, FinishType } from '../types'
 
 const CELL = 32
 const BORDER = 'border border-gray-300'
@@ -55,9 +55,20 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
   let seq = 0
   let filteredIdx = 0
   const rows: RowData[] = []
+  let finishRow: RowData | null = null
   for (const cc of course.controls) {
     const ctrl = controlMap.get(cc.controlId)
     if (!ctrl) continue
+    if (ctrl.type === 'finish') {
+      finishRow = {
+        cc,
+        ctrl,
+        seq: 0,
+        legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+      }
+      filteredIdx++
+      continue
+    }
     if (ctrl.type === 'control') seq++
     rows.push({
       cc,
@@ -118,23 +129,33 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                 {showDist && <td />}
               </tr>
 
-              {rows.length === 0 ? (
+              {rows.length === 0 && !finishRow ? (
                 <tr>
                   <td colSpan={8} className="text-center text-xs text-gray-400 py-3">
                     Click controls on the map to add them.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
-                  <SortableDescRow
-                    key={row.cc.id}
-                    row={row}
-                    showDist={showDist}
-                    picker={picker}
-                    setPicker={setPicker}
-                    onRemove={onRemove}
-                  />
-                ))
+                <>
+                  {rows.map((row) => (
+                    <SortableDescRow
+                      key={row.cc.id}
+                      row={row}
+                      showDist={showDist}
+                      picker={picker}
+                      setPicker={setPicker}
+                      onRemove={onRemove}
+                    />
+                  ))}
+                  {finishRow && (
+                    <FinishDescRow
+                      row={finishRow}
+                      finishType={course.finishType ?? 'navigate'}
+                      showDist={showDist}
+                      onRemove={onRemove}
+                    />
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -241,6 +262,162 @@ function SortableDescRow({
           {legDist != null ? formatDistance(legDist) : ''}
         </td>
       )}
+    </tr>
+  )
+}
+
+function Chevron({ x, cy, w, h, direction, sw }: {
+  x: number; cy: number; w: number; h: number; direction: '<' | '>'; sw: number
+}) {
+  const tip = direction === '<' ? x : x + w
+  const back = direction === '<' ? x + w : x
+  return (
+    <>
+      <line x1={back} y1={cy - h} x2={tip} y2={cy} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      <line x1={tip} y1={cy} x2={back} y2={cy + h} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+    </>
+  )
+}
+
+function finishRowElements(
+  finishType: FinishType,
+  distText: string,
+  contentLeft: number,
+  contentRight: number,
+  cy: number,
+  sw: number,
+) {
+  const chevronW = 4
+  const chevronH = 6
+  const textWidth = distText ? 38 : 0
+  const midX = (contentLeft + contentRight) / 2
+  const textLeft = midX - textWidth / 2
+  const textRight = midX + textWidth / 2
+
+  const elements: ReactNode[] = []
+
+  if (finishType === 'navigate') {
+    elements.push(
+      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
+    )
+    if (distText) {
+      elements.push(
+        <text key="dt" x={midX} y={cy + 1} textAnchor="middle" dominantBaseline="central"
+          fontSize="11" fontFamily="sans-serif">{distText}</text>,
+      )
+    }
+    elements.push(
+      <Chevron key="rc" x={contentRight - chevronW} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
+    )
+    return elements
+  }
+
+  const leftDashes = finishType === 'funnel' ? 2 : 3
+  const rightDashes = 3
+
+  const rightChevronStart = contentRight - chevronW
+
+  let leftRegionStart = contentLeft
+  if (finishType === 'funnel') {
+    elements.push(
+      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
+    )
+    leftRegionStart = contentLeft + chevronW + 2
+  }
+
+  const leftRegionEnd = textLeft - 2
+  const dashGapRatio = 1.8
+  const leftTotal = leftRegionEnd - leftRegionStart
+  const leftDashLen = leftTotal / (leftDashes + (leftDashes - 1) / dashGapRatio)
+  const leftGapLen = leftDashLen / dashGapRatio
+
+  for (let i = 0; i < leftDashes; i++) {
+    const x1 = leftRegionStart + i * (leftDashLen + leftGapLen)
+    const x2 = x1 + leftDashLen
+    elements.push(
+      <line key={`ld${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
+        stroke="black" strokeWidth={sw} strokeLinecap="round" />,
+    )
+  }
+
+  if (distText) {
+    elements.push(
+      <text key="dt" x={midX} y={cy + 1} textAnchor="middle" dominantBaseline="central"
+        fontSize="11" fontFamily="sans-serif">{distText}</text>,
+    )
+  }
+
+  const rightRegionStart = textRight + 2
+  const rightRegionEnd = rightChevronStart - 2
+  const rightTotal = rightRegionEnd - rightRegionStart
+  const rightDashLen = rightTotal / (rightDashes + (rightDashes - 1) / dashGapRatio)
+  const rightGapLen = rightDashLen / dashGapRatio
+
+  for (let i = 0; i < rightDashes; i++) {
+    const x1 = rightRegionStart + i * (rightDashLen + rightGapLen)
+    const x2 = x1 + rightDashLen
+    elements.push(
+      <line key={`rd${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
+        stroke="black" strokeWidth={sw} strokeLinecap="round" />,
+    )
+  }
+
+  elements.push(
+    <Chevron key="rc" x={rightChevronStart} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
+  )
+
+  return elements
+}
+
+function FinishDescRow({
+  row,
+  finishType,
+  showDist,
+  onRemove,
+}: {
+  row: RowData
+  finishType: FinishType
+  showDist: boolean
+  onRemove?: (ccId: string) => void
+}) {
+  const { cc, legDist } = row
+  const distText = legDist != null ? formatDistance(legDist) : ''
+
+  const W = 256
+  const CY = 16
+  const sw = 1.5
+  const circleR = 6
+  const circleX = 18
+  const finishX = W - 18
+  const finishR = 6
+  const finishRInner = 4
+
+  const contentLeft = circleX + circleR + 3
+  const contentRight = finishX - finishR - 3
+
+  return (
+    <tr className="group">
+      <td
+        colSpan={8}
+        className={`${BORDER} relative`}
+        style={{ height: CELL, padding: 0 }}
+      >
+        <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+          <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
+          {finishRowElements(finishType, distText, contentLeft, contentRight, CY, sw)}
+          <circle cx={finishX} cy={CY} r={finishR} fill="none" stroke="black" strokeWidth={sw} />
+          <circle cx={finishX} cy={CY} r={finishRInner} fill="none" stroke="black" strokeWidth={sw} />
+        </svg>
+        {onRemove && (
+          <button
+            onClick={() => onRemove(cc.id)}
+            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
+          >
+            <X size={8} />
+          </button>
+        )}
+      </td>
+      {showDist && <td />}
     </tr>
   )
 }

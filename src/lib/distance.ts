@@ -72,6 +72,6 @@ export function computeCourseDistances(
 }
 
 export function formatDistance(metres: number): string {
-  if (metres < 1000) return `${Math.round(metres)} m`
-  return `${(metres / 1000).toFixed(1)} km`
+  if (metres < 1000) return `${Math.round(metres / 10) * 10} m`
+  return `${(Math.round(metres / 10) * 10 / 1000).toFixed(1)} km`
 }

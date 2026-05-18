@@ -5,7 +5,7 @@ import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
-import type { Course, EventSpec } from '../../types'
+import type { Course, EventSpec, FinishType } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
   useRenderTracker('CourseEditor')
@@ -15,6 +15,7 @@ function CourseEditor({ course }: { course: Course }) {
   const updateCourseName = useStore(s => s.updateCourseName)
   const updateCourseColor = useStore(s => s.updateCourseColor)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
+  const updateCourseFinishType = useStore(s => s.updateCourseFinishType)
   const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
   const updateCourseTextDescriptions = useStore(s => s.updateCourseTextDescriptions)
   const updateCourseSpec = useStore(s => s.updateCourseSpec)
@@ -133,24 +134,40 @@ function CourseEditor({ course }: { course: Course }) {
         />
       </div>
 
-      {/* Climb input */}
-      {distances.total > 0 && (
-        <div className="flex items-center px-3 py-1.5 bg-gray-50 border-t border-gray-100">
-          <label className="flex items-center gap-1 text-xs text-gray-500">
-            <span>Climb</span>
-            <input
-              type="number"
-              min={0}
-              value={course.climb ?? ''}
-              placeholder="m"
-              onChange={e => {
-                const v = e.target.value === '' ? undefined : parseInt(e.target.value)
-                updateCourseClimb(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
-              }}
-              className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
-            />
-            <span className="text-gray-400">m</span>
-          </label>
+      {/* Climb & finish type */}
+      {(distances.total > 0 || course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
+        <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
+          {distances.total > 0 && (
+            <label className="flex items-center gap-1 text-xs text-gray-500">
+              <span>Climb</span>
+              <input
+                type="number"
+                min={0}
+                value={course.climb ?? ''}
+                placeholder="m"
+                onChange={e => {
+                  const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+                  updateCourseClimb(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
+                }}
+                className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+              <span className="text-gray-400">m</span>
+            </label>
+          )}
+          {course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish') && (
+            <label className="flex items-center gap-1 text-xs text-gray-500">
+              <span>Finish</span>
+              <select
+                value={course.finishType ?? 'navigate'}
+                onChange={e => updateCourseFinishType(course.id, e.target.value as FinishType)}
+                className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              >
+                <option value="navigate">Navigate</option>
+                <option value="funnel">Funnel</option>
+                <option value="taped">Taped</option>
+              </select>
+            </label>
+          )}
         </div>
       )}
     </div>
