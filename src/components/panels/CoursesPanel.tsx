@@ -123,23 +123,25 @@ function CourseEditor({ course }: { course: Course }) {
       </div>
 
       {/* Climb & finish type */}
-      {distances.total > 0 && (
+      {(distances.total > 0 || course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
         <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
-          <label className="flex items-center gap-1 text-xs text-gray-500">
-            <span>Climb</span>
-            <input
-              type="number"
-              min={0}
-              value={course.climb ?? ''}
-              placeholder="m"
-              onChange={e => {
-                const v = e.target.value === '' ? undefined : parseInt(e.target.value)
-                updateCourseClimb(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
-              }}
-              className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
-            />
-            <span className="text-gray-400">m</span>
-          </label>
+          {distances.total > 0 && (
+            <label className="flex items-center gap-1 text-xs text-gray-500">
+              <span>Climb</span>
+              <input
+                type="number"
+                min={0}
+                value={course.climb ?? ''}
+                placeholder="m"
+                onChange={e => {
+                  const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+                  updateCourseClimb(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
+                }}
+                className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+              <span className="text-gray-400">m</span>
+            </label>
+          )}
           {course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish') && (
             <label className="flex items-center gap-1 text-xs text-gray-500">
               <span>Finish</span>
