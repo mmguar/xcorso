@@ -1,7 +1,6 @@
 # xcorso
 
-A web-based orienteering course planner. Designed as a lightweight static website, it runs on any device with a modern browser, desktop or touch. It currently does not replace complex workflows in [Condes](https://condes.net) and [Purple Pen](https://purplepen.golde.org/), but it can design most orienteering events.
-
+A web-based orienteering course planner. Designed as a lightweight static website, it runs on any device with a modern browser, desktop or touch. It currently does not replace all complex workflows in [Condes](https://condes.net) and [Purple Pen](https://purplepen.golde.org/), but it can be used to design most orienteering events.
 
 ## What it does
 
@@ -19,13 +18,57 @@ A web-based orienteering course planner. Designed as a lightweight static websit
 - **Appearance** — adjustable control size, line width, colour override, and outline settings; map saturation slider (default 50%)
 - **Export** — IOF XML v3 with class assignments (opens in Condes/Purple Pen), PDF with print preview dialog (page size, orientation, print scale, description sheet placement, tiling), and `.oco` project save/load (ZIP archive)
 
-###  Features
-
+### Additional Features
 
 - Show a rasterized version of the map or the fullly rendered vectorial image (HD)
 - Set saturation of the map both while editing and for printing
 - Right-click a control on the map to remove its last occurrence from the course
 - Drag-to-reorder controls in the course editor panel
+- Butterfly loops
+
+## Development roadmap
+
+### Pre-release — 
+
+- [x] Map loading (OCAD, bitmap, PDF)
+- [x] Control placement (start, finish, control) with drag-to-move
+- [x] Forbidden routes, crossing points, out-of-bounds areas
+- [x] Scale measurement tool
+- [x] .oco project save/load
+- [x] Linear + Score-O  course creation with leg drawing and distance calculation
+- [x] IOF XML v3 export (with class-course assignments)
+- [x] Race classes — assign classes to courses
+- [x] All-controls view (controls only, no legs) with PDF export support
+- [x] Control descriptions — IOF 2018 pictographic symbols, full grid editor and PDF export
+- [x] Map saturation slider (default 50%)
+- [x] Butterfly loop variations (define loops, generate permutations, export per-variation)
+- [x] Per-course text descriptions option for clue sheets
+- [x] Finish type selector (taped / funnel / navigate)
+- [x] Circle gaps, leg gaps and bend points
+- [x] Scale bars and text labels (map overlays)
+- [x] Appearance panel (control size, line width, colour, outline)
+- [x] ISOM 2017-2 / ISSprOM 2019 symbol spec support
+- [x] PDF export dialog with print preview, page size selection, and tiling
+
+### Current roadmap
+
+- [ ] Harden IOF XML export
+- [ ] Fix some render errors 
+- [ ] Additional loop types
+- [ ] KML/GPX export
+- [ ] CMYK/offset printing 
+- [ ] Better handling of e-punch stations numbers
+
+### Currently out of scope
+
+- Ski-O/MTB-O/Trail-O
+
+## Comments/complaints/suggestions
+
+I take them all! You can email me at matteo.guareschi@gmail.com, you can open an issue on github, or you write your code and create a PR.
+
+Obviously the project is fairly vibe-coded, but I am trying to keep it manageable and with some level of standards. Trying to!
+
 
 
 ## Stack
@@ -116,40 +159,6 @@ The core data lives in a single `Project` object:
 
 Coordinates are map-native: OCAD world units for `.ocd` files, pixels for bitmaps, PDF points for PDFs. Distances are computed from straight-line control-to-control distance scaled by the map's scale denominator, rounded to the nearest 10 m.
 
-## Development roadmap
-
-### Pre-release — 
-
-- [x] Map loading (OCAD, bitmap, PDF)
-- [x] Control placement (start, finish, control) with drag-to-move
-- [x] Forbidden routes, crossing points, out-of-bounds areas
-- [x] Scale measurement tool
-- [x] .oco project save/load
-- [x] Linear + Score-O  course creation with leg drawing and distance calculation
-- [x] IOF XML v3 export (with class-course assignments)
-- [x] Race classes — assign classes to courses
-- [x] All-controls view (controls only, no legs) with PDF export support
-- [x] Control descriptions — IOF 2018 pictographic symbols, full grid editor and PDF export
-- [x] Map saturation slider (default 50%)
-- [x] Butterfly loop variations (define loops, generate permutations, export per-variation)
-- [x] Per-course text descriptions option for clue sheets
-- [x] Finish type selector (taped / funnel / navigate)
-- [x] Circle gaps, leg gaps and bend points
-- [x] Scale bars and text labels (map overlays)
-- [x] Appearance panel (control size, line width, colour, outline)
-- [x] ISOM 2017-2 / ISSprOM 2019 symbol spec support
-- [x] PDF export dialog with print preview, page size selection, and tiling
-
-### Phase 3 — Advanced features (in progress)
-
-
-- [ ] KML/GPX export
-- [ ] 
-- [ ] CMYL/offset printing 
-
-### Currently out of scope
-
-- Ski-O/MTB-O/Trail-O
 - 
 
 ## Browser support
