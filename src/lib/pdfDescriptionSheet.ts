@@ -192,14 +192,11 @@ function drawFinishIofRow(
   const midX = gridX + GRID_W / 2
   const circleR = CELL * 0.28
   const finishRInner = CELL * 0.18
-  const arrowH = CELL * 0.12
-  const arrowW = CELL * 0.18
   const sw = 0.2
 
-  const hasLeftArrow = finishType !== 'taped'
+  const chevronSize = CELL * 0.14
+  const hasLeftChevron = finishType !== 'taped'
   const hasLines = finishType !== 'navigate'
-  const dashLen = 1.6
-  const gapLen = 1.0
 
   doc.setLineWidth(sw)
   doc.setDrawColor(0, 0, 0)
@@ -211,56 +208,63 @@ function drawFinishIofRow(
   doc.circle(finishCx, cy, circleR, 'S')
   doc.circle(finishCx, cy, finishRInner, 'S')
 
-  // Left arrowhead < pointing left (navigate/funnel only)
-  const leftArrowBase = circleX + circleR + 0.3
-  let lineL = leftArrowBase
-  if (hasLeftArrow) {
-    doc.setFillColor(0, 0, 0)
-    doc.moveTo(leftArrowBase, cy)
-    doc.lineTo(leftArrowBase + arrowW, cy - arrowH)
-    doc.lineTo(leftArrowBase + arrowW, cy + arrowH)
-    doc.lineTo(leftArrowBase, cy)
-    doc.fill()
-    lineL = leftArrowBase + arrowW + 0.3
+  function drawChevron(tipX: number, dir: '<' | '>') {
+    doc.setLineWidth(sw)
+    doc.setLineCap(1)
+    const backX = dir === '<' ? tipX + chevronSize : tipX - chevronSize
+    doc.line(backX, cy - chevronSize, tipX, cy)
+    doc.line(tipX, cy, backX, cy + chevronSize)
   }
 
-  // Right arrowhead > pointing right (always)
-  const arrowRight = finishCx - circleR - 0.3
-  const arrowLeft = arrowRight - arrowW
-  doc.setFillColor(0, 0, 0)
-  doc.moveTo(arrowRight, cy)
-  doc.lineTo(arrowLeft, cy - arrowH)
-  doc.lineTo(arrowLeft, cy + arrowH)
-  doc.lineTo(arrowRight, cy)
-  doc.fill()
-  const lineR = arrowLeft - 0.3
+  const contentLeft = circleX + circleR + 0.5
+  const contentRight = finishCx - circleR - 0.5
 
-  // Dashed lines (taped/funnel only, navigate has no lines)
-  if (hasLines) {
-    function drawDashedLine(x1: number, x2: number) {
-      doc.setLineWidth(sw)
-      let x = x1
-      while (x < x2) {
-        const end = Math.min(x + dashLen, x2)
-        doc.line(x, cy, end, cy)
-        x = end + gapLen
-      }
-    }
-
-    if (distM != null) {
-      const textHalfW = CELL * 0.55
-      drawDashedLine(lineL, midX - textHalfW)
-      drawDashedLine(midX + textHalfW, lineR)
-    } else {
-      drawDashedLine(lineL, lineR)
-    }
+  // Left chevron < (navigate / funnel)
+  if (hasLeftChevron) {
+    drawChevron(contentLeft, '<')
   }
 
+  // Right chevron > (always)
+  drawChevron(contentRight, '>')
+
+  // Distance text
   if (distM != null) {
     doc.setFontSize(5.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
+  }
+
+  // Dashes (taped: 3+3, funnel: 2+3, navigate: none)
+  if (hasLines) {
+    const leftDashCount = finishType === 'funnel' ? 2 : 3
+    const rightDashCount = 3
+    const dashGapRatio = 1.8
+    const textHalfW = distM != null ? CELL * 0.55 : 0
+
+    const leftStart = contentLeft + (hasLeftChevron ? chevronSize + 0.3 : 0)
+    const leftEnd = midX - textHalfW - 0.3
+    const leftTotal = leftEnd - leftStart
+    const leftDashLen = leftTotal / (leftDashCount + (leftDashCount - 1) / dashGapRatio)
+    const leftGapLen = leftDashLen / dashGapRatio
+
+    doc.setLineWidth(sw)
+    doc.setLineCap(1)
+    for (let i = 0; i < leftDashCount; i++) {
+      const x1 = leftStart + i * (leftDashLen + leftGapLen)
+      doc.line(x1, cy, x1 + leftDashLen, cy)
+    }
+
+    const rightStart = midX + textHalfW + 0.3
+    const rightEnd = contentRight - chevronSize - 0.3
+    const rightTotal = rightEnd - rightStart
+    const rightDashLen = rightTotal / (rightDashCount + (rightDashCount - 1) / dashGapRatio)
+    const rightGapLen = rightDashLen / dashGapRatio
+
+    for (let i = 0; i < rightDashCount; i++) {
+      const x1 = rightStart + i * (rightDashLen + rightGapLen)
+      doc.line(x1, cy, x1 + rightDashLen, cy)
+    }
   }
 }
 

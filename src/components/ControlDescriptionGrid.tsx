@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import {
   DndContext,
@@ -265,6 +265,109 @@ function SortableDescRow({
   )
 }
 
+function Chevron({ x, cy, size, direction, sw }: {
+  x: number; cy: number; size: number; direction: '<' | '>'; sw: number
+}) {
+  const tip = direction === '<' ? x : x + size
+  const back = direction === '<' ? x + size : x
+  return (
+    <>
+      <line x1={back} y1={cy - size} x2={tip} y2={cy} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      <line x1={tip} y1={cy} x2={back} y2={cy + size} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+    </>
+  )
+}
+
+function finishRowElements(
+  finishType: FinishType,
+  distText: string,
+  contentLeft: number,
+  contentRight: number,
+  cy: number,
+  sw: number,
+) {
+  const chevronSize = 4
+  const textWidth = distText ? 38 : 0
+  const midX = (contentLeft + contentRight) / 2
+  const textLeft = midX - textWidth / 2
+  const textRight = midX + textWidth / 2
+
+  const elements: ReactNode[] = []
+
+  if (finishType === 'navigate') {
+    elements.push(
+      <Chevron key="lc" x={contentLeft} cy={cy} size={chevronSize} direction="<" sw={sw} />,
+    )
+    if (distText) {
+      elements.push(
+        <text key="dt" x={midX} y={cy + 1} textAnchor="middle" dominantBaseline="central"
+          fontSize="11" fontFamily="sans-serif">{distText}</text>,
+      )
+    }
+    elements.push(
+      <Chevron key="rc" x={contentRight - chevronSize} cy={cy} size={chevronSize} direction=">" sw={sw} />,
+    )
+    return elements
+  }
+
+  const leftDashes = finishType === 'funnel' ? 2 : 3
+  const rightDashes = 3
+
+  const chevronW = chevronSize
+  const rightChevronStart = contentRight - chevronW
+
+  let leftRegionStart = contentLeft
+  if (finishType === 'funnel') {
+    elements.push(
+      <Chevron key="lc" x={contentLeft} cy={cy} size={chevronSize} direction="<" sw={sw} />,
+    )
+    leftRegionStart = contentLeft + chevronW + 2
+  }
+
+  const leftRegionEnd = textLeft - 2
+  const dashGapRatio = 1.8
+  const leftTotal = leftRegionEnd - leftRegionStart
+  const leftDashLen = leftTotal / (leftDashes + (leftDashes - 1) / dashGapRatio)
+  const leftGapLen = leftDashLen / dashGapRatio
+
+  for (let i = 0; i < leftDashes; i++) {
+    const x1 = leftRegionStart + i * (leftDashLen + leftGapLen)
+    const x2 = x1 + leftDashLen
+    elements.push(
+      <line key={`ld${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
+        stroke="black" strokeWidth={sw} strokeLinecap="round" />,
+    )
+  }
+
+  if (distText) {
+    elements.push(
+      <text key="dt" x={midX} y={cy + 1} textAnchor="middle" dominantBaseline="central"
+        fontSize="11" fontFamily="sans-serif">{distText}</text>,
+    )
+  }
+
+  const rightRegionStart = textRight + 2
+  const rightRegionEnd = rightChevronStart - 2
+  const rightTotal = rightRegionEnd - rightRegionStart
+  const rightDashLen = rightTotal / (rightDashes + (rightDashes - 1) / dashGapRatio)
+  const rightGapLen = rightDashLen / dashGapRatio
+
+  for (let i = 0; i < rightDashes; i++) {
+    const x1 = rightRegionStart + i * (rightDashLen + rightGapLen)
+    const x2 = x1 + rightDashLen
+    elements.push(
+      <line key={`rd${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
+        stroke="black" strokeWidth={sw} strokeLinecap="round" />,
+    )
+  }
+
+  elements.push(
+    <Chevron key="rc" x={rightChevronStart} cy={cy} size={chevronSize} direction=">" sw={sw} />,
+  )
+
+  return elements
+}
+
 function FinishDescRow({
   row,
   finishType,
@@ -281,25 +384,15 @@ function FinishDescRow({
 
   const W = 256
   const CY = 16
-  const circleR = 6
-  const finishR = 6
-  const finishRInner = 4
   const sw = 1.5
+  const circleR = 6
   const circleX = 18
   const finishX = W - 18
-  const arrowW = 5
-  const arrowH = 3.5
+  const finishR = 6
+  const finishRInner = 4
 
-  const hasLeftArrow = finishType !== 'taped'
-  const hasLines = finishType !== 'navigate'
-
-  const leftArrowBase = circleX + circleR + 1
-  const rightArrowTip = finishX - finishR - 1.5
-  const lineStart = leftArrowBase + (hasLeftArrow ? arrowW + 1 : 0)
-  const lineEnd = rightArrowTip - arrowW - 1
-
-  const midX = W / 2
-  const textGap = distText ? 28 : 0
+  const contentLeft = circleX + circleR + 3
+  const contentRight = finishX - finishR - 3
 
   return (
     <tr className="group">
@@ -309,38 +402,8 @@ function FinishDescRow({
         style={{ height: CELL, padding: 0 }}
       >
         <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
-          {/* Last control circle */}
           <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
-
-          {/* Left arrowhead — navigate/funnel: < pointing left */}
-          {hasLeftArrow && (
-            <polygon
-              points={`${leftArrowBase},${CY} ${leftArrowBase + arrowW},${CY - arrowH} ${leftArrowBase + arrowW},${CY + arrowH}`}
-              fill="black" />
-          )}
-
-          {/* Lines (taped = dashed, funnel = dashed, navigate = none) */}
-          {hasLines && (
-            <>
-              <line x1={lineStart} y1={CY} x2={midX - textGap} y2={CY}
-                stroke="black" strokeWidth={sw} strokeDasharray="8,5" />
-              <line x1={midX + textGap} y1={CY} x2={lineEnd} y2={CY}
-                stroke="black" strokeWidth={sw} strokeDasharray="8,5" />
-            </>
-          )}
-
-          {/* Distance text */}
-          {distText && (
-            <text x={midX} y={CY + 1} textAnchor="middle" dominantBaseline="central"
-              fontSize="11" fontFamily="sans-serif" fontWeight="normal">{distText}</text>
-          )}
-
-          {/* Right arrowhead > pointing right (always) */}
-          <polygon
-            points={`${rightArrowTip},${CY} ${rightArrowTip - arrowW},${CY - arrowH} ${rightArrowTip - arrowW},${CY + arrowH}`}
-            fill="black" />
-
-          {/* Finish double circle */}
+          {finishRowElements(finishType, distText, contentLeft, contentRight, CY, sw)}
           <circle cx={finishX} cy={CY} r={finishR} fill="none" stroke="black" strokeWidth={sw} />
           <circle cx={finishX} cy={CY} r={finishRInner} fill="none" stroke="black" strokeWidth={sw} />
         </svg>
