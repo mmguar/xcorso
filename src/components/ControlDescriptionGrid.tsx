@@ -278,21 +278,27 @@ function FinishDescRow({
 }) {
   const { cc, legDist } = row
   const distText = legDist != null ? formatDistance(legDist) : ''
-  const dashed = '5,3.5'
+
+  const W = 256
+  const CY = 16
+  const circleR = 6
+  const finishR = 6
+  const finishRInner = 4
+  const sw = 1.5
+  const circleX = 18
+  const finishX = W - 18
+  const arrowW = 5
+  const arrowH = 3.5
+
   const hasLeftArrow = finishType !== 'taped'
-  const hasRightArrow = true
   const isDashed = finishType !== 'navigate'
 
-  const circleX = 22
-  const finishX = 234
-  const arrowW = 7
-  const textW = distText ? 50 : 0
+  const lineStart = circleX + circleR + 1 + (hasLeftArrow ? arrowW + 1 : 0)
+  const arrowTipX = finishX - finishR - 1.5
+  const lineEnd = arrowTipX - arrowW - 1
 
-  const leftLineStart = circleX + 9 + (hasLeftArrow ? arrowW + 2 : 1)
-  const rightLineEnd = finishX - 9 - (hasRightArrow ? arrowW + 2 : 1)
-  const midX = 128
-  const leftLineEnd = midX - textW / 2 - 2
-  const rightLineStart = midX + textW / 2 + 2
+  const midX = W / 2
+  const textGap = distText ? 28 : 0
 
   return (
     <tr className="group">
@@ -301,37 +307,41 @@ function FinishDescRow({
         className={`${BORDER} relative`}
         style={{ height: CELL, padding: 0 }}
       >
-        <svg viewBox="0 0 256 32" width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+        <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
           {/* Last control circle */}
-          <circle cx={circleX} cy="16" r="8" fill="none" stroke="black" strokeWidth="1.8" />
-          {/* Left arrowhead */}
+          <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
+
+          {/* Left arrowhead (navigate / funnel only) */}
           {hasLeftArrow && (
             <polygon
-              points={`${circleX + 10},12 ${circleX + 10 + arrowW},16 ${circleX + 10},20`}
+              points={`${circleX + circleR + 1},${CY} ${circleX + circleR + 1 + arrowW},${CY - arrowH} ${circleX + circleR + 1 + arrowW},${CY + arrowH}`}
               fill="black" />
           )}
-          {/* Left line */}
-          <line x1={leftLineStart} y1="16" x2={leftLineEnd} y2="16"
-            stroke="black" strokeWidth="1.8"
-            strokeDasharray={isDashed ? dashed : 'none'} />
+
+          {/* Left line segment */}
+          <line x1={lineStart} y1={CY} x2={midX - textGap} y2={CY}
+            stroke="black" strokeWidth={sw}
+            strokeDasharray={isDashed ? '8,5' : 'none'} />
+
           {/* Distance text */}
           {distText && (
-            <text x={midX} y="17" textAnchor="middle" dominantBaseline="central"
-              fontSize="11" fontFamily="sans-serif">{distText}</text>
+            <text x={midX} y={CY + 1} textAnchor="middle" dominantBaseline="central"
+              fontSize="11" fontFamily="sans-serif" fontWeight="normal">{distText}</text>
           )}
-          {/* Right line */}
-          <line x1={rightLineStart} y1="16" x2={rightLineEnd} y2="16"
-            stroke="black" strokeWidth="1.8"
-            strokeDasharray={isDashed ? dashed : 'none'} />
-          {/* Right arrowhead */}
-          {hasRightArrow && (
-            <polygon
-              points={`${finishX - 10 - arrowW},12 ${finishX - 10},16 ${finishX - 10 - arrowW},20`}
-              fill="black" />
-          )}
+
+          {/* Right line segment */}
+          <line x1={midX + textGap} y1={CY} x2={lineEnd} y2={CY}
+            stroke="black" strokeWidth={sw}
+            strokeDasharray={isDashed ? '8,5' : 'none'} />
+
+          {/* Right arrowhead (always) */}
+          <polygon
+            points={`${arrowTipX},${CY} ${arrowTipX - arrowW},${CY - arrowH} ${arrowTipX - arrowW},${CY + arrowH}`}
+            fill="black" />
+
           {/* Finish double circle */}
-          <circle cx={finishX} cy="16" r="8" fill="none" stroke="black" strokeWidth="1.8" />
-          <circle cx={finishX} cy="16" r="5.5" fill="none" stroke="black" strokeWidth="1.8" />
+          <circle cx={finishX} cy={CY} r={finishR} fill="none" stroke="black" strokeWidth={sw} />
+          <circle cx={finishX} cy={CY} r={finishRInner} fill="none" stroke="black" strokeWidth={sw} />
         </svg>
         {onRemove && (
           <button

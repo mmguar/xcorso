@@ -187,35 +187,53 @@ function drawFinishIofRow(
   doc.rect(gridX, y, GRID_W, CELL, 'S')
 
   const cy = y + CELL / 2
-  const circleX = gridX + CELL * 0.6
-  const finishCx = gridX + GRID_W - CELL * 0.6
+  const circleX = gridX + CELL * 0.55
+  const finishCx = gridX + GRID_W - CELL * 0.55
   const midX = gridX + GRID_W / 2
-  const circleR = CELL * 0.22
-  const arrowH = CELL * 0.22
-  const arrowW = CELL * 0.2
-  const sw = 0.25
+  const circleR = CELL * 0.28
+  const finishRInner = CELL * 0.18
+  const arrowH = CELL * 0.12
+  const arrowW = CELL * 0.18
+  const sw = 0.2
+
+  const hasLeftArrow = finishType !== 'taped'
+  const isDashed = finishType !== 'navigate'
+  const dashLen = 1.6
+  const gapLen = 1.0
+
+  doc.setLineWidth(sw)
+  doc.setDrawColor(0, 0, 0)
 
   // Last control circle
-  doc.setLineWidth(sw)
   doc.circle(circleX, cy, circleR, 'S')
 
   // Finish double circle
   doc.circle(finishCx, cy, circleR, 'S')
-  doc.circle(finishCx, cy, circleR * 0.65, 'S')
+  doc.circle(finishCx, cy, finishRInner, 'S')
 
-  const hasLeftArrow = finishType !== 'taped'
-  const isDashed = finishType !== 'navigate'
-  const dashLen = 0.8
-  const gapLen = 0.5
-
-  function drawArrow(tipX: number) {
+  // Left arrowhead (navigate/funnel only)
+  let lineL = circleX + circleR + 0.4
+  if (hasLeftArrow) {
+    const tipX = lineL + arrowW
     doc.setFillColor(0, 0, 0)
     doc.moveTo(tipX, cy)
-    doc.lineTo(tipX - arrowW, cy - arrowH)
-    doc.lineTo(tipX - arrowW, cy + arrowH)
+    doc.lineTo(lineL, cy - arrowH)
+    doc.lineTo(lineL, cy + arrowH)
     doc.lineTo(tipX, cy)
     doc.fill()
+    lineL = tipX + 0.3
   }
+
+  // Right arrowhead (always present)
+  const arrowRight = finishCx - circleR - 0.4
+  const arrowLeft = arrowRight - arrowW
+  doc.setFillColor(0, 0, 0)
+  doc.moveTo(arrowRight, cy)
+  doc.lineTo(arrowLeft, cy - arrowH)
+  doc.lineTo(arrowLeft, cy + arrowH)
+  doc.lineTo(arrowRight, cy)
+  doc.fill()
+  const lineR = arrowLeft - 0.3
 
   function drawDashedLine(x1: number, x2: number) {
     doc.setLineWidth(sw)
@@ -232,41 +250,18 @@ function drawFinishIofRow(
     doc.line(x1, cy, x2, cy)
   }
 
-  // Left arrowhead (navigate/funnel only)
-  const leftLineStart = circleX + circleR + 0.3
-  let lineL = leftLineStart
-  if (hasLeftArrow) {
-    const arrowTip = leftLineStart + arrowW + 0.3
-    drawArrow(arrowTip)
-    lineL = arrowTip + 0.3
-  }
-
-  // Right arrowhead (always)
-  const rightLineEnd = finishCx - circleR - 0.3
-  const arrowTipR = rightLineEnd - 0.3
-  drawArrow(arrowTipR)
-  const lineR = arrowTipR - arrowW - 0.3
+  const drawLine = isDashed ? drawDashedLine : drawSolidLine
 
   if (distM != null) {
-    const textHalfW = CELL * 0.6
-    const textLeft = midX - textHalfW
-    const textRight = midX + textHalfW
-
-    if (isDashed) {
-      drawDashedLine(lineL, textLeft)
-      drawDashedLine(textRight, lineR)
-    } else {
-      drawSolidLine(lineL, textLeft)
-      drawSolidLine(textRight, lineR)
-    }
-
+    const textHalfW = CELL * 0.55
+    drawLine(lineL, midX - textHalfW)
+    drawLine(midX + textHalfW, lineR)
     doc.setFontSize(5.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
   } else {
-    if (isDashed) drawDashedLine(lineL, lineR)
-    else drawSolidLine(lineL, lineR)
+    drawLine(lineL, lineR)
   }
 }
 
