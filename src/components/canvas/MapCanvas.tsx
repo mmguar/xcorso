@@ -32,11 +32,9 @@ export function MapCanvas({ loadedMap }: Props) {
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
   const vpRef = useRef<Viewport>(vp)
   const fitScaleRef = useRef<number>(MIN_SCALE)
-  const mapSvgRef = useRef<SVGSVGElement>(null)
   const mapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
-  const filterSuspendedRef = useRef(false)
 
   function syncTransform() {
     const v = vpRef.current
@@ -112,23 +110,6 @@ export function MapCanvas({ loadedMap }: Props) {
     let vpDirty = false
     let wheelTimer: ReturnType<typeof setTimeout> | null = null
     let pendingRaf = 0
-    let filterSuspended = false
-
-    function suspendFilter() {
-      if (filterSuspended) return
-      filterSuspended = true
-      filterSuspendedRef.current = true
-      if (mapSvgRef.current) mapSvgRef.current.style.filter = 'none'
-    }
-    function restoreFilter() {
-      if (!filterSuspended) return
-      filterSuspended = false
-      filterSuspendedRef.current = false
-      const sat = useStore.getState().editor.mapSaturation
-      if (mapSvgRef.current) {
-        mapSvgRef.current.style.filter = sat < 1 ? `saturate(${sat})` : ''
-      }
-    }
 
     function getRect(): DOMRect {
       return rectCacheRef.current ?? div.getBoundingClientRect()
@@ -166,10 +147,9 @@ export function MapCanvas({ loadedMap }: Props) {
       const ns = clamp(v.scale * factor, minScale, MAX_SCALE)
       const ratio = ns / v.scale
       vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
-      suspendFilter()
       syncTransform()
       if (wheelTimer) clearTimeout(wheelTimer)
-      wheelTimer = setTimeout(() => { wheelTimer = null; restoreFilter(); setVpState(vpRef.current) }, 150)
+      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current) }, 150)
     }
 
     // ── Pointer down ─────────────────────────────────────────────────────────
@@ -343,7 +323,6 @@ export function MapCanvas({ loadedMap }: Props) {
         const v = vpRef.current
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
         vpDirty = true
-        suspendFilter()
       } else if (pos.size === 2) {
         const [a, b] = [...pos.values()]
         const dist = Math.hypot(b.x - a.x, b.y - a.y)
@@ -357,7 +336,6 @@ export function MapCanvas({ loadedMap }: Props) {
         const ratio = ns / v.scale
         vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
         vpDirty = true
-        suspendFilter()
         pinchDist = dist
       }
       if (vpDirty && !pendingRaf) {
@@ -378,7 +356,6 @@ export function MapCanvas({ loadedMap }: Props) {
         syncTransform()
         setVpState(vpRef.current)
       }
-      if (pos.size === 0) restoreFilter()
 
       if (longPressFired) { longPressFired = false; return }
 
@@ -502,7 +479,6 @@ export function MapCanvas({ loadedMap }: Props) {
         syncTransform()
         setVpState(vpRef.current)
       }
-      if (pos.size === 0) restoreFilter()
     }
 
     function onDblClick() {
@@ -619,11 +595,10 @@ export function MapCanvas({ loadedMap }: Props) {
     >
       {/* Map layer — separate SVG so overlay layers aren't affected by filter */}
       <svg
-        ref={mapSvgRef}
         width="100%" height="100%"
         style={{
           display: 'block', position: 'absolute', inset: 0,
-          filter: (!filterSuspendedRef.current && mapSaturation < 1) ? `saturate(${mapSaturation})` : undefined,
+          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
         }}
       >
         <g ref={mapGRef} style={{
