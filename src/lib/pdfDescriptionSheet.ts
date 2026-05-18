@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Course, Control, ControlDescription } from '../types'
+import type { Course, Control, ControlDescription, FinishType } from '../types'
 import { getSymbol, columnFields } from './iofSymbols'
 import type { SymbolDef, IofColumn } from './iofSymbols'
 
@@ -20,8 +20,9 @@ const INSET = 0.82
 const COL_HEADER_H = CELL * 0.6
 
 function fmtDist(m: number): string {
-  if (m < 1000) return `${Math.round(m)} m`
-  return `${(m / 1000).toFixed(2)} km`
+  const rounded = Math.round(m / 10) * 10
+  if (rounded < 1000) return `${rounded} m`
+  return `${(rounded / 1000).toFixed(1)} km`
 }
 
 function maxControlRows(pageH: number): number {
@@ -159,6 +160,57 @@ function drawDimensionText(doc: jsPDF, text: string, cx: number, cy: number) {
   doc.text(text, cx, cy + fontSize * 0.12, { align: 'center' })
 }
 
+// ── Text description helpers ────────────────────────────────────────────────
+
+const DESC_FONT_SIZE = 7
+const DESC_PADDING = 1.5
+// Approximate average character width for helvetica normal at 7pt (mm)
+const CHAR_W_ESTIMATE = 1.25
+
+function buildDescriptionText(desc: ControlDescription): string {
+  return COL_IDS
+    .map(col => {
+      const value = desc[columnFields[col]]
+      if (!value) return null
+      const sym = getSymbol(value)
+      return sym ? sym.name : value
+    })
+    .filter(Boolean)
+    .join(', ')
+}
+
+function estimateDescColumnWidth(course: Course, controls: Control[]): number {
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const defaultW = (COLS - 2) * CELL
+  let maxW = 0
+  for (const cc of course.controls) {
+    const ctrl = controlMap.get(cc.controlId)
+    if (!ctrl) continue
+    const text = buildDescriptionText(ctrl.description ?? {})
+    if (!text) continue
+    // Width needed for 2 lines: half the text length (ceil), times char width
+    const halfLen = Math.ceil(text.length / 2)
+    const needed = halfLen * CHAR_W_ESTIMATE + DESC_PADDING * 2
+    if (needed > maxW) maxW = needed
+  }
+  return Math.max(defaultW, maxW)
+}
+
+function drawMergedDescriptionText(doc: jsPDF, text: string, x: number, y: number, w: number, h: number) {
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(0, 0, 0)
+  doc.setFontSize(DESC_FONT_SIZE)
+  const maxW = w - DESC_PADDING * 2
+  const lines = doc.splitTextToSize(text, maxW) as string[]
+  const lineH = DESC_FONT_SIZE * 0.38
+  const blockH = lines.length * lineH
+  const cy = y + h / 2
+  const startY = cy - blockH / 2 + lineH * 0.7
+  for (let i = 0; i < lines.length; i++) {
+    doc.text(lines[i], x + DESC_PADDING, startY + i * lineH)
+  }
+}
+
 // ── Draw a small start triangle in column A ─────────────────────────────────
 
 function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
@@ -173,13 +225,100 @@ function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
   doc.stroke()
 }
 
-// ── Draw a small finish double-circle in column A ───────────────────────────
+// ── Draw IOF finish row (16.1/16.2/16.3) ───────────────────────────────────
 
-function drawFinishSymbol(doc: jsPDF, cx: number, cy: number) {
-  doc.setLineWidth(0.2)
+function drawFinishIofRow(
+  doc: jsPDF,
+  gridX: number,
+  y: number,
+  finishType: FinishType,
+  distM?: number,
+) {
   doc.setDrawColor(0, 0, 0)
-  doc.circle(cx, cy, CELL * 0.25, 'S')
-  doc.circle(cx, cy, CELL * 0.17, 'S')
+  doc.setLineWidth(LINE_W)
+  doc.rect(gridX, y, GRID_W, CELL, 'S')
+
+  const cy = y + CELL / 2
+  const circleX = gridX + CELL * 0.55
+  const finishCx = gridX + GRID_W - CELL * 0.55
+  const midX = gridX + GRID_W / 2
+  const circleR = CELL * 0.28
+  const finishRInner = CELL * 0.18
+  const sw = 0.2
+
+  const chevronW = CELL * 0.14
+  const chevronH = circleR
+  const hasLeftChevron = finishType !== 'taped'
+  const hasLines = finishType !== 'navigate'
+
+  doc.setLineWidth(sw)
+  doc.setDrawColor(0, 0, 0)
+
+  // Last control circle
+  doc.circle(circleX, cy, circleR, 'S')
+
+  // Finish double circle
+  doc.circle(finishCx, cy, circleR, 'S')
+  doc.circle(finishCx, cy, finishRInner, 'S')
+
+  function drawChevron(tipX: number, dir: '<' | '>') {
+    doc.setLineWidth(sw)
+    doc.setLineCap(1)
+    const backX = dir === '<' ? tipX + chevronW : tipX - chevronW
+    doc.line(backX, cy - chevronH, tipX, cy)
+    doc.line(tipX, cy, backX, cy + chevronH)
+  }
+
+  const contentLeft = circleX + circleR + 0.5
+  const contentRight = finishCx - circleR - 0.5
+
+  // Left chevron < (navigate / funnel)
+  if (hasLeftChevron) {
+    drawChevron(contentLeft, '<')
+  }
+
+  // Right chevron > (always)
+  drawChevron(contentRight, '>')
+
+  // Distance text
+  if (distM != null) {
+    doc.setFontSize(5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 0, 0)
+    doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
+  }
+
+  // Dashes (taped: 3+3, funnel: 2+3, navigate: none)
+  if (hasLines) {
+    const leftDashCount = finishType === 'funnel' ? 2 : 3
+    const rightDashCount = 3
+    const dashGapRatio = 1.8
+    const textHalfW = distM != null ? CELL * 0.55 : 0
+
+    const leftStart = contentLeft + (hasLeftChevron ? chevronW + 0.3 : 0)
+    const leftEnd = midX - textHalfW - 0.3
+    const leftTotal = leftEnd - leftStart
+    const leftDashLen = leftTotal / (leftDashCount + (leftDashCount - 1) / dashGapRatio)
+    const leftGapLen = leftDashLen / dashGapRatio
+
+    doc.setLineWidth(sw)
+    doc.setLineCap(1)
+    for (let i = 0; i < leftDashCount; i++) {
+      const x1 = leftStart + i * (leftDashLen + leftGapLen)
+      doc.line(x1, cy, x1 + leftDashLen, cy)
+    }
+
+    const rightStart = midX + textHalfW + 0.3
+    const rightEnd = contentRight - chevronW - 0.3
+    const rightTotal = rightEnd - rightStart
+    const rightDashLen = rightTotal / (rightDashCount + (rightDashCount - 1) / dashGapRatio)
+    const rightGapLen = rightDashLen / dashGapRatio
+
+    for (let i = 0; i < rightDashCount; i++) {
+      const x1 = rightStart + i * (rightDashLen + rightGapLen)
+      doc.line(x1, cy, x1 + rightDashLen, cy)
+    }
+  }
 }
 
 // ── Size calculation ────────────────────────────────────────────────────────
@@ -192,7 +331,10 @@ export function descriptionSheetSize(
   const rowCount = course.controls.filter(cc => controlMap.has(cc.controlId)).length
   if (rowCount === 0) return { width: 0, height: 0 }
   const height = CELL + COL_HEADER_H + rowCount * CELL
-  return { width: GRID_W, height }
+  const width = course.textDescriptions
+    ? 2 * CELL + estimateDescColumnWidth(course, controls)
+    : GRID_W
+  return { width, height }
 }
 
 // ── Draw overlay on existing page ───────────────────────────────────────────
@@ -205,6 +347,8 @@ export function drawDescriptionSheetOverlay(
   originX: number,
   originY: number,
   distanceM?: number,
+  textDescriptions?: boolean,
+  legDistances?: number[],
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -214,6 +358,7 @@ export function drawDescriptionSheetOverlay(
   if (resolved.length === 0) return
 
   const { width, height } = descriptionSheetSize(course, controls)
+  const descW = width - 2 * CELL
 
   // White background
   doc.setFillColor(255, 255, 255)
@@ -226,7 +371,7 @@ export function drawDescriptionSheetOverlay(
   // Course header
   doc.setDrawColor(0, 0, 0)
   doc.setLineWidth(LINE_W)
-  doc.rect(gridX, y, GRID_W, CELL, 'S')
+  doc.rect(gridX, y, width, CELL, 'S')
   doc.setFontSize(8)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 0, 0)
@@ -234,40 +379,53 @@ export function drawDescriptionSheetOverlay(
   if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
   if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
   if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
-  doc.text(label, gridX + GRID_W / 2, y + CELL / 2 + 1, { align: 'center' })
+  doc.text(label, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
   y += CELL
 
   // Column headers
-  const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
   doc.setFontSize(5.5)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(120, 120, 120)
   doc.setDrawColor(0, 0, 0)
   doc.setLineWidth(LINE_W)
-  for (let c = 0; c < COLS; c++) {
-    const cx = gridX + c * CELL
-    doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
-    doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+  if (textDescriptions) {
+    doc.rect(gridX, y, CELL, COL_HEADER_H, 'S')
+    doc.text('#', gridX + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    doc.rect(gridX + CELL, y, CELL, COL_HEADER_H, 'S')
+    doc.text('Code', gridX + CELL + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    doc.rect(gridX + 2 * CELL, y, descW, COL_HEADER_H, 'S')
+    doc.text('Description', gridX + 2 * CELL + descW / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+  } else {
+    const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
+    for (let c = 0; c < COLS; c++) {
+      const cx = gridX + c * CELL
+      doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
+      doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    }
   }
   y += COL_HEADER_H
 
-  // Control rows
-  for (const ctrl of resolved) {
+  // Separate finish from other controls
+  const nonFinish = resolved.filter(c => c.type !== 'finish')
+  const finish = resolved.find(c => c.type === 'finish')
+  const finishIdx = resolved.findIndex(c => c.type === 'finish')
+
+  // Control rows (non-finish)
+  for (const ctrl of nonFinish) {
     if (ctrl.type === 'control') seq++
     const desc = ctrl.description ?? {}
 
     doc.setDrawColor(0, 0, 0)
     doc.setLineWidth(LINE_W)
-    for (let c = 0; c < COLS; c++) {
-      doc.rect(gridX + c * CELL, y, CELL, CELL, 'S')
-    }
+
+    // Columns A and B always separate
+    doc.rect(gridX, y, CELL, CELL, 'S')
+    doc.rect(gridX + CELL, y, CELL, CELL, 'S')
 
     const aCx = gridX + CELL / 2
     const aCy = y + CELL / 2
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
-    } else if (ctrl.type === 'finish') {
-      drawFinishSymbol(doc, aCx, aCy)
     } else {
       doc.setFontSize(7)
       doc.setFont('helvetica', 'bold')
@@ -280,25 +438,38 @@ export function drawDescriptionSheetOverlay(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
-      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
-    for (let ci = 0; ci < COL_IDS.length; ci++) {
-      const colId = COL_IDS[ci]
-      const field = columnFields[colId]
-      const symCode = (desc as any)[field]
-      if (!symCode) continue
-      const cellCx = gridX + (ci + 2) * CELL + CELL / 2
-      const cellCy = y + CELL / 2
-      const sym = getSymbol(symCode)
-      if (sym) {
-        drawIofSymbol(doc, sym, cellCx, cellCy)
-      } else {
-        drawDimensionText(doc, symCode, cellCx, cellCy)
+    if (textDescriptions) {
+      doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
+      const text = buildDescriptionText(desc)
+      if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
+    } else {
+      for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
+        const colId = COL_IDS[ci]
+        const field = columnFields[colId]
+        const symCode = (desc as any)[field]
+        if (!symCode) continue
+        const cellCx = gridX + (ci + 2) * CELL + CELL / 2
+        const cellCy = y + CELL / 2
+        const sym = getSymbol(symCode)
+        if (sym) {
+          drawIofSymbol(doc, sym, cellCx, cellCy)
+        } else {
+          drawDimensionText(doc, symCode, cellCx, cellCy)
+        }
       }
     }
 
+    y += CELL
+  }
+
+  // Finish row (IOF 16.1/16.2/16.3)
+  if (finish) {
+    const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
     y += CELL
   }
 }
@@ -313,6 +484,8 @@ export function drawDescriptionSheet(
   pageW: number,
   pageH: number,
   distanceM?: number,
+  textDescriptions?: boolean,
+  legDistances?: number[],
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -321,7 +494,9 @@ export function drawDescriptionSheet(
 
   if (resolved.length === 0) return
 
-  const gridX = (pageW - GRID_W) / 2
+  const { width: gridW } = descriptionSheetSize(course, controls)
+  const descW = gridW - 2 * CELL
+  const gridX = (pageW - gridW) / 2
   const maxRows = maxControlRows(pageH)
 
   let y = MARGIN_TOP
@@ -331,7 +506,7 @@ export function drawDescriptionSheet(
   function drawHeader() {
     doc.setDrawColor(0, 0, 0)
     doc.setLineWidth(LINE_W)
-    doc.rect(gridX, y, GRID_W, CELL, 'S')
+    doc.rect(gridX, y, gridW, CELL, 'S')
 
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
@@ -340,23 +515,32 @@ export function drawDescriptionSheet(
     if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
     if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
     if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
-    doc.text(label, pageW / 2, y + CELL / 2 + 1, { align: 'center' })
+    doc.text(label, gridX + gridW / 2, y + CELL / 2 + 1, { align: 'center' })
 
     y += CELL
   }
 
   function drawColumnHeaders() {
-    const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
     doc.setFontSize(5.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(120, 120, 120)
     doc.setDrawColor(0, 0, 0)
     doc.setLineWidth(LINE_W)
 
-    for (let c = 0; c < COLS; c++) {
-      const cx = gridX + c * CELL
-      doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
-      doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    if (textDescriptions) {
+      doc.rect(gridX, y, CELL, COL_HEADER_H, 'S')
+      doc.text('#', gridX + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+      doc.rect(gridX + CELL, y, CELL, COL_HEADER_H, 'S')
+      doc.text('Code', gridX + CELL + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+      doc.rect(gridX + 2 * CELL, y, descW, COL_HEADER_H, 'S')
+      doc.text('Description', gridX + 2 * CELL + descW / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    } else {
+      const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
+      for (let c = 0; c < COLS; c++) {
+        const cx = gridX + c * CELL
+        doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
+        doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+      }
     }
     y += COL_HEADER_H
   }
@@ -368,9 +552,13 @@ export function drawDescriptionSheet(
     drawColumnHeaders()
   }
 
+  const nonFinish = resolved.filter(c => c.type !== 'finish')
+  const finish = resolved.find(c => c.type === 'finish')
+  const finishIdx = resolved.findIndex(c => c.type === 'finish')
+
   startPage()
 
-  for (const ctrl of resolved) {
+  for (const ctrl of nonFinish) {
     if (rowOnPage >= maxRows) {
       doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
       startPage()
@@ -382,18 +570,15 @@ export function drawDescriptionSheet(
     doc.setDrawColor(0, 0, 0)
     doc.setLineWidth(LINE_W)
 
-    // Draw all cell borders for this row
-    for (let c = 0; c < COLS; c++) {
-      doc.rect(gridX + c * CELL, y, CELL, CELL, 'S')
-    }
+    // Columns A and B always separate
+    doc.rect(gridX, y, CELL, CELL, 'S')
+    doc.rect(gridX + CELL, y, CELL, CELL, 'S')
 
-    // Column A: sequence / start / finish
+    // Column A: sequence / start
     const aCx = gridX + CELL / 2
     const aCy = y + CELL / 2
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
-    } else if (ctrl.type === 'finish') {
-      drawFinishSymbol(doc, aCx, aCy)
     } else {
       doc.setFontSize(7)
       doc.setFont('helvetica', 'bold')
@@ -407,28 +592,43 @@ export function drawDescriptionSheet(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}`
-      : ctrl.type === 'finish' ? `F${ctrl.code}` : String(ctrl.code))
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
-    // Columns C-H: IOF symbols
-    for (let ci = 0; ci < COL_IDS.length; ci++) {
-      const colId = COL_IDS[ci]
-      const field = columnFields[colId]
-      const symCode = desc[field]
-      if (!symCode) continue
+    if (textDescriptions) {
+      doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
+      const text = buildDescriptionText(desc)
+      if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
+    } else {
+      for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
+        const colId = COL_IDS[ci]
+        const field = columnFields[colId]
+        const symCode = desc[field]
+        if (!symCode) continue
 
-      const cellCx = gridX + (ci + 2) * CELL + CELL / 2
-      const cellCy = y + CELL / 2
-      const sym = getSymbol(symCode)
-      if (sym) {
-        drawIofSymbol(doc, sym, cellCx, cellCy)
-      } else {
-        drawDimensionText(doc, symCode, cellCx, cellCy)
+        const cellCx = gridX + (ci + 2) * CELL + CELL / 2
+        const cellCy = y + CELL / 2
+        const sym = getSymbol(symCode)
+        if (sym) {
+          drawIofSymbol(doc, sym, cellCx, cellCy)
+        } else {
+          drawDimensionText(doc, symCode, cellCx, cellCy)
+        }
       }
     }
 
     y += CELL
     rowOnPage++
+  }
+
+  // Finish row (IOF 16.1/16.2/16.3)
+  if (finish) {
+    if (rowOnPage >= maxRows) {
+      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
+      startPage()
+    }
+    const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
   }
 }

@@ -1,8 +1,8 @@
 import { memo } from 'react'
-import type { Control, CircleGap, AppearanceSettings, MapPoint } from '../../types'
+import type { Control, Course, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
-import { defaultControlLabel, buildSequenceMap as buildSeqMap, unitsPerMm } from '../../lib/courseUtils'
+import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import type { SymbolDims } from '../../lib/symbolSpec'
 
@@ -179,19 +179,16 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
 
 interface Props {
   controls: Control[]
+  course: Course | null
 }
 
-export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
+export const ControlsLayer = memo(function ControlsLayer({ controls, course: selectedCourse }: Props) {
   useRenderTracker('ControlsLayer')
   const map = useStore(s => s.project!.map)
   const upm = unitsPerMm(map)
   const selectedId = useStore(s => s.editor.selectedControlId)
   const appearance = useStore(s => s.editor.appearance)
   const projectSpec = useStore(s => s.project!.spec)
-  const selectedCourse = useStore(s => {
-    const cid = s.editor.selectedCourseId
-    return cid ? s.project?.courses.find(c => c.id === cid) ?? null : null
-  })
 
   const spec = resolveSpec(projectSpec, selectedCourse?.spec)
   const dims = getSymbolDims(spec)
@@ -229,7 +226,8 @@ export const ControlsLayer = memo(function ControlsLayer({ controls }: Props) {
 
         let label: string
         if (sequenceMap && control.type === 'control') {
-          label = String(sequenceMap.get(control.id) ?? defaultControlLabel(control))
+          const seqs = sequenceMap.get(control.id)
+          label = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(control)
         } else {
           label = defaultControlLabel(control)
         }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import {
   DndContext,
@@ -22,10 +22,11 @@ import { defaultControlLabel } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
-import type { Course, Control, CourseControl } from '../types'
+import type { Course, Control, CourseControl, FinishType } from '../types'
 
 const CELL = 32
 const BORDER = 'border border-gray-300'
+
 
 interface GridProps {
   course: Course
@@ -38,12 +39,15 @@ interface RowData {
   ctrl: Control
   seq: number
   legDist?: number
+  forkEligible?: boolean
+  isLoop?: boolean
 }
 
 export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
   const project = useStore(s => s.project!)
   const updateControlDescription = useStore(s => s.updateControlDescription)
+  const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
 
   const distances = computeCourseDistances(course, project.controls, project.map)
@@ -51,18 +55,42 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
 
   const showDist = distances.legs.length > 0
 
+  // Count occurrences of each controlId to detect fork-eligible controls
+  const controlIdCounts = new Map<string, number>()
+  for (const cc of course.controls) {
+    controlIdCounts.set(cc.controlId, (controlIdCounts.get(cc.controlId) ?? 0) + 1)
+  }
+
+  const loopForkIds = new Set((course.loops ?? []).map(l => l.forkControlId))
+
   let seq = 0
   let filteredIdx = 0
+  const seenControlIds = new Set<string>()
   const rows: RowData[] = []
+  let finishRow: RowData | null = null
   for (const cc of course.controls) {
     const ctrl = controlMap.get(cc.controlId)
     if (!ctrl) continue
+    if (ctrl.type === 'finish') {
+      finishRow = {
+        cc,
+        ctrl,
+        seq: 0,
+        legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+      }
+      filteredIdx++
+      continue
+    }
     if (ctrl.type === 'control') seq++
+    const isFirstOccurrence = !seenControlIds.has(cc.controlId)
+    seenControlIds.add(cc.controlId)
     rows.push({
       cc,
       ctrl,
       seq: ctrl.type === 'control' ? seq : 0,
       legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+      forkEligible: isFirstOccurrence && ctrl.type === 'control' && (controlIdCounts.get(cc.controlId) ?? 0) >= 3,
+      isLoop: loopForkIds.has(cc.controlId),
     })
     filteredIdx++
   }
@@ -117,23 +145,36 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                 {showDist && <td />}
               </tr>
 
-              {rows.length === 0 ? (
+              {rows.length === 0 && !finishRow ? (
                 <tr>
                   <td colSpan={8} className="text-center text-xs text-gray-400 py-3">
                     Click controls on the map to add them.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                <>
+                {rows.map((row) => (
                   <SortableDescRow
                     key={row.cc.id}
                     row={row}
+                    courseId={course.id}
                     showDist={showDist}
                     picker={picker}
                     setPicker={setPicker}
                     onRemove={onRemove}
+                    onToggleLoop={toggleCourseLoop}
                   />
-                ))
+                ))}
+                {finishRow && (
+                    <FinishDescRow
+                      row={finishRow}
+                      finishType={course.finishType ?? 'navigate'}
+                      showDist={showDist}
+                      onRemove={onRemove}
+                    />
+                  )}
+                </>
+
               )}
             </tbody>
           </table>
@@ -161,18 +202,22 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
 
 function SortableDescRow({
   row,
+  courseId,
   showDist,
   picker,
   setPicker,
   onRemove,
+  onToggleLoop,
 }: {
   row: RowData
+  courseId: string
   showDist: boolean
   picker: { controlId: string; column: IofColumn } | null
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
+  onToggleLoop?: (courseId: string, controlId: string) => void
 }) {
-  const { cc, ctrl, seq, legDist } = row
+  const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
   const {
     attributes,
     listeners,
@@ -193,53 +238,228 @@ function SortableDescRow({
     : String(seq)
   const desc = ctrl.description ?? {}
 
+  const colCount = 2 + columns.length + (showDist ? 1 : 0)
+
   return (
-    <tr ref={setNodeRef} style={style} className="group">
+    <>
+      <tr ref={setNodeRef} style={style} className="group">
+        <td
+          className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
+          style={{ width: CELL, height: CELL }}
+          {...attributes}
+          {...listeners}
+        >
+          {seqLabel}
+          {onRemove && (
+            <button
+              onClick={() => onRemove(cc.id)}
+              onPointerDown={e => e.stopPropagation()}
+              className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
+            >
+              <X size={8} />
+            </button>
+          )}
+        </td>
+        <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
+          {defaultControlLabel(ctrl)}
+        </td>
+        {columns.map(col => {
+          const field = columnFields[col.id]
+          const value = desc[field]
+          const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
+          const isDimText = col.id === 'F' && value && isDimensionText(value)
+
+          return (
+            <td
+              key={col.id}
+              className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
+              style={{ width: CELL, height: CELL, padding: 0 }}
+              onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
+            >
+              {value && (isDimText
+                ? <span className="text-[9px] font-bold leading-none">{value}</span>
+                : <IofSymbolIcon code={value} size={CELL - 4} />
+              )}
+            </td>
+          )
+        })}
+        {showDist && (
+          <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
+            {legDist != null ? formatDistance(legDist) : ''}
+          </td>
+        )}
+      </tr>
+      {forkEligible && (
+        <tr>
+          <td colSpan={colCount} className="py-0.5 px-1">
+            <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isLoop ?? false}
+                onChange={() => onToggleLoop?.(courseId, ctrl.id)}
+                className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+              />
+              Butterfly loop
+            </label>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function Chevron({ x, cy, w, h, direction, sw }: {
+  x: number; cy: number; w: number; h: number; direction: '<' | '>'; sw: number
+}) {
+  const tip = direction === '<' ? x : x + w
+  const back = direction === '<' ? x + w : x
+  return (
+    <>
+      <line x1={back} y1={cy - h} x2={tip} y2={cy} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      <line x1={tip} y1={cy} x2={back} y2={cy + h} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+    </>
+  )
+}
+
+function finishRowElements(
+  finishType: FinishType,
+  distText: string,
+  contentLeft: number,
+  contentRight: number,
+  cy: number,
+  sw: number,
+) {
+  const chevronW = 4
+  const chevronH = 6
+  const textWidth = distText ? 38 : 0
+  const midX = (contentLeft + contentRight) / 2
+  const textLeft = midX - textWidth / 2
+  const textRight = midX + textWidth / 2
+
+  const elements: ReactNode[] = []
+
+  if (finishType === 'navigate') {
+    elements.push(
+      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
+    )
+    if (distText) {
+      elements.push(
+        <text key="dt" x={midX} y={cy + 1} textAnchor="middle" dominantBaseline="central"
+          fontSize="11" fontFamily="sans-serif">{distText}</text>,
+      )
+    }
+    elements.push(
+      <Chevron key="rc" x={contentRight - chevronW} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
+    )
+    return elements
+  }
+
+  const leftDashes = finishType === 'funnel' ? 2 : 3
+  const rightDashes = 3
+
+  const rightChevronStart = contentRight - chevronW
+
+  let leftRegionStart = contentLeft
+  if (finishType === 'funnel') {
+    elements.push(
+      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
+    )
+    leftRegionStart = contentLeft + chevronW + 2
+  }
+
+  const leftRegionEnd = textLeft - 2
+  const dashGapRatio = 1.8
+  const leftTotal = leftRegionEnd - leftRegionStart
+  const leftDashLen = leftTotal / (leftDashes + (leftDashes - 1) / dashGapRatio)
+  const leftGapLen = leftDashLen / dashGapRatio
+
+  for (let i = 0; i < leftDashes; i++) {
+    const x1 = leftRegionStart + i * (leftDashLen + leftGapLen)
+    const x2 = x1 + leftDashLen
+    elements.push(
+      <line key={`ld${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
+        stroke="black" strokeWidth={sw} strokeLinecap="round" />,
+    )
+  }
+
+  if (distText) {
+    elements.push(
+      <text key="dt" x={midX} y={cy + 1} textAnchor="middle" dominantBaseline="central"
+        fontSize="11" fontFamily="sans-serif">{distText}</text>,
+    )
+  }
+
+  const rightRegionStart = textRight + 2
+  const rightRegionEnd = rightChevronStart - 2
+  const rightTotal = rightRegionEnd - rightRegionStart
+  const rightDashLen = rightTotal / (rightDashes + (rightDashes - 1) / dashGapRatio)
+  const rightGapLen = rightDashLen / dashGapRatio
+
+  for (let i = 0; i < rightDashes; i++) {
+    const x1 = rightRegionStart + i * (rightDashLen + rightGapLen)
+    const x2 = x1 + rightDashLen
+    elements.push(
+      <line key={`rd${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
+        stroke="black" strokeWidth={sw} strokeLinecap="round" />,
+    )
+  }
+
+  elements.push(
+    <Chevron key="rc" x={rightChevronStart} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
+  )
+
+  return elements
+}
+
+function FinishDescRow({
+  row,
+  finishType,
+  showDist,
+  onRemove,
+}: {
+  row: RowData
+  finishType: FinishType
+  showDist: boolean
+  onRemove?: (ccId: string) => void
+}) {
+  const { cc, legDist } = row
+  const distText = legDist != null ? formatDistance(legDist) : ''
+
+  const W = 256
+  const CY = 16
+  const sw = 1.5
+  const circleR = 6
+  const circleX = 18
+  const finishX = W - 18
+  const finishR = 6
+  const finishRInner = 4
+
+  const contentLeft = circleX + circleR + 3
+  const contentRight = finishX - finishR - 3
+
+  return (
+    <tr className="group">
       <td
-        className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
-        style={{ width: CELL, height: CELL }}
-        {...attributes}
-        {...listeners}
+        colSpan={8}
+        className={`${BORDER} relative`}
+        style={{ height: CELL, padding: 0 }}
       >
-        {seqLabel}
+        <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+          <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
+          {finishRowElements(finishType, distText, contentLeft, contentRight, CY, sw)}
+          <circle cx={finishX} cy={CY} r={finishR} fill="none" stroke="black" strokeWidth={sw} />
+          <circle cx={finishX} cy={CY} r={finishRInner} fill="none" stroke="black" strokeWidth={sw} />
+        </svg>
         {onRemove && (
           <button
             onClick={() => onRemove(cc.id)}
-            onPointerDown={e => e.stopPropagation()}
             className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
           >
             <X size={8} />
           </button>
         )}
       </td>
-      <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
-        {defaultControlLabel(ctrl)}
-      </td>
-      {columns.map(col => {
-        const field = columnFields[col.id]
-        const value = desc[field]
-        const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
-        const isDimText = col.id === 'F' && value && isDimensionText(value)
-
-        return (
-          <td
-            key={col.id}
-            className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
-            style={{ width: CELL, height: CELL, padding: 0 }}
-            onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
-          >
-            {value && (isDimText
-              ? <span className="text-[9px] font-bold leading-none">{value}</span>
-              : <IofSymbolIcon code={value} size={CELL - 4} />
-            )}
-          </td>
-        )
-      })}
-      {showDist && (
-        <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
-          {legDist != null ? formatDistance(legDist) : ''}
-        </td>
-      )}
+      {showDist && <td />}
     </tr>
   )
 }

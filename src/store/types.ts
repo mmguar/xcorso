@@ -1,7 +1,7 @@
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
-  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec,
+  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -9,6 +9,7 @@ export interface EditorState {
   activeTool: ActiveTool
   selectedControlId: string | null
   selectedCourseId: string | null
+  selectedVariationId: string | null
   selectedOverlayId: string | null
   viewport: Viewport
   mapSaturation: number
@@ -56,8 +57,14 @@ export interface AppActions {
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
   updateCourseClimb: (id: string, climb: number | undefined) => void
+  updateCourseFinishType: (id: string, finishType: FinishType) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
+  updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
+
+  toggleCourseLoop: (courseId: string, forkControlId: string) => void
+  removeCourseLoop: (courseId: string, loopId: string) => void
+  setSelectedVariation: (id: string | null) => void
 
   addClass: (name: string, courseId: string) => RaceClass
   deleteClass: (id: string) => void
@@ -136,6 +143,7 @@ export const defaultEditor: EditorState = {
   activeTool: 'select',
   selectedControlId: null,
   selectedCourseId: null,
+  selectedVariationId: null,
   selectedOverlayId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,
