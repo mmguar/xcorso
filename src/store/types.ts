@@ -57,6 +57,7 @@ export interface AppActions {
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
   updateCourseClimb: (id: string, climb: number | undefined) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
+  updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
   addClass: (name: string, courseId: string) => RaceClass

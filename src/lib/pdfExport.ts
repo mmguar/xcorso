@@ -988,7 +988,7 @@ export async function exportCoursePdf(
         if (descMode === 'on-map' && course.controls.length > 0) {
           const { x: sx, y: sy } = options.sheetPositions?.[course.id] ?? { x: MARGIN, y: MARGIN }
           const dist = computeCourseDistances(course, project.controls, project.map)
-          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy, dist.total)
+          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy, dist.total, course.textDescriptions)
         }
 
         // Header line
@@ -1007,7 +1007,7 @@ export async function exportCoursePdf(
       doc.addPage([pw, ph], orient)
       pageIndex++
       const dist = computeCourseDistances(course, project.controls, project.map)
-      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph, dist.total)
+      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph, dist.total, course.textDescriptions)
     }
   }
 

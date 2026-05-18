@@ -27,6 +27,7 @@ import type { Course, Control, CourseControl } from '../types'
 const CELL = 32
 const BORDER = 'border border-gray-300'
 
+
 interface GridProps {
   course: Course
   onRemove?: (courseControlId: string) => void

@@ -98,6 +98,7 @@ export interface Course {
   climb?: number             // metres, manually set
   color: string              // overprint color, default '#7B2FBE'
   showPoints?: boolean       // display [points] next to controls on map
+  textDescriptions?: boolean // render description cells as text names instead of IOF symbols
   // Phase 3 placeholder:
   // variations?: CourseVariation[]
 }
