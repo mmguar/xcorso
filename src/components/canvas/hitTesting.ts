@@ -192,7 +192,10 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
   const labelSpec = resolveSpec(project.spec, course.spec)
   const labelDims = getSymbolDims(labelSpec)
 
+  const seenControlIds = new Set<string>()
   for (const cc of course.controls) {
+    if (seenControlIds.has(cc.controlId)) continue
+    seenControlIds.add(cc.controlId)
     const ctrl = controlMap.get(cc.controlId)
     if (!ctrl) continue
     const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec)
