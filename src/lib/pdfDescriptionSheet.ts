@@ -195,7 +195,8 @@ function drawFinishIofRow(
   const finishRInner = CELL * 0.18
   const sw = 0.2
 
-  const chevronSize = CELL * 0.14
+  const chevronW = CELL * 0.14
+  const chevronH = circleR
   const hasLeftChevron = finishType !== 'taped'
   const hasLines = finishType !== 'navigate'
 
@@ -212,9 +213,9 @@ function drawFinishIofRow(
   function drawChevron(tipX: number, dir: '<' | '>') {
     doc.setLineWidth(sw)
     doc.setLineCap(1)
-    const backX = dir === '<' ? tipX + chevronSize : tipX - chevronSize
-    doc.line(backX, cy - chevronSize, tipX, cy)
-    doc.line(tipX, cy, backX, cy + chevronSize)
+    const backX = dir === '<' ? tipX + chevronW : tipX - chevronW
+    doc.line(backX, cy - chevronH, tipX, cy)
+    doc.line(tipX, cy, backX, cy + chevronH)
   }
 
   const contentLeft = circleX + circleR + 0.5
@@ -243,7 +244,7 @@ function drawFinishIofRow(
     const dashGapRatio = 1.8
     const textHalfW = distM != null ? CELL * 0.55 : 0
 
-    const leftStart = contentLeft + (hasLeftChevron ? chevronSize + 0.3 : 0)
+    const leftStart = contentLeft + (hasLeftChevron ? chevronW + 0.3 : 0)
     const leftEnd = midX - textHalfW - 0.3
     const leftTotal = leftEnd - leftStart
     const leftDashLen = leftTotal / (leftDashCount + (leftDashCount - 1) / dashGapRatio)
@@ -257,7 +258,7 @@ function drawFinishIofRow(
     }
 
     const rightStart = midX + textHalfW + 0.3
-    const rightEnd = contentRight - chevronSize - 0.3
+    const rightEnd = contentRight - chevronW - 0.3
     const rightTotal = rightEnd - rightStart
     const rightDashLen = rightTotal / (rightDashCount + (rightDashCount - 1) / dashGapRatio)
     const rightGapLen = rightDashLen / dashGapRatio

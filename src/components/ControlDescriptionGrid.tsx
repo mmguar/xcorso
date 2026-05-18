@@ -265,15 +265,15 @@ function SortableDescRow({
   )
 }
 
-function Chevron({ x, cy, size, direction, sw }: {
-  x: number; cy: number; size: number; direction: '<' | '>'; sw: number
+function Chevron({ x, cy, w, h, direction, sw }: {
+  x: number; cy: number; w: number; h: number; direction: '<' | '>'; sw: number
 }) {
-  const tip = direction === '<' ? x : x + size
-  const back = direction === '<' ? x + size : x
+  const tip = direction === '<' ? x : x + w
+  const back = direction === '<' ? x + w : x
   return (
     <>
-      <line x1={back} y1={cy - size} x2={tip} y2={cy} stroke="black" strokeWidth={sw} strokeLinecap="round" />
-      <line x1={tip} y1={cy} x2={back} y2={cy + size} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      <line x1={back} y1={cy - h} x2={tip} y2={cy} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      <line x1={tip} y1={cy} x2={back} y2={cy + h} stroke="black" strokeWidth={sw} strokeLinecap="round" />
     </>
   )
 }
@@ -286,7 +286,8 @@ function finishRowElements(
   cy: number,
   sw: number,
 ) {
-  const chevronSize = 4
+  const chevronW = 4
+  const chevronH = 6
   const textWidth = distText ? 38 : 0
   const midX = (contentLeft + contentRight) / 2
   const textLeft = midX - textWidth / 2
@@ -296,7 +297,7 @@ function finishRowElements(
 
   if (finishType === 'navigate') {
     elements.push(
-      <Chevron key="lc" x={contentLeft} cy={cy} size={chevronSize} direction="<" sw={sw} />,
+      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
     )
     if (distText) {
       elements.push(
@@ -305,7 +306,7 @@ function finishRowElements(
       )
     }
     elements.push(
-      <Chevron key="rc" x={contentRight - chevronSize} cy={cy} size={chevronSize} direction=">" sw={sw} />,
+      <Chevron key="rc" x={contentRight - chevronW} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
     )
     return elements
   }
@@ -313,13 +314,12 @@ function finishRowElements(
   const leftDashes = finishType === 'funnel' ? 2 : 3
   const rightDashes = 3
 
-  const chevronW = chevronSize
   const rightChevronStart = contentRight - chevronW
 
   let leftRegionStart = contentLeft
   if (finishType === 'funnel') {
     elements.push(
-      <Chevron key="lc" x={contentLeft} cy={cy} size={chevronSize} direction="<" sw={sw} />,
+      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
     )
     leftRegionStart = contentLeft + chevronW + 2
   }
@@ -362,7 +362,7 @@ function finishRowElements(
   }
 
   elements.push(
-    <Chevron key="rc" x={rightChevronStart} cy={cy} size={chevronSize} direction=">" sw={sw} />,
+    <Chevron key="rc" x={rightChevronStart} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
   )
 
   return elements
