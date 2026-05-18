@@ -219,9 +219,9 @@ function renderLegs(
 
 export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec }: Props) {
   useRenderTracker('LegsLayer')
+  const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
   if (!course) return null
   const spec = resolveSpec(projectSpec, course.spec)
-  const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
   const upm = unitsPerMm(map)
   const elements = renderLegs(course, controlMap, map.scale, upm, showBendHandles, appearance, spec)
   if (elements.length === 0) return null

@@ -3,27 +3,28 @@ import type { LoadedMap } from '../../lib/mapLoader'
 
 interface Props {
   loadedMap: LoadedMap
+  onPixelSize?: (w: number, h: number) => void
 }
 
 const MAX_CANVAS_DIM = 8192
 
-export function MapCanvasLayer({ loadedMap }: Props) {
+export function MapCanvasLayer({ loadedMap, onPixelSize }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { bounds } = loadedMap
+  const onPixelSizeRef = useRef(onPixelSize)
+  onPixelSizeRef.current = onPixelSize
 
   useEffect(() => {
     let cancelled = false
     const img = new Image()
 
+    let src: string | undefined
     if (loadedMap.type === 'svg') {
-      if (loadedMap.rasterUrl) {
-        img.src = loadedMap.rasterUrl
-      } else {
-        return
-      }
+      src = loadedMap.rasterUrl
     } else {
-      img.src = loadedMap.content as string
+      src = loadedMap.content as string
     }
+
+    if (!src) return
 
     img.onload = () => {
       if (cancelled) return
@@ -37,20 +38,22 @@ export function MapCanvasLayer({ loadedMap }: Props) {
       canvas.width = w
       canvas.height = h
       canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      onPixelSizeRef.current?.(w, h)
     }
 
+    img.onerror = () => {}
+    img.src = src
+
     return () => { cancelled = true }
-  }, [loadedMap, bounds])
+  }, [loadedMap])
 
   return (
     <canvas
       ref={canvasRef}
+      width={1}
+      height={1}
       style={{
         position: 'absolute',
-        left: bounds.minX,
-        top: bounds.minY,
-        width: bounds.width,
-        height: bounds.height,
         backgroundColor: 'white',
         pointerEvents: 'none',
       }}

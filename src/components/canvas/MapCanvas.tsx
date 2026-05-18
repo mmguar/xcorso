@@ -39,11 +39,16 @@ export function MapCanvas({ loadedMap }: Props) {
   const hdMapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
+  const canvasPixelRef = useRef<[number, number]>([1, 1])
 
   function syncTransform() {
     const v = vpRef.current
     const t = `translate(${v.x}px,${v.y}px) scale(${v.scale})`
-    if (mapDivRef.current) mapDivRef.current.style.transform = t
+    if (mapDivRef.current) {
+      const [cpw, cph] = canvasPixelRef.current
+      const b = loadedMap.bounds
+      mapDivRef.current.style.transform = `translate(${v.x}px,${v.y}px) scale(${v.scale}) translate(${b.minX}px,${b.minY}px) scale(${b.width / cpw},${b.height / cph})`
+    }
     if (hdMapGRef.current) hdMapGRef.current.style.transform = t
     if (overlayGRef.current) overlayGRef.current.style.transform = t
   }
@@ -76,6 +81,7 @@ export function MapCanvas({ loadedMap }: Props) {
   useLayoutEffect(() => {
     const el = divRef.current
     if (!el) return
+    canvasPixelRef.current = [1, 1]
     const { width, height } = el.getBoundingClientRect()
     const mw = loadedMap.bounds.width
     const mh = loadedMap.bounds.height
@@ -628,11 +634,12 @@ export function MapCanvas({ loadedMap }: Props) {
           pointerEvents: 'none',
         }}
       >
-        <MapCanvasLayer loadedMap={loadedMap} />
+        <MapCanvasLayer loadedMap={loadedMap} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
       </div>
       {/* HD SVG overlay — true vector quality at rest (OCAD HD mode only) */}
       {!useRaster && loadedMap.type === 'svg' && (
         <svg
+          key="hd-map"
           ref={hdSvgRef}
           width="100%" height="100%"
           style={{
@@ -640,6 +647,7 @@ export function MapCanvas({ loadedMap }: Props) {
             position: 'absolute',
             inset: 0,
             filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+            pointerEvents: 'none',
           }}
         >
           <g ref={hdMapGRef} style={{
@@ -650,7 +658,7 @@ export function MapCanvas({ loadedMap }: Props) {
         </svg>
       )}
       {/* Overlay layers — controls, legs, annotations (no filter) */}
-      <svg width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
+      <svg key="overlay" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
         <g ref={overlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           <LegsLayer
             course={selectedCourse}
