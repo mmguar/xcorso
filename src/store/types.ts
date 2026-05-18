@@ -1,7 +1,7 @@
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
-  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec,
+  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -57,7 +57,9 @@ export interface AppActions {
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
   updateCourseClimb: (id: string, climb: number | undefined) => void
+  updateCourseFinishType: (id: string, finishType: FinishType) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
+  updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
   toggleCourseLoop: (courseId: string, forkControlId: string) => void

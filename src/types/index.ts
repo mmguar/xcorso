@@ -72,6 +72,8 @@ export interface Control {
 
 export type CourseType = 'linear' | 'score'
 
+export type FinishType = 'taped' | 'funnel' | 'navigate'
+
 export interface LegGap {
   start: number              // normalized position along leg (0–1)
   end: number
@@ -115,6 +117,7 @@ export interface Course {
   controls: CourseControl[]  // ordered for linear; unordered for score
   scoreTimeLimit?: number    // minutes, score-O only
   climb?: number             // metres, manually set
+  finishType?: FinishType    // IOF 16.1/16.2/16.3 — defaults to 'taped'
   color: string              // overprint color, default '#7B2FBE'
   showPoints?: boolean       // display [points] next to controls on map
   loops?: CourseLoop[]

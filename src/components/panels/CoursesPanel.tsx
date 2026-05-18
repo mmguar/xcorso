@@ -5,7 +5,7 @@ import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
-import type { Course, EventSpec } from '../../types'
+import type { Course, EventSpec, FinishType } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
   useRenderTracker('CourseEditor')
@@ -15,7 +15,9 @@ function CourseEditor({ course }: { course: Course }) {
   const updateCourseName = useStore(s => s.updateCourseName)
   const updateCourseColor = useStore(s => s.updateCourseColor)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
+  const updateCourseFinishType = useStore(s => s.updateCourseFinishType)
   const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
+  const updateCourseTextDescriptions = useStore(s => s.updateCourseTextDescriptions)
   const updateCourseSpec = useStore(s => s.updateCourseSpec)
   const deleteCourse = useStore(s => s.deleteCourse)
   const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
@@ -74,18 +76,29 @@ function CourseEditor({ course }: { course: Course }) {
         </button>
       </div>
 
-      {/* Show points toggle */}
-      {project.controls.some(c => c.points != null) && (
-        <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 border-b border-gray-100 select-none cursor-pointer">
+      {/* Course toggles */}
+      <div className="flex flex-col border-b border-gray-100">
+        {project.controls.some(c => c.points != null) && (
+          <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
+            <input
+              type="checkbox"
+              checked={course.showPoints ?? false}
+              onChange={e => updateCourseShowPoints(course.id, e.target.checked)}
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+            />
+            Show points on map
+          </label>
+        )}
+        <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
           <input
             type="checkbox"
-            checked={course.showPoints ?? false}
-            onChange={e => updateCourseShowPoints(course.id, e.target.checked)}
+            checked={course.textDescriptions ?? false}
+            onChange={e => updateCourseTextDescriptions(course.id, e.target.checked)}
             className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
           />
-          Show points on map
+          Text descriptions
         </label>
-      )}
+      </div>
 
       {/* Add controls toolbar */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-gray-100">

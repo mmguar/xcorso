@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec } from '../types'
+import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { generateAllPermutations } from '../lib/courseUtils'
 
@@ -167,10 +167,24 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       })
     },
 
+    updateCourseFinishType: (id: string, finishType: FinishType) => {
+      h.mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.finishType = finishType
+      })
+    },
+
     updateCourseShowPoints: (id: string, showPoints: boolean) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.showPoints = showPoints
+      })
+    },
+
+    updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => {
+      h.mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.textDescriptions = textDescriptions
       })
     },
 
