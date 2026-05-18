@@ -91,8 +91,14 @@ function cleanupSvg(svgEl: SVGElement) {
 }
 
 const MAX_RASTER_DIM = 8192
+let previousRasterUrl: string | null = null
 
 async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<string | undefined> {
+  if (previousRasterUrl) {
+    URL.revokeObjectURL(previousRasterUrl)
+    previousRasterUrl = null
+  }
+
   try {
     const clone = svgEl.cloneNode(true) as SVGElement
     clone.setAttribute('width', String(bounds.width))
@@ -100,8 +106,8 @@ async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<strin
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
 
     const xml = new XMLSerializer().serializeToString(clone)
-    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
+    const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
+    const svgUrl = URL.createObjectURL(svgBlob)
 
     const scale = Math.min(1, MAX_RASTER_DIM / Math.max(bounds.width, bounds.height))
     const w = Math.round(bounds.width * scale)
@@ -115,14 +121,19 @@ async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<strin
         canvas.height = h
         const ctx = canvas.getContext('2d')!
         ctx.drawImage(img, 0, 0, w, h)
-        URL.revokeObjectURL(url)
-        resolve(canvas.toDataURL('image/png'))
+        URL.revokeObjectURL(svgUrl)
+        canvas.toBlob(blob => {
+          if (!blob) { resolve(undefined); return }
+          const blobUrl = URL.createObjectURL(blob)
+          previousRasterUrl = blobUrl
+          resolve(blobUrl)
+        }, 'image/png')
       }
       img.onerror = () => {
-        URL.revokeObjectURL(url)
+        URL.revokeObjectURL(svgUrl)
         resolve(undefined)
       }
-      img.src = url
+      img.src = svgUrl
     })
   } catch {
     return undefined
@@ -180,12 +191,18 @@ export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
   canvas.height = viewport.height
   await page.render({ canvas, viewport }).promise
 
-  const url = canvas.toDataURL('image/png')
   const bounds: MapBounds = {
     minX: 0, minY: 0,
     maxX: viewport.width, maxY: viewport.height,
     width: viewport.width, height: viewport.height,
   }
+
+  const url = await new Promise<string>((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (!blob) { reject(new Error('Failed to rasterize PDF')); return }
+      resolve(URL.createObjectURL(blob))
+    }, 'image/png')
+  })
 
   return { type: 'image', content: url, bounds, renderScale: 3 }
 }

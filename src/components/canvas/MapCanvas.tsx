@@ -596,12 +596,14 @@ export function MapCanvas({ loadedMap }: Props) {
       {/* Map layer — separate SVG so overlay layers aren't affected by filter */}
       <svg
         width="100%" height="100%"
-        style={{ display: 'block', position: 'absolute', inset: 0 }}
+        style={{
+          display: 'block', position: 'absolute', inset: 0,
+          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+        }}
       >
         <g ref={mapGRef} style={{
           willChange: 'transform',
           transformOrigin: '0 0',
-          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
         }}>
           <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
