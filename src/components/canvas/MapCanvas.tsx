@@ -691,6 +691,7 @@ export function MapCanvas({ loadedMap }: Props) {
           />
           <ControlsLayer
             controls={controls}
+            course={selectedCourse}
           />
         </g>
         {activeTool === 'gap' && (() => {
