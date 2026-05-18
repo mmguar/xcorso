@@ -32,6 +32,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
   const vpRef = useRef<Viewport>(vp)
   const fitScaleRef = useRef<number>(MIN_SCALE)
+  const mapSvgRef = useRef<SVGSVGElement>(null)
   const mapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
@@ -115,14 +116,14 @@ export function MapCanvas({ loadedMap }: Props) {
     function suspendFilter() {
       if (filterSuspended) return
       filterSuspended = true
-      if (mapGRef.current) mapGRef.current.removeAttribute('filter')
+      if (mapSvgRef.current) mapSvgRef.current.style.filter = 'none'
     }
     function restoreFilter() {
       if (!filterSuspended) return
       filterSuspended = false
       const sat = useStore.getState().editor.mapSaturation
-      if (mapGRef.current && sat < 1) {
-        mapGRef.current.setAttribute('filter', 'url(#map-saturate)')
+      if (mapSvgRef.current) {
+        mapSvgRef.current.style.filter = sat < 1 ? `saturate(${sat})` : ''
       }
     }
 
@@ -615,20 +616,17 @@ export function MapCanvas({ loadedMap }: Props) {
     >
       {/* Map layer — separate SVG so overlay layers aren't affected by filter */}
       <svg
+        ref={mapSvgRef}
         width="100%" height="100%"
-        style={{ display: 'block', position: 'absolute', inset: 0 }}
+        style={{
+          display: 'block', position: 'absolute', inset: 0,
+          filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined,
+        }}
       >
-        {mapSaturation < 1 && (
-          <defs>
-            <filter id="map-saturate" colorInterpolationFilters="sRGB">
-              <feColorMatrix type="saturate" values={String(mapSaturation)} />
-            </filter>
-          </defs>
-        )}
         <g ref={mapGRef} style={{
           willChange: 'transform',
           transformOrigin: '0 0',
-        }} filter={mapSaturation < 1 ? 'url(#map-saturate)' : undefined}>
+        }}>
           <MapLayer loadedMap={loadedMap} useRaster={useRaster} />
         </g>
       </svg>
