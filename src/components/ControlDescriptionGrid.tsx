@@ -329,8 +329,8 @@ function finishRowElements(
   cy: number,
   sw: number,
 ) {
-  const chevronW = 4
-  const chevronH = 6
+  const chevronW = 5
+  const chevronH = 8
   const textWidth = distText ? 38 : 0
   const midX = (contentLeft + contentRight) / 2
   const textLeft = midX - textWidth / 2
@@ -354,27 +354,27 @@ function finishRowElements(
     return elements
   }
 
-  const leftDashes = finishType === 'funnel' ? 2 : 3
+  const leftDashes = 3
   const rightDashes = 3
 
   const rightChevronStart = contentRight - chevronW
 
-  let leftRegionStart = contentLeft
-  if (finishType === 'funnel') {
-    elements.push(
-      <Chevron key="lc" x={contentLeft} cy={cy} w={chevronW} h={chevronH} direction="<" sw={sw} />,
-    )
-    leftRegionStart = contentLeft + chevronW + 2
-  }
-
   const leftRegionEnd = textLeft - 2
   const dashGapRatio = 1.8
-  const leftTotal = leftRegionEnd - leftRegionStart
+  const leftTotal = leftRegionEnd - contentLeft
   const leftDashLen = leftTotal / (leftDashes + (leftDashes - 1) / dashGapRatio)
   const leftGapLen = leftDashLen / dashGapRatio
 
-  for (let i = 0; i < leftDashes; i++) {
-    const x1 = leftRegionStart + i * (leftDashLen + leftGapLen)
+  if (finishType === 'funnel') {
+    const dash1Start = contentLeft + leftDashLen + leftGapLen
+    elements.push(
+      <Chevron key="lc" x={dash1Start - chevronW} cy={cy} w={chevronW} h={chevronH} direction=">" sw={sw} />,
+    )
+  }
+
+  const leftStart = finishType === 'funnel' ? 1 : 0
+  for (let i = leftStart; i < leftDashes; i++) {
+    const x1 = contentLeft + i * (leftDashLen + leftGapLen)
     const x2 = x1 + leftDashLen
     elements.push(
       <line key={`ld${i}`} x1={x1} y1={cy} x2={x2} y2={cy}
@@ -426,13 +426,13 @@ function FinishDescRow({
   const distText = legDist != null ? formatDistance(legDist) : ''
 
   const W = 256
-  const CY = 16
+  const CY = 18
   const sw = 1.5
-  const circleR = 6
+  const circleR = 9
   const circleX = 18
   const finishX = W - 18
-  const finishR = 6
-  const finishRInner = 4
+  const finishR = 9
+  const finishRInner = 6
 
   const contentLeft = circleX + circleR + 3
   const contentRight = finishX - finishR - 3
