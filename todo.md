@@ -1,6 +1,6 @@
 ### Bugs
 - [ ] ocad2geojson fence rendering
-- [ ] in pdf export interaace print scale can become a NaN and fail. Also why does it suggest 1:2? 
+- [x] in pdf export interaace print scale can become a NaN and fail. Also why does it suggest 1:2? 
 ### Features
 
 ### Improvements
