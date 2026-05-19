@@ -313,6 +313,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
           useStore.getState().beginMoveControl()
+          useStore.getState().setDraggingControl(dragControlId)
           dragStarted = true
         }
         const rect = getRect()
@@ -392,7 +393,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
       dragBend = null; dragBendStarted = false
 
-      if (dragControlId && dragStarted) { dragControlId = null; dragOffset = null; dragStarted = false; return }
+      if (dragControlId && dragStarted) { useStore.getState().setDraggingControl(null); dragControlId = null; dragOffset = null; dragStarted = false; return }
       dragControlId = null; dragOffset = null; dragStarted = false
 
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }

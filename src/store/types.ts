@@ -11,6 +11,7 @@ export interface EditorState {
   selectedCourseId: string | null
   selectedVariationId: string | null
   selectedOverlayId: string | null
+  draggingControlId: string | null
   viewport: Viewport
   mapSaturation: number
   gapSize: number
@@ -107,6 +108,7 @@ export interface AppActions {
 
   setActiveTool: (tool: ActiveTool) => void
   setSelectedControl: (id: string | null) => void
+  setDraggingControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
@@ -145,6 +147,7 @@ export const defaultEditor: EditorState = {
   selectedCourseId: null,
   selectedVariationId: null,
   selectedOverlayId: null,
+  draggingControlId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,
   gapSize: 35,
