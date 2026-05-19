@@ -131,6 +131,10 @@ export const useStore = create<Store>((set, get) => {
       set(state => ({ editor: { ...state.editor, selectedControlId: id } }))
     },
 
+    setDraggingControl: (id) => {
+      set(state => ({ editor: { ...state.editor, draggingControlId: id } }))
+    },
+
     setSelectedCourse: (id) => {
       set(state => ({
         editor: {

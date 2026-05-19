@@ -8,23 +8,23 @@ A web-based orienteering course planner. Designed as a lightweight static websit
 - **Place controls** — standard orienteering controls, easy to place and move
 - **Build courses** — linear courses with automatic leg drawing and distance calculation, and Score-O (no legs, point values)
 - **Race classes** — assign classes (e.g. "Men Elite", "Women A") to courses for IOF XML export
-- **Control descriptions** — IOF 2018 standard pictographic symbols, with optional text descriptions
-- **Control description sheet** — PDF export of the clue sheets, as a separate page or overlaid on the map
-- **Butterfly loops** — define loops on a course with named branches (A, B, C…) and generate all permutation-based variations
+- **Control descriptions** — IOF 2018 standard pictographic symbols, with optional text descriptions. Place the clue sheet as a separate page or overlaid on the map
 - **Annotations** — forbidden routes, crossing points, and out-of-bounds areas
 - **Overlays** — placeable scale bars and text labels on the map
-- **Cosmetic course modifications** — hide parts of the control marker or bend legs to avoid covering important features
+- **Cosmetic course modifications** — hide parts of the control marker or bend legs to avoid covering features. Change the appearance of control symbols.
 - **Symbol specs** — ISOM 2017-2 (forest) and ISSprOM 2019 (sprint), selectable per project or per course, with spec-correct symbol dimensions
-- **Appearance** — adjustable control size, line width, colour override, and outline settings; map saturation slider (default 50%)
 - **Export** — IOF XML v3 with class assignments (opens in Condes/Purple Pen), PDF with print preview dialog (page size, orientation, print scale, description sheet placement, tiling), and `.oco` project save/load (ZIP archive)
 
 ### Additional Features
 
 - Show a rasterized version of the map or the fullly rendered vectorial image (HD)
+- Drag controls and labels to reposition them, can be course-specific
 - Set saturation of the map both while editing and for printing
 - Right-click a control on the map to remove its last occurrence from the course
-- Drag-to-reorder controls in the course editor panel
+- Drag-to-reorder controls in the course editor panel (clue sheet view)
 - Butterfly loops
+- Automatically suggest a scale for printing
+- Tiled PDF export when map extends beyond page
 
 ## Development roadmap
 
@@ -54,6 +54,7 @@ A web-based orienteering course planner. Designed as a lightweight static websit
 
 - [ ] Harden IOF XML export
 - [ ] Fix some render errors 
+- [ ] Fix rendering of some clue sheet modifiers
 - [ ] Additional loop types
 - [ ] KML/GPX export
 - [ ] CMYK/offset printing 
