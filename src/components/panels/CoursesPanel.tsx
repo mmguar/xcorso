@@ -12,8 +12,6 @@ function CourseEditor({ course }: { course: Course }) {
   const project = useStore(s => s.project!)
   const reorderCourseControls = useStore(s => s.reorderCourseControls)
   const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
-  const updateCourseName = useStore(s => s.updateCourseName)
-  const updateCourseColor = useStore(s => s.updateCourseColor)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
   const updateCourseFinishType = useStore(s => s.updateCourseFinishType)
   const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
@@ -25,35 +23,12 @@ function CourseEditor({ course }: { course: Course }) {
 
   const distances = computeCourseDistances(course, project.controls, project.map)
 
-  const [editingName, setEditingName] = useState(false)
-  const [nameVal, setNameVal] = useState(course.name)
   const [codesInput, setCodesInput] = useState('')
 
   return (
-    <div className="border border-orange-200 rounded-xl overflow-hidden mb-2">
-      {/* Course header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-orange-50">
-        <input
-          type="color"
-          value={course.color}
-          onChange={e => updateCourseColor(course.id, e.target.value)}
-          className="w-5 h-5 rounded cursor-pointer border-0 p-0"
-          title="Course color"
-        />
-        {editingName ? (
-          <input
-            autoFocus
-            className="flex-1 text-sm font-semibold bg-white border rounded px-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-            value={nameVal}
-            onChange={e => setNameVal(e.target.value)}
-            onBlur={() => { updateCourseName(course.id, nameVal); setEditingName(false) }}
-            onKeyDown={e => { if (e.key === 'Enter') { updateCourseName(course.id, nameVal); setEditingName(false) } }}
-          />
-        ) : (
-          <span className="flex-1 text-sm font-semibold cursor-pointer" onDoubleClick={() => setEditingName(true)}>
-            {course.name}
-          </span>
-        )}
+    <div className="border border-orange-200 rounded-xl rounded-t-none border-t-0 overflow-hidden mb-2">
+      {/* Course metadata toolbar */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
         <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border">
           {course.type === 'score' ? 'Score-O' : 'Linear'}
         </span>
@@ -68,6 +43,7 @@ function CourseEditor({ course }: { course: Course }) {
             <option key={key} value={key}>{label}</option>
           ))}
         </select>
+        <div className="flex-1" />
         <button
           onClick={() => deleteCourse(course.id)}
           className="text-gray-300 hover:text-red-500 transition-colors"
@@ -286,6 +262,75 @@ function ClassesSection() {
   )
 }
 
+function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSelect }: {
+  course: Course
+  isSelected: boolean
+  isExpanded: boolean
+  onToggleExpand: () => void
+  onToggleSelect: () => void
+}) {
+  const updateCourseName = useStore(s => s.updateCourseName)
+  const updateCourseColor = useStore(s => s.updateCourseColor)
+  const [editingName, setEditingName] = useState(false)
+  const [nameVal, setNameVal] = useState(course.name)
+
+  return (
+    <div>
+      <div
+        className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+          isSelected
+            ? 'bg-orange-100'
+            : 'hover:bg-gray-50'
+        } ${isExpanded ? 'rounded-t-lg border border-b-0 border-orange-200' : 'rounded-lg mb-1'}`}
+      >
+        <button
+          onClick={e => { e.stopPropagation(); onToggleExpand() }}
+          className="text-gray-400 hover:text-orange-600 transition-colors shrink-0"
+        >
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        {isExpanded ? (
+          <input
+            type="color"
+            value={course.color}
+            onChange={e => updateCourseColor(course.id, e.target.value)}
+            className="w-4 h-4 rounded cursor-pointer border-0 p-0 shrink-0"
+            title="Course color"
+            onClick={e => e.stopPropagation()}
+          />
+        ) : (
+          <div className="w-3 h-3 rounded-full shrink-0" style={{ background: course.color }} />
+        )}
+        <div
+          onClick={onToggleSelect}
+          className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
+        >
+          {editingName ? (
+            <input
+              autoFocus
+              className="flex-1 text-sm font-semibold bg-white border rounded px-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              value={nameVal}
+              onClick={e => e.stopPropagation()}
+              onChange={e => setNameVal(e.target.value)}
+              onBlur={() => { updateCourseName(course.id, nameVal); setEditingName(false) }}
+              onKeyDown={e => { if (e.key === 'Enter') { updateCourseName(course.id, nameVal); setEditingName(false) } }}
+            />
+          ) : (
+            <span
+              className="text-sm font-medium flex-1 truncate"
+              onDoubleClick={e => { e.stopPropagation(); setNameVal(course.name); setEditingName(true) }}
+            >
+              {course.name}
+            </span>
+          )}
+          <span className="text-xs text-gray-400 shrink-0">{course.controls.length} ctrls</span>
+        </div>
+      </div>
+      {isExpanded && <CourseEditor course={course} />}
+    </div>
+  )
+}
+
 export function CoursesPanel() {
   useRenderTracker('CoursesPanel')
   const project = useStore(s => s.project!)
@@ -299,13 +344,13 @@ export function CoursesPanel() {
     <div className="flex flex-col h-full">
       <div className="flex gap-2 p-2 border-b border-gray-100">
         <button
-          onClick={() => { const c = addCourse(`Course ${project.courses.length + 1}`); setExpanded(p => new Set([...p, c.id])) }}
+          onClick={() => { const c = addCourse(`Course ${project.courses.length + 1}`); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors"
         >
           <Plus size={13} /> Linear course
         </button>
         <button
-          onClick={() => { const c = addCourse(`Score ${project.courses.length + 1}`, 'score'); setExpanded(p => new Set([...p, c.id])) }}
+          onClick={() => { const c = addCourse(`Score ${project.courses.length + 1}`, 'score'); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-500 text-white rounded-lg px-3 py-1.5 hover:bg-orange-600 transition-colors"
         >
           <Plus size={13} /> Score-O
@@ -335,43 +380,23 @@ export function CoursesPanel() {
           </div>
         ) : (
           project.courses.map(course => (
-            <div key={course.id}>
-              {/* Collapsed header */}
-              <div
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-1 transition-colors ${
-                  course.id === selectedCourseId
-                    ? 'bg-orange-100'
-                    : 'hover:bg-gray-50'
-                }`}
-              >
-                <button
-                  onClick={e => {
-                    e.stopPropagation()
-                    setExpanded(prev => {
-                      const next = new Set(prev)
-                      if (next.has(course.id)) next.delete(course.id); else next.add(course.id)
-                      return next
-                    })
-                  }}
-                  className="text-gray-400 hover:text-orange-600 transition-colors shrink-0"
-                >
-                  {expanded.has(course.id)
-                    ? <ChevronDown size={14} />
-                    : <ChevronRight size={14} />}
-                </button>
-                <div
-                  onClick={() => {
-                    setSelectedCourse(course.id === selectedCourseId ? null : course.id)
-                  }}
-                  className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
-                >
-                  <div className="w-3 h-3 rounded-full shrink-0" style={{ background: course.color }} />
-                  <span className="text-sm font-medium flex-1 truncate">{course.name}</span>
-                  <span className="text-xs text-gray-400 shrink-0">{course.controls.length} controls</span>
-                </div>
-              </div>
-              {expanded.has(course.id) && <CourseEditor course={course} />}
-            </div>
+            <CourseRow
+              key={course.id}
+              course={course}
+              isSelected={course.id === selectedCourseId}
+              isExpanded={expanded.has(course.id)}
+              onToggleExpand={() => {
+                const wasExpanded = expanded.has(course.id)
+                setExpanded(prev => {
+                  const next = new Set(prev)
+                  if (wasExpanded) next.delete(course.id); else next.add(course.id)
+                  return next
+                })
+                if (wasExpanded) setSelectedCourse(null)
+                else setSelectedCourse(course.id)
+              }}
+              onToggleSelect={() => setSelectedCourse(course.id === selectedCourseId ? null : course.id)}
+            />
           ))
         )}
 
