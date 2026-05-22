@@ -1,8 +1,8 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import type { Control, Course, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
-import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm } from '../../lib/courseUtils'
+import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import type { SymbolDims } from '../../lib/symbolSpec'
 
@@ -243,6 +243,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const draggingControlId = useStore(s => s.editor.draggingControlId)
   const appearance = useStore(s => s.editor.appearance)
   const projectSpec = useStore(s => s.project!.spec)
+  const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
 
   const spec = resolveSpec(projectSpec, selectedCourse?.spec)
   const dims = getSymbolDims(spec)
@@ -256,12 +257,26 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     ? buildSeqMap(selectedCourse, controls)
     : null
 
+  const submapInfo = useMemo(() => {
+    if (!selectedCourse || selectedSubmapIndex == null) return null
+    const submaps = computeSubmaps(selectedCourse, controls)
+    if (selectedSubmapIndex >= submaps.length) return null
+    const submap = submaps[selectedSubmapIndex]
+    const controlIds = new Set(submap.controls.map(cc => cc.controlId))
+    const firstCcId = submap.controls[0]?.controlId
+    const lastCcId = submap.controls[submap.controls.length - 1]?.controlId
+    return { controlIds, firstCcId, lastCcId }
+  }, [selectedCourse, selectedSubmapIndex, controls])
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {controls.map(control => {
         const isSelected = control.id === selectedId
         const isInCourse = courseControlIds?.has(control.id) ?? false
         const isCourseMode = courseControlIds !== null
+        const isInSubmap = submapInfo ? submapInfo.controlIds.has(control.id) : true
+
+        if (isCourseMode && submapInfo && !isInSubmap && !isSelected) return null
 
         let color: string
         let opacity = 1
@@ -293,10 +308,20 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         const cc = selectedCourse?.controls.find(cc => cc.controlId === control.id)
         const labelOffset = cc?.labelOffset
 
-        const Shape = control.type === 'start' ? StartTriangle
-          : control.type === 'finish' ? FinishCircles
-          : control.type === 'exchange' ? ExchangeCircle
-          : ControlCircle
+        let Shape: (props: ShapeProps) => React.ReactNode
+        if (control.type === 'start') {
+          Shape = StartTriangle
+        } else if (control.type === 'finish') {
+          Shape = FinishCircles
+        } else if (control.type === 'exchange') {
+          if (submapInfo && control.id === submapInfo.lastCcId) {
+            Shape = ControlCircle
+          } else {
+            Shape = ExchangeCircle
+          }
+        } else {
+          Shape = ControlCircle
+        }
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId
 

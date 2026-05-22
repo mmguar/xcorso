@@ -106,6 +106,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const appearance = useStore(s => s.editor.appearance)
   const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
+  const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const layoutCourse = useStore(s => {
@@ -865,6 +866,7 @@ export function MapCanvas({ loadedMap }: Props) {
             showBendHandles={activeTool === 'bend'}
             appearance={appearance}
             projectSpec={projectSpec}
+            selectedSubmapIndex={selectedSubmapIndex}
           />
           <DragLegsLayer
             draggingControlId={draggingControlId}
