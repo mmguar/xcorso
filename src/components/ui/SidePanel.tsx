@@ -206,7 +206,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {courses.length > 0 && (
           <>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
-            <div className="flex items-center gap-1 overflow-x-auto">
+            <div className="flex items-center gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
