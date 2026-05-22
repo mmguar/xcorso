@@ -26,8 +26,6 @@ function CourseEditor({ course }: { course: Course }) {
   const handleRemove = useCallback((ccId: string) => removeControlFromCourse(course.id, ccId), [removeControlFromCourse, course.id])
   const handleReorder = useCallback((reordered: CourseControl[]) => reorderCourseControls(course.id, reordered), [reorderCourseControls, course.id])
 
-  const [editingName, setEditingName] = useState(false)
-  const [nameVal, setNameVal] = useState(course.name)
   const [codesInput, setCodesInput] = useState('')
 
   return (
