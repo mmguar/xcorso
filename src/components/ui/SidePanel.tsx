@@ -206,7 +206,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {courses.length > 0 && (
           <>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
-            <div className="flex items-center gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <div className="flex items-center gap-1 py-0.5">
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
@@ -218,7 +218,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
                     }}
                     className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
                       isActive
-                        ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
+                        ? 'ring-2 ring-orange-500 ring-offset-1'
                         : 'opacity-60 hover:opacity-100'
                     }`}
                     style={{ background: course.color, color: 'white' }}
