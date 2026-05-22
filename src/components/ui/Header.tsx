@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, FileDown, Map } from 'lucide-react'
+import { Download, FileDown, Map, ImageUp } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import { PdfExportDialog } from '../PdfExportDialog'
-import type { EventSpec } from '../../types'
+import type { EventSpec, MapType } from '../../types'
+
+const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
 interface Props { onGoHome: () => void }
 
@@ -16,9 +18,11 @@ export function Header({ onGoHome }: Props) {
   const updateProjectSpec = useStore(s => s.updateProjectSpec)
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
+  const replaceMapFile = useStore(s => s.replaceMapFile)
   const [exportOpen, setExportOpen] = useState(false)
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
+  const mapInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!exportOpen) return
@@ -41,6 +45,14 @@ export function Header({ onGoHome }: Props) {
     const blob = new Blob([xml], { type: 'application/xml' })
     downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}_iof3.xml`)
     setExportOpen(false)
+  }
+
+  async function handleReplaceMap(file: File) {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!MAP_EXTENSIONS.has(ext)) return
+    const data = await file.arrayBuffer()
+    const type: MapType = ext === 'ocd' ? 'ocad' : ext === 'pdf' ? 'pdf' : 'bitmap'
+    replaceMapFile(file.name, type, data)
   }
 
   return (
@@ -97,6 +109,23 @@ export function Header({ onGoHome }: Props) {
           <Download size={14} />
           <span className="hidden sm:inline">Save .oco</span>
         </button>
+
+        {/* Replace map */}
+        <button
+          onClick={() => mapInputRef.current?.click()}
+          className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors"
+          title="Replace map file (keeps controls in place)"
+        >
+          <ImageUp size={14} />
+          <span className="hidden sm:inline">Replace map</span>
+        </button>
+        <input
+          ref={mapInputRef}
+          type="file"
+          accept=".ocd,.pdf,image/*"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleReplaceMap(f); e.target.value = '' }}
+        />
 
         {/* Export */}
         <div className="relative" ref={exportRef}>

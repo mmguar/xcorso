@@ -107,6 +107,14 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
+    replaceMapFile: (filename, type, mapData) => {
+      mutateProject(p => {
+        p.map.filename = filename
+        p.map.type = type
+      })
+      set({ mapFileData: mapData, loadedMap: null })
+    },
+
     // ── Domain slices ────────────────────────────────────────────────────
 
     ...createControlsSlice(set, get, h),
