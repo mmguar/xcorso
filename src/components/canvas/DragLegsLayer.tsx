@@ -214,9 +214,10 @@ export const DragLegsLayer = memo(function DragLegsLayer({
       }
     }
 
-    const mid = pointAlongPolyline(clippedPts, 0.5)
-    if (mid) {
-      elements.push(renderArrow(mid.x, mid.y, mid.angle, arrowLen, arrowWidth, arrowColor, `${key}-arrow`))
+    const arrowFraction = leg.fromControlId === draggingControlId ? 0.15 : 0.85
+    const arrowPt = pointAlongPolyline(clippedPts, arrowFraction)
+    if (arrowPt) {
+      elements.push(renderArrow(arrowPt.x, arrowPt.y, arrowPt.angle, arrowLen, arrowWidth, arrowColor, `${key}-arrow`))
     }
 
     if (leg.courseNames.length > 0) {
