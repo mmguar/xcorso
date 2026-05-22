@@ -275,16 +275,15 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         const isInCourse = courseControlIds?.has(control.id) ?? false
         const isCourseMode = courseControlIds !== null
         const isInSubmap = submapInfo ? submapInfo.controlIds.has(control.id) : true
-
-        if (isCourseMode && submapInfo && !isInSubmap && !isSelected) return null
+        const isActiveInCourse = isInCourse && isInSubmap
 
         let color: string
         let opacity = 1
         if (isSelected) {
           color = '#f59e0b'
-        } else if (appearance.color) {
+        } else if (appearance.color && isActiveInCourse) {
           color = appearance.color
-        } else if (isCourseMode && isInCourse) {
+        } else if (isCourseMode && isActiveInCourse) {
           color = selectedCourse!.color
         } else if (isCourseMode) {
           color = '#ec4899'
