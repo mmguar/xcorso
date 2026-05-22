@@ -45,15 +45,16 @@ interface RowData {
 
 export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
-  const project = useStore(s => s.project!)
+  const controls = useStore(s => s.project!.controls)
+  const mapConfig = useStore(s => s.project!.map)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
   const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
-  const controlMap = new Map(project.controls.map(c => [c.id, c]))
-  const submaps = computeSubmaps(course, project.controls)
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const submaps = computeSubmaps(course)
   const hasSubmaps = submaps.length > 1
 
   // Map exchange courseControl IDs to the submap they END (the next submap starts with same exchange)
@@ -65,7 +66,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
     }
   }
 
-  const distances = computeCourseDistances(course, project.controls, project.map)
+  const distances = computeCourseDistances(course, controls, mapConfig)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
   const showExtraCol = true
