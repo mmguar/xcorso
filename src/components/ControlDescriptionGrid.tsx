@@ -18,7 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields, isDimensionText } from '../lib/iofSymbols'
-import { defaultControlLabel } from '../lib/courseUtils'
+import { defaultControlLabel, computeSubmaps } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
@@ -48,7 +48,21 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
   const project = useStore(s => s.project!)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
+  const setExchangeMode = useStore(s => s.setExchangeMode)
+  const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
+  const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
+  const submaps = computeSubmaps(course, project.controls)
+  const hasSubmaps = submaps.length > 1
+
+  // Map exchange courseControl IDs to the submap they END (the next submap starts with same exchange)
+  const exchangeCcSubmapEnd = new Map<string, number>()
+  if (hasSubmaps) {
+    for (let si = 0; si < submaps.length - 1; si++) {
+      const lastCc = submaps[si].controls[submaps[si].controls.length - 1]
+      exchangeCcSubmapEnd.set(lastCc.id, si)
+    }
+  }
 
   const distances = computeCourseDistances(course, project.controls, project.map)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
@@ -141,6 +155,33 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                   {course.climb != null && course.climb > 0 && (
                     <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
                   )}
+                  {hasSubmaps && (
+                    <span className="ml-2">
+                      <button
+                        onClick={() => setSelectedSubmap(null)}
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors ${
+                          selectedSubmapIndex === null
+                            ? 'bg-orange-500 text-white'
+                            : 'text-orange-600 hover:bg-orange-50'
+                        }`}
+                      >
+                        All
+                      </button>
+                      {submaps.map(sm => (
+                        <button
+                          key={sm.index}
+                          onClick={() => setSelectedSubmap(sm.index)}
+                          className={`ml-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors ${
+                            selectedSubmapIndex === sm.index
+                              ? 'bg-orange-500 text-white'
+                              : 'text-orange-600 hover:bg-orange-50'
+                          }`}
+                        >
+                          {sm.label}
+                        </button>
+                      ))}
+                    </span>
+                  )}
                 </td>
                 {showDist && <td />}
               </tr>
@@ -153,18 +194,29 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
                 </tr>
               ) : (
                 <>
-                {rows.map((row) => (
-                  <SortableDescRow
-                    key={row.cc.id}
-                    row={row}
-                    courseId={course.id}
-                    showDist={showDist}
-                    picker={picker}
-                    setPicker={setPicker}
-                    onRemove={onRemove}
-                    onToggleLoop={toggleCourseLoop}
-                  />
-                ))}
+                {rows.map((row) => {
+                  const submapEndIdx = exchangeCcSubmapEnd.get(row.cc.id)
+                  return (
+                    <SortableDescRow
+                      key={row.cc.id}
+                      row={row}
+                      courseId={course.id}
+                      showDist={showDist}
+                      picker={picker}
+                      setPicker={setPicker}
+                      onRemove={onRemove}
+                      onToggleLoop={toggleCourseLoop}
+                      exchangeSeparator={submapEndIdx != null ? {
+                        submapEndIdx,
+                        nextSubmapLabel: submaps[submapEndIdx + 1]?.label ?? '',
+                        exchangeMode: row.cc.exchangeMode ?? 'exchange',
+                        onModeChange: (mode) => setExchangeMode(course.id, row.cc.id, mode),
+                        onSelectSubmap: setSelectedSubmap,
+                        selectedSubmapIndex,
+                      } : undefined}
+                    />
+                  )
+                })}
                 {finishRow && (
                     <FinishDescRow
                       row={finishRow}
@@ -200,6 +252,15 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
   )
 }
 
+interface ExchangeSeparatorProps {
+  submapEndIdx: number
+  nextSubmapLabel: string
+  exchangeMode: 'exchange' | 'flip'
+  onModeChange: (mode: 'exchange' | 'flip') => void
+  onSelectSubmap: (index: number | null) => void
+  selectedSubmapIndex: number | null
+}
+
 function SortableDescRow({
   row,
   courseId,
@@ -208,6 +269,7 @@ function SortableDescRow({
   setPicker,
   onRemove,
   onToggleLoop,
+  exchangeSeparator,
 }: {
   row: RowData
   courseId: string
@@ -216,6 +278,7 @@ function SortableDescRow({
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
+  exchangeSeparator?: ExchangeSeparatorProps
 }) {
   const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
   const {
@@ -304,7 +367,113 @@ function SortableDescRow({
           </td>
         </tr>
       )}
+      {exchangeSeparator && (
+        <>
+          <ExchangeRow
+            exchangeMode={exchangeSeparator.exchangeMode}
+            onModeChange={exchangeSeparator.onModeChange}
+            showDist={showDist}
+          />
+          <RestartRow
+            ctrl={ctrl}
+            submapLabel={exchangeSeparator.nextSubmapLabel}
+            submapIndex={exchangeSeparator.submapEndIdx + 1}
+            onSelectSubmap={exchangeSeparator.onSelectSubmap}
+            selectedSubmapIndex={exchangeSeparator.selectedSubmapIndex}
+            showDist={showDist}
+          />
+        </>
+      )}
     </>
+  )
+}
+
+function ExchangeRow({
+  exchangeMode,
+  onModeChange,
+  showDist,
+}: {
+  exchangeMode: 'exchange' | 'flip'
+  onModeChange: (mode: 'exchange' | 'flip') => void
+  showDist: boolean
+}) {
+  return (
+    <tr>
+      <td colSpan={8} className={`${BORDER} relative`} style={{ height: CELL, padding: 0 }}>
+        <div className="flex items-center justify-center h-full gap-2">
+          {exchangeMode === 'flip' ? (
+            <svg width="48" height="16" viewBox="0 0 48 16">
+              <rect x="2" y="2" width="44" height="12" fill="none" stroke="black" strokeWidth="1.5" />
+            </svg>
+          ) : (
+            <span className="text-[10px] font-bold tracking-wider text-gray-600">EXCHANGE</span>
+          )}
+          <select
+            value={exchangeMode}
+            onChange={e => onModeChange(e.target.value as 'exchange' | 'flip')}
+            className="text-[10px] border border-gray-300 rounded px-1 py-0.5 bg-white"
+          >
+            <option value="exchange">Exchange</option>
+            <option value="flip">Flip</option>
+          </select>
+        </div>
+      </td>
+      {showDist && <td />}
+    </tr>
+  )
+}
+
+function RestartRow({
+  ctrl,
+  submapLabel,
+  submapIndex,
+  onSelectSubmap,
+  selectedSubmapIndex,
+  showDist,
+}: {
+  ctrl: Control
+  submapLabel: string
+  submapIndex: number
+  onSelectSubmap: (index: number | null) => void
+  selectedSubmapIndex: number | null
+  showDist: boolean
+}) {
+  return (
+    <tr>
+      <td className={`${BORDER} text-center`} style={{ width: CELL, height: CELL }}>
+        <svg width={CELL - 4} height={CELL - 4} viewBox="0 0 24 24" className="inline-block">
+          <polygon points="12,4 4,20 20,20" fill="none" stroke="black" strokeWidth="1.5" strokeLinejoin="round" />
+        </svg>
+      </td>
+      <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }} />
+      {columns.map(col => {
+        const field = columnFields[col.id]
+        const value = ctrl.description?.[field]
+        return (
+          <td key={col.id} className={`${BORDER} text-center`} style={{ width: CELL, height: CELL, padding: 0 }}>
+            {value && (
+              col.id === 'F' && isDimensionText(value)
+                ? <span className="text-[9px] font-bold leading-none">{value}</span>
+                : <IofSymbolIcon code={value} size={CELL - 4} />
+            )}
+          </td>
+        )
+      })}
+      {showDist && (
+        <td className="pl-1.5 whitespace-nowrap">
+          <button
+            onClick={() => onSelectSubmap(submapIndex)}
+            className={`text-[10px] font-medium px-1 py-0.5 rounded transition-colors ${
+              selectedSubmapIndex === submapIndex
+                ? 'bg-orange-500 text-white'
+                : 'text-orange-600 hover:bg-orange-50'
+            }`}
+          >
+            {submapLabel}
+          </button>
+        </td>
+      )}
+    </tr>
   )
 }
 
