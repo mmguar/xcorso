@@ -67,13 +67,13 @@ export const useStore = create<Store>((set, get) => {
         scaleBars: [],
         textLabels: [],
       }
-      set({ project, mapFileData: mapData, undoStack: [], redoStack: [] })
+      set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
     },
 
     loadProject: (project, mapData) => {
       if (!project.scaleBars) project.scaleBars = []
       if (!project.textLabels) project.textLabels = []
-      set({ project, mapFileData: mapData, undoStack: [], redoStack: [], editor: defaultEditor })
+      set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
     },
 
     updateProjectName: (name) => {
