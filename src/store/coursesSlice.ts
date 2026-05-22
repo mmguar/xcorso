@@ -265,7 +265,16 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const course = p.courses.find(c => c.id === courseId)
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.exchangeMode = mode === 'exchange' ? undefined : mode
+        if (cc) cc.exchangeMode = mode
+      })
+    },
+
+    toggleExchangeControl: (courseId: string, courseControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.exchangeMode = cc.exchangeMode ? undefined : 'exchange'
       })
     },
 

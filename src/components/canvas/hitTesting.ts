@@ -210,7 +210,7 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     const cr = labelDims.controlR * upm * controlScale
     const fontSize = cr * 1.1 * vp.scale
     let labelText: string
-    if (seqMap && (ctrl.type === 'control' || ctrl.type === 'exchange')) {
+    if (seqMap && ctrl.type === 'control') {
       const seqs = seqMap.get(ctrl.id)
       labelText = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(ctrl)
     } else {

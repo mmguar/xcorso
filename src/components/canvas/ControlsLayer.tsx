@@ -244,6 +244,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const appearance = useStore(s => s.editor.appearance)
   const projectSpec = useStore(s => s.project!.spec)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
+  const allCourses = useStore(s => s.project!.courses)
 
   const spec = resolveSpec(projectSpec, selectedCourse?.spec)
   const dims = getSymbolDims(spec)
@@ -267,6 +268,17 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     const lastCcId = submap.controls[submap.controls.length - 1]?.controlId
     return { controlIds, firstCcId, lastCcId }
   }, [selectedCourse, selectedSubmapIndex, controls])
+
+  const globalExchangeIds = useMemo(() => {
+    if (selectedCourse) return null
+    const ids = new Set<string>()
+    for (const course of allCourses) {
+      for (const cc of course.controls) {
+        if (cc.exchangeMode) ids.add(cc.controlId)
+      }
+    }
+    return ids
+  }, [selectedCourse, allCourses])
 
   return (
     <g style={{ pointerEvents: 'none' }}>
@@ -293,14 +305,16 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         }
 
         let label: string
-        if (sequenceMap && (control.type === 'control' || control.type === 'exchange')) {
+        if (sequenceMap && control.type === 'control') {
           const seqs = sequenceMap.get(control.id)
           label = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(control)
         } else {
           label = defaultControlLabel(control)
         }
 
-        if (submapInfo && control.type === 'exchange' && control.id === submapInfo.firstCcId) {
+        const cc = selectedCourse?.controls.find(cc => cc.controlId === control.id)
+
+        if (submapInfo && cc?.exchangeMode && control.id === submapInfo.firstCcId) {
           label = ''
         }
 
@@ -308,7 +322,6 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           label += ` [${control.points}]`
         }
 
-        const cc = selectedCourse?.controls.find(cc => cc.controlId === control.id)
         const labelOffset = cc?.labelOffset
 
         let Shape: (props: ShapeProps) => React.ReactNode
@@ -316,14 +329,17 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           Shape = StartTriangle
         } else if (control.type === 'finish') {
           Shape = FinishCircles
-        } else if (control.type === 'exchange') {
-          if (submapInfo && control.id === submapInfo.lastCcId) {
+        } else if (selectedCourse) {
+          const isExchange = !!cc?.exchangeMode
+          if (isExchange && submapInfo && control.id === submapInfo.lastCcId) {
             Shape = ControlCircle
-          } else {
+          } else if (isExchange) {
             Shape = ExchangeCircle
+          } else {
+            Shape = ControlCircle
           }
         } else {
-          Shape = ControlCircle
+          Shape = globalExchangeIds?.has(control.id) ? ExchangeCircle : ControlCircle
         }
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId

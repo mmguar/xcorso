@@ -1,5 +1,5 @@
 import { memo, useState, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { GripVertical, X } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -45,14 +45,16 @@ interface RowData {
 
 export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
-  const project = useStore(s => s.project!)
+  const controls = useStore(s => s.project!.controls)
+  const mapConfig = useStore(s => s.project!.map)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
+  const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
   const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
-  const controlMap = new Map(project.controls.map(c => [c.id, c]))
-  const submaps = computeSubmaps(course, project.controls)
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const submaps = computeSubmaps(course)
   const hasSubmaps = submaps.length > 1
 
   // Map exchange courseControl IDs to the submap they END (the next submap starts with same exchange)
@@ -64,11 +66,10 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
     }
   }
 
-  const distances = computeCourseDistances(course, project.controls, project.map)
+  const distances = computeCourseDistances(course, controls, mapConfig)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
-  const showDist = distances.legs.length > 0
-  const showExtraCol = showDist || hasSubmaps
+  const showExtraCol = true
 
   // Count occurrences of each controlId to detect fork-eligible controls
   const controlIdCounts = new Map<string, number>()
@@ -96,13 +97,13 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
       filteredIdx++
       continue
     }
-    if (ctrl.type === 'control' || ctrl.type === 'exchange') seq++
+    if (ctrl.type === 'control') seq++
     const isFirstOccurrence = !seenControlIds.has(cc.controlId)
     seenControlIds.add(cc.controlId)
     rows.push({
       cc,
       ctrl,
-      seq: (ctrl.type === 'control' || ctrl.type === 'exchange') ? seq : 0,
+      seq: ctrl.type === 'control' ? seq : 0,
       legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
       forkEligible: isFirstOccurrence && ctrl.type === 'control' && (controlIdCounts.get(cc.controlId) ?? 0) >= 3,
       isLoop: loopForkIds.has(cc.controlId),
@@ -202,6 +203,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       setPicker={setPicker}
                       onRemove={onRemove}
                       onToggleLoop={toggleCourseLoop}
+                      onToggleExchange={(ccId) => toggleExchangeControl(course.id, ccId)}
                       textDescriptions={course.textDescriptions}
                       submapButton={startButton}
                       exchangeSeparator={submapEndIdx != null ? {
@@ -274,6 +276,7 @@ function SortableDescRow({
   setPicker,
   onRemove,
   onToggleLoop,
+  onToggleExchange,
   textDescriptions,
   submapButton,
   exchangeSeparator,
@@ -285,6 +288,7 @@ function SortableDescRow({
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
+  onToggleExchange?: (ccId: string) => void
   textDescriptions?: boolean
   submapButton?: SubmapButtonProps
   exchangeSeparator?: ExchangeSeparatorProps
@@ -321,6 +325,7 @@ function SortableDescRow({
           {...attributes}
           {...listeners}
         >
+          <GripVertical size={14} strokeWidth={2.5} className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 group-hover:text-gray-400" />
           {seqLabel}
           {onRemove && (
             <button
@@ -359,7 +364,7 @@ function SortableDescRow({
           )
         })}
         {showExtraCol && (
-          <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
+          <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap relative">
             {submapButton ? (
               <button
                 onClick={() => submapButton.onSelect(submapButton.index)}
@@ -372,6 +377,22 @@ function SortableDescRow({
                 {submapButton.label}
               </button>
             ) : legDist != null ? formatDistance(legDist) : ''}
+            {ctrl.type === 'control' && onToggleExchange && (
+              <button
+                onClick={() => onToggleExchange(cc.id)}
+                title={cc.exchangeMode ? 'Remove exchange' : 'Set as exchange'}
+                className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity z-10 ${
+                  cc.exchangeMode
+                    ? 'bg-orange-500 text-white opacity-100'
+                    : 'bg-gray-300 hover:bg-orange-400 text-white opacity-60 group-hover:opacity-100'
+                }`}
+              >
+                <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="7,3 17,12 7,21" />
+                  <polyline points="17,3 7,12 17,21" />
+                </svg>
+              </button>
+            )}
           </td>
         )}
       </tr>

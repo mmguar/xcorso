@@ -17,7 +17,6 @@ const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
   { tool: 'place-start', label: 'Place Start', shortcut: 'S' },
   { tool: 'place-finish', label: 'Place Finish', shortcut: 'F' },
   { tool: 'place-control', label: 'Place Control', shortcut: 'C' },
-  { tool: 'place-exchange', label: 'Place Map Exchange', shortcut: 'X' },
   { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
   { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
   { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
@@ -33,12 +32,6 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'place-start': s => <Triangle size={s} />,
   'place-finish': s => <Target size={s} />,
   'place-control': s => <Circle size={s} />,
-  'place-exchange': s => (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polygon points="12,18 5.5,7.5 18.5,7.5" fill="none" />
-    </svg>
-  ),
   'forbidden-route': s => <X size={s} />,
   'crossing-point': s => <ChevronsRightLeft size={s} />,
   'out-of-bounds': s => <Ban size={s} />,

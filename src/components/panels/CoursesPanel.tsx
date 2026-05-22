@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
-import type { Course, EventSpec, FinishType } from '../../types'
+import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
   useRenderTracker('CourseEditor')
@@ -24,6 +24,9 @@ function CourseEditor({ course }: { course: Course }) {
   const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
 
   const distances = computeCourseDistances(course, project.controls, project.map)
+
+  const handleRemove = useCallback((ccId: string) => removeControlFromCourse(course.id, ccId), [removeControlFromCourse, course.id])
+  const handleReorder = useCallback((reordered: CourseControl[]) => reorderCourseControls(course.id, reordered), [reorderCourseControls, course.id])
 
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(course.name)
@@ -129,8 +132,8 @@ function CourseEditor({ course }: { course: Course }) {
       <div className="px-2 py-1.5">
         <ControlDescriptionGrid
           course={course}
-          onRemove={(ccId) => removeControlFromCourse(course.id, ccId)}
-          onReorder={(reordered) => reorderCourseControls(course.id, reordered)}
+          onRemove={handleRemove}
+          onReorder={handleReorder}
         />
       </div>
 

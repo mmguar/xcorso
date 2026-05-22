@@ -559,7 +559,7 @@ function setColor(doc: jsPDF, hex: string) {
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
 
-function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec) {
+function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec, isExchange = false) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
   const startSide = dims.startSide * sf
@@ -583,7 +583,7 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     doc.setLineWidth(finishSw)
     doc.circle(pos.x, pos.y, finishOuter, 'S')
     doc.circle(pos.x, pos.y, finishInner, 'S')
-  } else if (type === 'exchange') {
+  } else if (isExchange) {
     doc.setLineWidth(controlSw)
     doc.circle(pos.x, pos.y, controlR, 'S')
     const triPoints: [number, number][] = [90, 210, 330].map(deg => {
@@ -802,7 +802,7 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
 // ── Labelling ───────────────────────────────────────────────────────────────
 
 function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
-  if (seqMap && (c.type === 'control' || c.type === 'exchange')) {
+  if (seqMap && c.type === 'control') {
     const seqs = seqMap.get(c.id)
     return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
   }
@@ -1070,12 +1070,10 @@ export async function exportCoursePdf(
       const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
       const pageTitle = hasSubmaps ? `${course.name} — ${submap.label}` : course.name
 
-      // Detect trailing flip: last control in this submap is an exchange with flip mode (not the final submap)
       let trailingFlip = false
       if (hasSubmaps && submap.index < submaps.length - 1) {
         const lastCc = submap.controls[submap.controls.length - 1]
-        const lastCtrl = lastCc ? controlMap.get(lastCc.controlId) : null
-        if (lastCtrl?.type === 'exchange' && lastCc?.exchangeMode === 'flip') {
+        if (lastCc?.exchangeMode === 'flip') {
           trailingFlip = true
         }
       }
@@ -1165,10 +1163,9 @@ export async function exportCoursePdf(
 
             const pos = toPage(ctrl.position)
             setColor(doc, course.color)
-            const drawType = (ctrl.type === 'exchange' && hasSubmaps && cc.controlId === lastCcId)
-              ? 'control' : ctrl.type
-            drawControlSymbol(doc, drawType, pos, courseScale, courseSpec)
-            const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && ctrl.type === 'exchange'
+            const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
+            drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange)
+            const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
             if (!isSubmapStart) {
               const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)

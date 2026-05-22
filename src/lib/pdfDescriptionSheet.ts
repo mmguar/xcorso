@@ -470,7 +470,7 @@ export function drawDescriptionSheetOverlay(
 
   // Control rows (non-finish)
   for (const ctrl of nonFinish) {
-    if (ctrl.type === 'control' || ctrl.type === 'exchange') seq++
+    if (ctrl.type === 'control') seq++
     const desc = ctrl.description ?? {}
 
     doc.setDrawColor(0, 0, 0)
@@ -627,7 +627,7 @@ export function drawDescriptionSheet(
       startPage()
     }
 
-    if (ctrl.type === 'control' || ctrl.type === 'exchange') seq++
+    if (ctrl.type === 'control') seq++
     const desc: ControlDescription = ctrl.description ?? {}
 
     doc.setDrawColor(0, 0, 0)
