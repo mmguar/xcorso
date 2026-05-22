@@ -235,7 +235,7 @@ export function ControlsPanel() {
               {control.type}
             </span>
 
-            {control.type === 'control' ? (
+            {(control.type === 'control' || control.type === 'exchange') ? (
               <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
             ) : (
               <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />

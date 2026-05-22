@@ -191,6 +191,45 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
   )
 }
 
+function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
+  const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
+  const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
+  const { x, y } = control.position
+  const circumference = 2 * Math.PI * cr
+  const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
+  const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
+  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
+  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
+  // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330° (from center, measured CW from 3 o'clock)
+  const triPoints = [90, 210, 330].map(deg => {
+    const rad = (deg * Math.PI) / 180
+    return `${x + cr * Math.cos(rad)},${y + cr * Math.sin(rad)}`
+  }).join(' ')
+  return (
+    <g>
+      {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
+      {appearance.outlineEnabled && (
+        <>
+          <circle cx={x} cy={y} r={cr} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
+            {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
+          />
+          <polygon points={triPoints} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2} strokeLinejoin="round" />
+        </>
+      )}
+      <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
+        {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
+      />
+      <polygon points={triPoints} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+      <text x={lx} y={ly}
+        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
+        textAnchor="start" dominantBaseline="auto"
+        {...labelOutlineSvgProps(appearance, upm)}>
+        {label}
+      </text>
+    </g>
+  )
+}
+
 interface Props {
   controls: Control[]
   course: Course | null
@@ -240,7 +279,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         }
 
         let label: string
-        if (sequenceMap && control.type === 'control') {
+        if (sequenceMap && (control.type === 'control' || control.type === 'exchange')) {
           const seqs = sequenceMap.get(control.id)
           label = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(control)
         } else {
@@ -256,6 +295,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
         const Shape = control.type === 'start' ? StartTriangle
           : control.type === 'finish' ? FinishCircles
+          : control.type === 'exchange' ? ExchangeCircle
           : ControlCircle
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId

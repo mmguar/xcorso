@@ -494,6 +494,19 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     doc.setLineWidth(finishSw)
     doc.circle(pos.x, pos.y, finishOuter, 'S')
     doc.circle(pos.x, pos.y, finishInner, 'S')
+  } else if (type === 'exchange') {
+    doc.setLineWidth(controlSw)
+    doc.circle(pos.x, pos.y, controlR, 'S')
+    const triPoints: [number, number][] = [90, 210, 330].map(deg => {
+      const rad = (deg * Math.PI) / 180
+      return [pos.x + controlR * Math.cos(rad), pos.y + controlR * Math.sin(rad)]
+    })
+    doc.triangle(
+      triPoints[0][0], triPoints[0][1],
+      triPoints[1][0], triPoints[1][1],
+      triPoints[2][0], triPoints[2][1],
+      'S',
+    )
   } else {
     doc.setLineWidth(controlSw)
     doc.circle(pos.x, pos.y, controlR, 'S')
@@ -700,7 +713,7 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
 // ── Labelling ───────────────────────────────────────────────────────────────
 
 function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
-  if (seqMap && c.type === 'control') {
+  if (seqMap && (c.type === 'control' || c.type === 'exchange')) {
     const seqs = seqMap.get(c.id)
     return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
   }

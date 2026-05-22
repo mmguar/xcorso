@@ -66,6 +66,8 @@ export interface AppActions {
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
+  setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
+
   toggleCourseLoop: (courseId: string, forkControlId: string) => void
   removeCourseLoop: (courseId: string, loopId: string) => void
   setSelectedVariation: (id: string | null) => void

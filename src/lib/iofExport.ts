@@ -29,6 +29,7 @@ function iofControlType(type: ControlType): string {
     case 'start': return 'Start'
     case 'finish': return 'Finish'
     case 'control': return 'Control'
+    case 'exchange': return 'Control'
   }
 }
 

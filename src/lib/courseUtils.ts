@@ -44,7 +44,7 @@ export function buildSequenceMap(course: Course, controls: Control[]): Map<strin
   let seq = 1
   for (const cc of course.controls) {
     const ctrl = controls.find(c => c.id === cc.controlId)
-    if (ctrl && ctrl.type === 'control') {
+    if (ctrl && (ctrl.type === 'control' || ctrl.type === 'exchange')) {
       const existing = map.get(cc.controlId)
       if (existing) existing.push(seq)
       else map.set(cc.controlId, [seq])

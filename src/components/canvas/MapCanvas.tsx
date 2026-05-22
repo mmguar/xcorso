@@ -653,6 +653,7 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'place-start':   state.addControl('start',   mapPt); break
         case 'place-finish':  state.addControl('finish',  mapPt); break
         case 'place-control': state.addControl('control', mapPt); break
+        case 'place-exchange': state.addControl('exchange', mapPt); break
         case 'forbidden-route': state.addAnnotationPoint(mapPt); break
         case 'out-of-bounds': state.addAnnotationPoint(mapPt); break
         case 'crossing-point':

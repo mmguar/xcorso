@@ -81,13 +81,13 @@ export function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProp
       filteredIdx++
       continue
     }
-    if (ctrl.type === 'control') seq++
+    if (ctrl.type === 'control' || ctrl.type === 'exchange') seq++
     const isFirstOccurrence = !seenControlIds.has(cc.controlId)
     seenControlIds.add(cc.controlId)
     rows.push({
       cc,
       ctrl,
-      seq: ctrl.type === 'control' ? seq : 0,
+      seq: (ctrl.type === 'control' || ctrl.type === 'exchange') ? seq : 0,
       legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
       forkEligible: isFirstOccurrence && ctrl.type === 'control' && (controlIdCounts.get(cc.controlId) ?? 0) >= 3,
       isLoop: loopForkIds.has(cc.controlId),

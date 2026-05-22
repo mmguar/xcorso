@@ -260,6 +260,15 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       })
     },
 
+    setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.exchangeMode = mode === 'exchange' ? undefined : mode
+      })
+    },
+
     setSelectedVariation: (id: string | null) => {
       set(state => ({
         editor: { ...state.editor, selectedVariationId: id },
