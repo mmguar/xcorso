@@ -58,6 +58,42 @@ export function formatSequenceLabel(seqs: number[]): string {
   return seqs.join('/')
 }
 
+// ─── Submap utilities ─────────────────────────────────────────────────────
+
+export interface Submap {
+  index: number
+  controls: CourseControl[]
+  label: string
+}
+
+export function computeSubmaps(course: Course, controls: Control[]): Submap[] {
+  const getType = (id: string) => controls.find(c => c.id === id)?.type
+  const exchangeIndices: number[] = []
+  for (let i = 0; i < course.controls.length; i++) {
+    if (getType(course.controls[i].controlId) === 'exchange') exchangeIndices.push(i)
+  }
+  if (exchangeIndices.length === 0) {
+    return [{ index: 0, controls: course.controls, label: 'Map 1' }]
+  }
+  const submaps: Submap[] = []
+  let start = 0
+  for (let i = 0; i < exchangeIndices.length; i++) {
+    const end = exchangeIndices[i]
+    submaps.push({
+      index: submaps.length,
+      controls: course.controls.slice(start, end + 1),
+      label: `Map ${submaps.length + 1}`,
+    })
+    start = end
+  }
+  submaps.push({
+    index: submaps.length,
+    controls: course.controls.slice(start),
+    label: `Map ${submaps.length + 1}`,
+  })
+  return submaps
+}
+
 // ─── Loop utilities ────────────────────────────────────────────────────────
 
 export function extractBranches(course: Course, loop: CourseLoop): CourseControl[][] {
