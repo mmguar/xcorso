@@ -17,6 +17,8 @@ interface Props {
 const LIGHT_PURPLE = '#c4a0e0'
 const ARROW_LEN_MM = 2
 const ARROW_WIDTH_MM = 1.4
+const LABEL_SIZE_MM = 1.5
+const LABEL_OFFSET_MM = 2
 
 function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
   const dims = getSymbolDims(spec)
@@ -85,6 +87,16 @@ function renderArrow(
   )
 }
 
+interface CollectedLeg {
+  clippedPts: MapPoint[]
+  strokeWidth: number
+  arrowLen: number
+  arrowWidth: number
+  selectedCourseUsesThis: boolean
+  selectedCourseColor: string
+  courseNames: string[]
+}
+
 export const DragLegsLayer = memo(function DragLegsLayer({
   draggingControlId,
   courses,
@@ -99,8 +111,9 @@ export const DragLegsLayer = memo(function DragLegsLayer({
   if (!draggingControlId) return null
 
   const upm = unitsPerMm(map)
-  const elements: React.ReactNode[] = []
-  const seenLegs = new Set<string>()
+
+  // ── Pass 1: collect unique legs and their course names ─────────────────
+  const legs = new Map<string, CollectedLeg>()
 
   for (const rawCourse of courses) {
     if (rawCourse.type !== 'linear') continue
@@ -108,14 +121,9 @@ export const DragLegsLayer = memo(function DragLegsLayer({
     const course = isSelectedCourse && selectedCourse ? selectedCourse : rawCourse
     if (course.controls.length < 2) continue
 
-    const showLine = !selectedCourse || !isSelectedCourse
     const spec = resolveSpec(projectSpec, course.spec)
     const scaleFactor = specScaleFactor(spec, map.scale)
     const dims = getSymbolDims(spec)
-    const strokeWidth = dims.legW * upm * scaleFactor * appearance.lineWidth
-    const arrowLen = ARROW_LEN_MM * upm * scaleFactor
-    const arrowWidth = ARROW_WIDTH_MM * upm * scaleFactor
-    const legColor = isSelectedCourse ? (appearance.color || course.color) : LIGHT_PURPLE
 
     for (let i = 0; i < course.controls.length - 1; i++) {
       const fromCc = course.controls[i]
@@ -123,71 +131,117 @@ export const DragLegsLayer = memo(function DragLegsLayer({
       const fromControl = controlMap.get(fromCc.controlId)
       const toControl = controlMap.get(toCc.controlId)
       if (!fromControl || !toControl) continue
-
       if (fromCc.controlId !== draggingControlId && toCc.controlId !== draggingControlId) continue
 
-      const legPairKey = `${fromCc.controlId}->${toCc.controlId}`
-      if (seenLegs.has(legPairKey)) continue
-      seenLegs.add(legPairKey)
+      const legKey = `${fromCc.controlId}->${toCc.controlId}`
+      let leg = legs.get(legKey)
 
-      const fromR = clipRadius(fromControl, map.scale, upm, appearance.controlScale, spec)
-      const toR = clipRadius(toControl, map.scale, upm, appearance.controlScale, spec)
-      const bendPoints = toCc.legBendPoints
-      let clippedPts: MapPoint[]
+      if (!leg) {
+        const fromR = clipRadius(fromControl, map.scale, upm, appearance.controlScale, spec)
+        const toR = clipRadius(toControl, map.scale, upm, appearance.controlScale, spec)
+        const bendPoints = toCc.legBendPoints
+        let clippedPts: MapPoint[]
 
-      if (bendPoints && bendPoints.length > 0) {
-        const fullPath: MapPoint[] = [fromControl.position, ...bendPoints, toControl.position]
-        const totalLen = polylineLength(fullPath)
-        if (totalLen === 0) continue
-        clippedPts = clipPolylineEnd(clipPolylineStart(fullPath, fromR), toR)
-        if (clippedPts.length < 2) continue
-      } else {
-        const { x: x1, y: y1 } = fromControl.position
-        const { x: x2, y: y2 } = toControl.position
-        const dx = x2 - x1
-        const dy = y2 - y1
-        const len = Math.sqrt(dx * dx + dy * dy)
-        if (len === 0) continue
-        const ux = dx / len
-        const uy = dy / len
-        clippedPts = [
-          { x: x1 + ux * fromR, y: y1 + uy * fromR },
-          { x: x2 - ux * toR, y: y2 - uy * toR },
-        ]
-      }
-
-      const legKey = `drag-${course.id}-${fromCc.id}-${toCc.id}`
-
-      if (showLine) {
-        if (clippedPts.length === 2) {
-          elements.push(
-            <line
-              key={legKey}
-              x1={clippedPts[0].x} y1={clippedPts[0].y}
-              x2={clippedPts[1].x} y2={clippedPts[1].y}
-              stroke={LIGHT_PURPLE}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-            />
-          )
+        if (bendPoints && bendPoints.length > 0) {
+          const fullPath: MapPoint[] = [fromControl.position, ...bendPoints, toControl.position]
+          if (polylineLength(fullPath) === 0) continue
+          clippedPts = clipPolylineEnd(clipPolylineStart(fullPath, fromR), toR)
+          if (clippedPts.length < 2) continue
         } else {
-          elements.push(
-            <polyline
-              key={legKey}
-              points={clippedPts.map(p => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke={LIGHT_PURPLE}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )
+          const { x: x1, y: y1 } = fromControl.position
+          const { x: x2, y: y2 } = toControl.position
+          const dx = x2 - x1, dy = y2 - y1
+          const len = Math.sqrt(dx * dx + dy * dy)
+          if (len === 0) continue
+          const ux = dx / len, uy = dy / len
+          clippedPts = [
+            { x: x1 + ux * fromR, y: y1 + uy * fromR },
+            { x: x2 - ux * toR, y: y2 - uy * toR },
+          ]
         }
+
+        leg = {
+          clippedPts,
+          strokeWidth: dims.legW * upm * scaleFactor * appearance.lineWidth,
+          arrowLen: ARROW_LEN_MM * upm * scaleFactor,
+          arrowWidth: ARROW_WIDTH_MM * upm * scaleFactor,
+          selectedCourseUsesThis: false,
+          selectedCourseColor: '',
+          courseNames: [],
+        }
+        legs.set(legKey, leg)
       }
 
-      const mid = pointAlongPolyline(clippedPts, 0.5)
-      if (mid) {
-        elements.push(renderArrow(mid.x, mid.y, mid.angle, arrowLen, arrowWidth, legColor, `${legKey}-arrow`))
+      if (isSelectedCourse) {
+        leg.selectedCourseUsesThis = true
+        leg.selectedCourseColor = appearance.color || course.color
+      } else {
+        leg.courseNames.push(course.name)
+      }
+    }
+  }
+
+  // ── Pass 2: render ─────────────────────────────────────────────────────
+  const elements: React.ReactNode[] = []
+  const fontSize = LABEL_SIZE_MM * upm
+  const labelOffset = LABEL_OFFSET_MM * upm
+
+  for (const [key, leg] of legs) {
+    const { clippedPts, strokeWidth, arrowLen, arrowWidth } = leg
+    const showLine = !leg.selectedCourseUsesThis
+    const arrowColor = leg.selectedCourseUsesThis ? leg.selectedCourseColor : LIGHT_PURPLE
+
+    if (showLine) {
+      if (clippedPts.length === 2) {
+        elements.push(
+          <line
+            key={key}
+            x1={clippedPts[0].x} y1={clippedPts[0].y}
+            x2={clippedPts[1].x} y2={clippedPts[1].y}
+            stroke={LIGHT_PURPLE}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
+        )
+      } else {
+        elements.push(
+          <polyline
+            key={key}
+            points={clippedPts.map(p => `${p.x},${p.y}`).join(' ')}
+            fill="none"
+            stroke={LIGHT_PURPLE}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )
+      }
+    }
+
+    const mid = pointAlongPolyline(clippedPts, 0.5)
+    if (mid) {
+      elements.push(renderArrow(mid.x, mid.y, mid.angle, arrowLen, arrowWidth, arrowColor, `${key}-arrow`))
+
+      if (leg.courseNames.length > 0) {
+        const offX = -Math.sin(mid.angle) * labelOffset
+        const offY = Math.cos(mid.angle) * labelOffset
+        elements.push(
+          <text
+            key={`${key}-label`}
+            x={mid.x + offX}
+            y={mid.y + offY}
+            fontSize={fontSize}
+            fill={LIGHT_PURPLE}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            stroke="white"
+            strokeWidth={fontSize * 0.25}
+            paintOrder="stroke"
+            fontWeight={600}
+          >
+            {leg.courseNames.join(', ')}
+          </text>
+        )
       }
     }
   }
