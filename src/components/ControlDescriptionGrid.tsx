@@ -49,6 +49,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
+  const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
   const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
@@ -67,8 +68,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const distances = computeCourseDistances(course, project.controls, project.map)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
-  const showDist = distances.legs.length > 0
-  const showExtraCol = showDist || hasSubmaps
+  const showExtraCol = true
 
   // Count occurrences of each controlId to detect fork-eligible controls
   const controlIdCounts = new Map<string, number>()
@@ -96,13 +96,13 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
       filteredIdx++
       continue
     }
-    if (ctrl.type === 'control' || ctrl.type === 'exchange') seq++
+    if (ctrl.type === 'control') seq++
     const isFirstOccurrence = !seenControlIds.has(cc.controlId)
     seenControlIds.add(cc.controlId)
     rows.push({
       cc,
       ctrl,
-      seq: (ctrl.type === 'control' || ctrl.type === 'exchange') ? seq : 0,
+      seq: ctrl.type === 'control' ? seq : 0,
       legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
       forkEligible: isFirstOccurrence && ctrl.type === 'control' && (controlIdCounts.get(cc.controlId) ?? 0) >= 3,
       isLoop: loopForkIds.has(cc.controlId),
@@ -202,6 +202,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       setPicker={setPicker}
                       onRemove={onRemove}
                       onToggleLoop={toggleCourseLoop}
+                      onToggleExchange={(ccId) => toggleExchangeControl(course.id, ccId)}
                       textDescriptions={course.textDescriptions}
                       submapButton={startButton}
                       exchangeSeparator={submapEndIdx != null ? {
@@ -274,6 +275,7 @@ function SortableDescRow({
   setPicker,
   onRemove,
   onToggleLoop,
+  onToggleExchange,
   textDescriptions,
   submapButton,
   exchangeSeparator,
@@ -285,6 +287,7 @@ function SortableDescRow({
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
+  onToggleExchange?: (ccId: string) => void
   textDescriptions?: boolean
   submapButton?: SubmapButtonProps
   exchangeSeparator?: ExchangeSeparatorProps
@@ -359,7 +362,7 @@ function SortableDescRow({
           )
         })}
         {showExtraCol && (
-          <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap">
+          <td className="text-[10px] text-gray-400 pl-1.5 whitespace-nowrap relative">
             {submapButton ? (
               <button
                 onClick={() => submapButton.onSelect(submapButton.index)}
@@ -372,6 +375,22 @@ function SortableDescRow({
                 {submapButton.label}
               </button>
             ) : legDist != null ? formatDistance(legDist) : ''}
+            {ctrl.type === 'control' && onToggleExchange && (
+              <button
+                onClick={() => onToggleExchange(cc.id)}
+                title={cc.exchangeMode ? 'Remove exchange' : 'Set as exchange'}
+                className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity z-10 ${
+                  cc.exchangeMode
+                    ? 'bg-orange-500 text-white opacity-100'
+                    : 'bg-gray-300 hover:bg-orange-400 text-white opacity-60 group-hover:opacity-100'
+                }`}
+              >
+                <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="7,3 17,12 7,21" />
+                  <polyline points="17,3 7,12 17,21" />
+                </svg>
+              </button>
+            )}
           </td>
         )}
       </tr>

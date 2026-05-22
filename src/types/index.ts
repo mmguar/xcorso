@@ -40,7 +40,7 @@ export interface MapConfig {
 
 // ─── Controls ───────────────────────────────────────────────────────────────
 
-export type ControlType = 'start' | 'finish' | 'control' | 'exchange'
+export type ControlType = 'start' | 'finish' | 'control'
 
 // IOF description columns — model ready, UI deferred to Phase 3
 export interface ControlDescription {
@@ -86,7 +86,7 @@ export interface CourseControl {
   legGaps?: LegGap[]         // gaps on the leg leading TO this control
   legBendPoints?: MapPoint[] // intermediate waypoints on the leg leading TO this control
   labelOffset?: MapPoint     // offset from control center to label anchor, in map units
-  exchangeMode?: 'exchange' | 'flip'  // only meaningful when controlId references an exchange control
+  exchangeMode?: 'exchange' | 'flip'
 }
 
 // ─── Loops & Variations ────────────────────────────────────────────────────
@@ -224,7 +224,6 @@ export type ActiveTool =
   | 'place-start'
   | 'place-finish'
   | 'place-control'
-  | 'place-exchange'
   | 'forbidden-route'
   | 'crossing-point'
   | 'out-of-bounds'
