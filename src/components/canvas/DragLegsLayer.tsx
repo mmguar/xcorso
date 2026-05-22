@@ -12,6 +12,7 @@ interface Props {
   map: MapConfig
   appearance: AppearanceSettings
   projectSpec?: EventSpec
+  viewportScale: number
 }
 
 const LIGHT_PURPLE = '#c4a0e0'
@@ -85,12 +86,13 @@ function renderArrow(
   )
 }
 
+const LABEL_PX = 12
+
 interface CollectedLeg {
   clippedPts: MapPoint[]
   strokeWidth: number
   arrowLen: number
   arrowWidth: number
-  fontSize: number
   fromControlId: string
   selectedCourseUsesThis: boolean
   selectedCourseColor: string
@@ -105,6 +107,7 @@ export const DragLegsLayer = memo(function DragLegsLayer({
   map,
   appearance,
   projectSpec,
+  viewportScale,
 }: Props) {
   const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
 
@@ -165,7 +168,6 @@ export const DragLegsLayer = memo(function DragLegsLayer({
           strokeWidth: dims.legW * upm * scaleFactor * appearance.lineWidth,
           arrowLen: ARROW_LEN_MM * upm * scaleFactor,
           arrowWidth: ARROW_WIDTH_MM * upm * scaleFactor,
-          fontSize: dims.controlR * upm * scaleFactor * appearance.controlScale * 1.1,
           fromControlId: fromCc.controlId,
           selectedCourseUsesThis: false,
           selectedCourseColor: '',
@@ -186,6 +188,9 @@ export const DragLegsLayer = memo(function DragLegsLayer({
   // ── Pass 2: render lines + arrows, collect label positions ──────────
   const elements: React.ReactNode[] = []
 
+  const fontSize = LABEL_PX / viewportScale
+  const labelPerpDist = fontSize * 1.2
+
   interface LabelInfo {
     key: string
     text: string
@@ -193,7 +198,6 @@ export const DragLegsLayer = memo(function DragLegsLayer({
     y: number
     perpX: number
     perpY: number
-    fontSize: number
   }
   const labels: LabelInfo[] = []
 
@@ -238,16 +242,14 @@ export const DragLegsLayer = memo(function DragLegsLayer({
       const fraction = leg.fromControlId === draggingControlId ? 0.7 : 0.3
       const pt = pointAlongPolyline(clippedPts, fraction)
       if (pt) {
-        const perpDist = leg.fontSize * 1.2
-        const perpX = -Math.sin(pt.angle) * perpDist
-        const perpY = Math.cos(pt.angle) * perpDist
+        const perpX = -Math.sin(pt.angle) * labelPerpDist
+        const perpY = Math.cos(pt.angle) * labelPerpDist
         labels.push({
           key: `${key}-label`,
           text: leg.courseNames.join(', '),
           x: pt.x + perpX,
           y: pt.y + perpY,
           perpX, perpY,
-          fontSize: leg.fontSize,
         })
       }
     }
@@ -257,7 +259,7 @@ export const DragLegsLayer = memo(function DragLegsLayer({
   for (let i = 0; i < labels.length; i++) {
     const li = labels[i]
     for (let j = 0; j < i; j++) {
-      if (Math.hypot(li.x - labels[j].x, li.y - labels[j].y) < li.fontSize * 3) {
+      if (Math.hypot(li.x - labels[j].x, li.y - labels[j].y) < fontSize * 3) {
         li.x -= 2 * li.perpX
         li.y -= 2 * li.perpY
         break
@@ -271,12 +273,12 @@ export const DragLegsLayer = memo(function DragLegsLayer({
         key={l.key}
         x={l.x}
         y={l.y}
-        fontSize={l.fontSize}
+        fontSize={fontSize}
         fill={LIGHT_PURPLE}
         textAnchor="middle"
         dominantBaseline="middle"
         stroke="white"
-        strokeWidth={l.fontSize * 0.25}
+        strokeWidth={fontSize * 0.25}
         paintOrder="stroke"
         fontWeight="bold"
         fontFamily="sans-serif"

@@ -872,6 +872,7 @@ export function MapCanvas({ loadedMap }: Props) {
             map={map}
             appearance={appearance}
             projectSpec={projectSpec}
+            viewportScale={vp.scale}
           />
           <AnnotationsLayer
             annotations={annotations}
