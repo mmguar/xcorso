@@ -324,7 +324,7 @@ function SortableDescRow({
           {...attributes}
           {...listeners}
         >
-          <GripVertical size={14} strokeWidth={2.5} className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-300 group-hover:text-gray-400" />
+          <GripVertical size={14} strokeWidth={2.5} className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 group-hover:text-gray-400" />
           {seqLabel}
           {onRemove && (
             <button
