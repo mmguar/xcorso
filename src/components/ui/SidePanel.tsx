@@ -214,7 +214,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
                     key={course.id}
                     onClick={() => {
                       if (isActive) { setSelectedCourse(null) }
-                      else { setSelectedCourse(course.id); setTab('courses'); setExpanded(true) }
+                      else { setSelectedCourse(course.id); if (expanded) setTab('courses') }
                     }}
                     className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
                       isActive
