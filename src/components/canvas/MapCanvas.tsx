@@ -202,6 +202,8 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragControlId: string | null = null
     let dragOffset: { dx: number; dy: number } | null = null
     let dragStarted = false
+    let pendingControlPos: { x: number; y: number } | null = null
+    let pendingControlRaf = 0
 
     let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
     let dragBendStarted = false
@@ -486,9 +488,15 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        useStore.getState().moveControl(dragControlId, {
-          x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy,
-        })
+        pendingControlPos = { x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy }
+        if (!pendingControlRaf) {
+          pendingControlRaf = requestAnimationFrame(() => {
+            pendingControlRaf = 0
+            if (pendingControlPos && dragControlId) {
+              useStore.getState().moveControl(dragControlId, pendingControlPos)
+            }
+          })
+        }
         return
       }
 
@@ -576,7 +584,11 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
       dragBend = null; dragBendStarted = false
 
-      if (dragControlId && dragStarted) { dragControlId = null; dragOffset = null; dragStarted = false; setDraggingControlId(null); return }
+      if (dragControlId && dragStarted) {
+        if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
+        if (pendingControlPos) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
+        dragControlId = null; dragOffset = null; dragStarted = false; setDraggingControlId(null); return
+      }
       dragControlId = null; dragOffset = null; dragStarted = false
 
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
@@ -685,7 +697,11 @@ export function MapCanvas({ loadedMap }: Props) {
       clearLongPress()
       dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
-      if (dragStarted) setDraggingControlId(null)
+      if (dragStarted) {
+        if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
+        if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
+        setDraggingControlId(null)
+      }
       dragControlId = null; dragOffset = null; dragStarted = false
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
@@ -774,6 +790,7 @@ export function MapCanvas({ loadedMap }: Props) {
     return () => {
       if (wheelTimer) clearTimeout(wheelTimer)
       if (pendingRaf) cancelAnimationFrame(pendingRaf)
+      if (pendingControlRaf) cancelAnimationFrame(pendingControlRaf)
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
