@@ -184,7 +184,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
       md:hidden fixed top-12 left-0 right-0 z-30
       bg-white border-b border-gray-200 shadow-2xl
       transition-all duration-300 ease-out
-      ${expanded ? 'h-[50vh] flex flex-col overflow-hidden' : 'h-10 overflow-hidden'}
+      ${expanded ? 'h-[50vh] flex flex-col overflow-hidden' : 'h-10'}
     `}>
       {/* Icon tabs + course chips */}
       <div className="flex items-center gap-1.5 h-10 px-2 shrink-0">
