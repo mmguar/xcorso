@@ -20,7 +20,6 @@ import {
   screenToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
-  getVisibleControlIds,
 } from './hitTesting'
 import { handleGapTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
@@ -273,8 +272,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const rect = getRect()
           const proj = state.project
           if (proj) {
-            const visible = getVisibleControlIds(proj, state.editor)
-            const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid, visible)
+            const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid)
             if (hit) {
               longPressTimer = setTimeout(() => {
                 longPressTimer = null
@@ -381,8 +379,7 @@ export function MapCanvas({ loadedMap }: Props) {
           dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
           dragLabelStarted = false
         } else {
-          const visible = getVisibleControlIds(proj, state.editor)
-          const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, visible)
+          const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
           if (hit) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
             dragControlId = hit.id
@@ -601,8 +598,7 @@ export function MapCanvas({ loadedMap }: Props) {
       const proj = state.project
       if (!proj) return
       const ms = measureStartRef.current
-      const visible = getVisibleControlIds(proj, state.editor)
-      const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId, visible)
+      const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId)
 
       if (activeTool === 'gap') {
         handleGapTap(sx, sy, vpRef.current, proj, selectedCourseId)
@@ -734,8 +730,7 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       if (!selectedCourseId) return
-      const visible = getVisibleControlIds(proj, state.editor)
-      const hit = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId, visible)
+      const hit = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId)
       if (!hit) return
 
       const course = proj.courses.find(c => c.id === selectedCourseId)
