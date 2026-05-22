@@ -1,9 +1,8 @@
 import { useMemo, useRef } from 'react'
-import { PAGE_SIZES, MARGIN, ALL_CONTROLS_ID } from '../lib/pdfExport'
+import { PAGE_SIZES, MARGIN, ALL_CONTROLS_ID, mapToMm } from '../lib/pdfExport'
 import type { CoursePreview, DescMode } from '../lib/pdfExport'
 import type { LoadedMap } from '../lib/mapLoader'
 import type { MapConfig } from '../types'
-import { mapToMm } from '../lib/pdfExport'
 import { usePdfExportState } from './usePdfExportState'
 
 // ── Map image bounds (mm on paper) ────────────────────────────────────────
@@ -329,9 +328,12 @@ export function PdfExportDialog({ onClose }: Props) {
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-gray-500">
                 Page position
-                <span className="text-gray-400 font-normal"> &mdash; drag to reposition</span>
+                {s.activeLayout
+                  ? <span className="text-gray-400 font-normal"> &mdash; from layout ({PAGE_SIZES[s.activeLayout.pageSize]?.label} {s.activeLayout.orientation})</span>
+                  : <span className="text-gray-400 font-normal"> &mdash; drag to reposition</span>
+                }
               </label>
-              {s.hasOffset && (
+              {!s.activeLayout && s.hasOffset && (
                 <button onClick={s.resetOffset} className="text-xs text-orange-600 hover:text-orange-800">
                   Re-center
                 </button>
@@ -385,13 +387,17 @@ export function PdfExportDialog({ onClose }: Props) {
               </div>
             )}
             <PrintPreview
-              preview={s.preview}
-              pageW={s.pw}
-              pageH={s.ph}
-              printableW={s.printableW}
-              printableH={s.printableH}
-              offsetX={s.activeOffset.x}
-              offsetY={s.activeOffset.y}
+              preview={s.activeLayout && s.preview ? {
+                ...s.preview,
+                centerX: mapToMm(s.activeLayout.mapCenter, s.project.map, s.activeScale).x,
+                centerY: mapToMm(s.activeLayout.mapCenter, s.project.map, s.activeScale).y,
+              } : s.preview!}
+              pageW={s.activePw}
+              pageH={s.activePh}
+              printableW={s.activePrintableW}
+              printableH={s.activePrintableH}
+              offsetX={s.activeLayout ? 0 : s.activeOffset.x}
+              offsetY={s.activeLayout ? 0 : s.activeOffset.y}
               onOffsetChange={s.setActiveOffset}
               mapImage={mapImage}
               dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === s.activePreviewId)?.color ?? '#7B2FBE')}

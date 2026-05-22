@@ -123,6 +123,7 @@ export interface Course {
   loops?: CourseLoop[]
   variations?: CourseVariation[]
   textDescriptions?: boolean
+  layout?: CourseLayout
 }
 
 // ─── Classes ────────────────────────────────────────────────────────────────
@@ -143,6 +144,25 @@ export interface Annotation {
   points: MapPoint[]         // polyline for routes/bounds; single point for crossing_point
   rotation?: number          // degrees, for crossing_point
   color?: string
+}
+
+// ─── Course Layout ─────────────────────────────────────────────────────────
+
+export type PageSizeKey = 'a4' | 'a3' | 'letter' | 'legal'
+
+export interface LayoutElementPosition {
+  x: number              // mm from page top-left
+  y: number
+  visible: boolean
+}
+
+export interface CourseLayout {
+  pageSize: PageSizeKey
+  orientation: 'portrait' | 'landscape'
+  printScale: number
+  mapCenter: MapPoint
+  clueSheet: LayoutElementPosition
+  overlayPositions?: Record<string, MapPoint>
 }
 
 // ─── Overlays ───────────────────────────────────────────────────────────────

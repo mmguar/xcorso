@@ -107,6 +107,23 @@ export function mapToMm(point: MapPoint, map: MapConfig, printScale: number): Po
   return { x: 0, y: 0 }
 }
 
+export function mmToMap(mm: { x: number; y: number }, map: MapConfig, printScale: number): MapPoint {
+  if (map.type === 'ocad') {
+    const factor = (100 * printScale) / map.scale
+    return { x: mm.x * factor, y: mm.y * factor }
+  }
+  if (map.scaleMeasurement) {
+    const { p1, p2, realWorldMeters } = map.scaleMeasurement
+    const dx = p2.x - p1.x
+    const dy = p2.y - p1.y
+    const pixelDist = Math.sqrt(dx * dx + dy * dy)
+    if (pixelDist === 0) return { x: 0, y: 0 }
+    const factor = (pixelDist * printScale) / (realWorldMeters * 1000)
+    return { x: mm.x * factor, y: mm.y * factor }
+  }
+  return { x: 0, y: 0 }
+}
+
 export function canExportPdf(map: MapConfig): boolean {
   return map.type === 'ocad' || map.scaleMeasurement != null
 }
@@ -927,34 +944,53 @@ export async function exportCoursePdf(
 
   for (const course of courses) {
     const oKey = optionKey(course)
-    const courseScale = options.scaleOverrides?.[oKey] ?? options.printScale
-    const descMode = options.descModes?.[oKey] ?? 'none'
+    const origCourse = project.courses.find(c => c.id === (course._parentId ?? course.id))
+    const layout = origCourse?.layout
+
+    const courseScale = layout?.printScale ?? options.scaleOverrides?.[oKey] ?? options.printScale
+    const descMode = layout?.clueSheet.visible ? 'on-map' as DescMode : options.descModes?.[oKey] ?? 'none'
+
+    const cPageBase = layout ? (PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
+    const cOrient = layout?.orientation ?? options.orientation
+    const cpw = cOrient === 'landscape' ? cPageBase.h : cPageBase.w
+    const cph = cOrient === 'landscape' ? cPageBase.w : cPageBase.h
+    const cOrientFlag = cOrient === 'landscape' ? 'l' : 'p'
+    const cPrintableW = cpw - 2 * MARGIN
+    const cPrintableH = cph - 2 * MARGIN
+
     const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-    if (!bounds) continue
+    if (!bounds && !layout) continue
 
     // Build tile grid
-    const useTiling = options.tiling && (bounds.width > printableW || bounds.height > printableH)
-    const cols = useTiling ? tileCount(bounds.width, printableW) : 1
-    const rows = useTiling ? tileCount(bounds.height, printableH) : 1
+    const useTiling = options.tiling && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH) && !layout
+    const cols = useTiling ? tileCount(bounds!.width, cPrintableW) : 1
+    const rows = useTiling ? tileCount(bounds!.height, cPrintableH) : 1
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        if (pageIndex > 0) doc.addPage([pw, ph], orient)
+        if (pageIndex > 0) doc.addPage([cpw, cph], cOrientFlag)
         pageIndex++
 
-        // Each tile's viewport center in course-mm space
-        const { x: ox, y: oy } = options.offsets?.[oKey] ?? { x: 0, y: 0 }
         let viewCenterX: number, viewCenterY: number
-        if (useTiling) {
-          viewCenterX = bounds.minX + ox + col * (printableW - TILE_OVERLAP) + printableW / 2
-          viewCenterY = bounds.minY + oy + row * (printableH - TILE_OVERLAP) + printableH / 2
+        if (layout) {
+          const mc = mapToMm(layout.mapCenter, project.map, courseScale)
+          viewCenterX = mc.x
+          viewCenterY = mc.y
         } else {
-          viewCenterX = bounds.centerX + ox
-          viewCenterY = bounds.centerY + oy
+          const { x: ox, y: oy } = options.offsets?.[oKey] ?? { x: 0, y: 0 }
+          if (useTiling && bounds) {
+            viewCenterX = bounds.minX + ox + col * (cPrintableW - TILE_OVERLAP) + cPrintableW / 2
+            viewCenterY = bounds.minY + oy + row * (cPrintableH - TILE_OVERLAP) + cPrintableH / 2
+          } else if (bounds) {
+            viewCenterX = bounds.centerX + ox
+            viewCenterY = bounds.centerY + oy
+          } else {
+            viewCenterX = 0; viewCenterY = 0
+          }
         }
 
-        const cx = pw / 2
-        const cy = ph / 2
+        const cx = cpw / 2
+        const cy = cph / 2
 
         function toPage(pt: MapPoint): Pos {
           const mm = mapToMm(pt, project.map, courseScale)
@@ -1012,15 +1048,23 @@ export async function exportCoursePdf(
           drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
         }
 
-        // Overlays
-        for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, courseScale)
-        for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
+        // Overlays — use per-course position overrides from layout if available
+        for (const sb of project.scaleBars) {
+          const overridePos = layout?.overlayPositions?.[sb.id]
+          const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
+          drawScaleBar(doc, effectiveSb, toPage, courseScale)
+        }
+        for (const tl of project.textLabels) {
+          const overridePos = layout?.overlayPositions?.[tl.id]
+          const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
+          drawTextLabel(doc, effectiveTl, toPage)
+        }
 
         // Description sheet overlay on map
         if (descMode === 'on-map' && course.controls.length > 0) {
-          const { x: sx, y: sy } = options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
+          const sheetPos = layout?.clueSheet ?? options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
           const dist = computeCourseDistances(course, project.controls, project.map)
-          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sx, sy, dist.total, course.textDescriptions, dist.legs)
+          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs)
         }
 
         // Header line
@@ -1036,10 +1080,10 @@ export async function exportCoursePdf(
 
     // Description sheet on separate page(s)
     if (descMode === 'separate' && course.controls.length > 0) {
-      doc.addPage([pw, ph], orient)
+      doc.addPage([cpw, cph], cOrientFlag)
       pageIndex++
       const dist = computeCourseDistances(course, project.controls, project.map)
-      drawDescriptionSheet(doc, course, project.controls, courseScale, pw, ph, dist.total, course.textDescriptions, dist.legs)
+      drawDescriptionSheet(doc, course, project.controls, courseScale, cpw, cph, dist.total, course.textDescriptions, dist.legs)
     }
   }
 

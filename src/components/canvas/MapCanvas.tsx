@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
@@ -6,13 +6,16 @@ import { MapLayer } from './MapLayer'
 import { FpsCounter } from './FpsCounter'
 import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
+import { DragLegsLayer } from './DragLegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
+import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport } from '../../types'
 import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
+import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import {
   screenToMap,
   findControlAt, findBendPointAt,
@@ -25,6 +28,38 @@ const MIN_SCALE = 0.05
 const MAX_SCALE = 50
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
+function LayoutScaleInput({ courseId, printScale }: { courseId: string; printScale: number }) {
+  const [value, setValue] = useState(String(printScale))
+  const prevScale = useRef(printScale)
+  if (printScale !== prevScale.current) {
+    prevScale.current = printScale
+    setValue(String(printScale))
+  }
+  function commit() {
+    const v = parseInt(value)
+    if (v > 0 && isFinite(v) && v !== printScale) {
+      useStore.getState().updateCourseLayout(courseId, { printScale: v })
+    } else {
+      setValue(String(printScale))
+    }
+  }
+  return (
+    <>
+      <div className="w-px h-4 bg-gray-300" />
+      <span className="text-[10px] text-gray-400 select-none">1:</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        className="w-14 px-1 py-0.5 text-[11px] border border-gray-200 rounded focus:border-orange-400 focus:outline-none bg-white tabular-nums"
+      />
+    </>
+  )
+}
+
 interface Props { loadedMap: LoadedMap }
 
 export function MapCanvas({ loadedMap }: Props) {
@@ -32,6 +67,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const divRef = useRef<HTMLDivElement>(null)
 
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
+  const [draggingControlId, setDraggingControlId] = useState<string | null>(null)
   const vpRef = useRef<Viewport>(vp)
   const fitScaleRef = useRef<number>(MIN_SCALE)
   const mapDivRef = useRef<HTMLDivElement>(null)
@@ -70,6 +106,12 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const appearance = useStore(s => s.editor.appearance)
   const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
+  const layoutMode = useStore(s => s.editor.layoutMode)
+  const layoutCourseId = useStore(s => s.editor.layoutCourseId)
+  const layoutCourse = useStore(s => {
+    if (!s.editor.layoutCourseId) return null
+    return s.project?.courses.find(c => c.id === s.editor.layoutCourseId) ?? null
+  })
 
   const [useRaster, setUseRaster] = useState(true)
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
@@ -93,6 +135,36 @@ export function MapCanvas({ loadedMap }: Props) {
       scale,
     })
   }, [loadedMap])
+
+  // ── Snap viewport to layout page ────────────────────────────────────────
+  const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string } | null>(null)
+  useEffect(() => {
+    if (!layoutMode || !layoutCourse?.layout) {
+      prevLayoutRef.current = null
+      return
+    }
+    const layout = layoutCourse.layout
+    const key = { courseId: layoutCourseId, printScale: layout.printScale, pageSize: layout.pageSize, orientation: layout.orientation }
+    const prev = prevLayoutRef.current
+    if (prev && prev.courseId === key.courseId && prev.printScale === key.printScale && prev.pageSize === key.pageSize && prev.orientation === key.orientation) return
+    prevLayoutRef.current = key
+
+    const el = divRef.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+
+    const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+    const pageW = layout.orientation === 'landscape' ? base.h : base.w
+    const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, map, layout.printScale).x
+    const pageWidthMapUnits = halfWMap * 2
+
+    const desiredScale = (width * 0.85) / pageWidthMapUnits
+    setVp({
+      x: width / 2 - layout.mapCenter.x * desiredScale,
+      y: height / 2 - layout.mapCenter.y * desiredScale,
+      scale: desiredScale,
+    })
+  }, [layoutMode, layoutCourseId, layoutCourse, map])
 
   // Keep <g> transforms in sync after any React re-render
   useLayoutEffect(syncTransform)
@@ -139,6 +211,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
 
+    let dragLayoutEl: { element: 'clueSheet'; sx: number; sy: number; ox: number; oy: number } | null = null
+    let dragLayoutElStarted = false
+
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
     function clearLongPress() {
@@ -160,6 +235,7 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Wheel ────────────────────────────────────────────────────────────────
     function onWheel(e: WheelEvent) {
       e.preventDefault()
+      if (useStore.getState().editor.layoutMode) return
       const rect = getRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
@@ -188,7 +264,7 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       longPressFired = false
-      if (e.pointerType === 'touch' && pos.size === 1) {
+      if (e.pointerType === 'touch' && pos.size === 1 && !useStore.getState().editor.layoutMode) {
         const state = useStore.getState()
         const cid = state.editor.selectedCourseId
         if (cid) {
@@ -215,6 +291,69 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       const state = useStore.getState()
+      if (state.editor.layoutMode) {
+        if (pos.size !== 1) return
+        const proj = state.project
+        if (!proj) return
+        const rect = getRect()
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+
+        // Hit test layout elements (clue sheet, title) first
+        const course = proj.courses.find(c => c.id === state.editor.layoutCourseId)
+        const layout = course?.layout
+        if (layout) {
+          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+          const pageW = layout.orientation === 'landscape' ? base.h : base.w
+          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, proj.map, layout.printScale).x
+          const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
+          const pageTL = {
+            x: layout.mapCenter.x - halfWMap,
+            y: layout.mapCenter.y - halfHMap,
+          }
+          const pageWMap = halfWMap * 2
+          const mmToMapU = pageWMap / pageW
+
+          const elements: Array<{ key: 'clueSheet'; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = [
+            { key: 'clueSheet', el: layout.clueSheet, wMm: 50, hMm: 30 },
+          ]
+          for (const { key, el, wMm, hMm } of elements) {
+            if (!el.visible) continue
+            const elMapX = pageTL.x + el.x * mmToMapU
+            const elMapY = pageTL.y + el.y * mmToMapU
+            const elScreenX = elMapX * vpRef.current.scale + vpRef.current.x
+            const elScreenY = elMapY * vpRef.current.scale + vpRef.current.y
+            const elW = wMm * mmToMapU * vpRef.current.scale
+            const elH = hMm * mmToMapU * vpRef.current.scale
+            if (sx >= elScreenX && sx <= elScreenX + elW && sy >= elScreenY && sy <= elScreenY + elH) {
+              dragLayoutEl = { element: key, sx: e.clientX, sy: e.clientY, ox: el.x, oy: el.y }
+              dragLayoutElStarted = false
+              return
+            }
+          }
+        }
+
+        // Hit test overlays (scale bars, text labels) — drag stores per-course override
+        const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout?.overlayPositions)
+        if (overlayHit) {
+          const mapPt = screenToMap(sx, sy, vpRef.current)
+          let oPos: { x: number; y: number } | undefined
+          const overridePos = layout?.overlayPositions?.[overlayHit.id]
+          if (overridePos) {
+            oPos = overridePos
+          } else if (overlayHit.kind === 'scalebar') {
+            oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
+          } else {
+            oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+          }
+          if (oPos) {
+            dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
+            dragOverlayStarted = false
+          }
+        }
+        return
+      }
       const { activeTool } = state.editor
       const proj = state.project
       if (!proj) return
@@ -278,6 +417,33 @@ export function MapCanvas({ loadedMap }: Props) {
         }
       }
 
+      if (dragLayoutEl && pos.size === 1) {
+        if (!dragLayoutElStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginLayoutDrag()
+          dragLayoutElStarted = true
+        }
+        const st = useStore.getState()
+        const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
+        const layout = course?.layout
+        if (layout) {
+          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+          const pageW = layout.orientation === 'landscape' ? base.h : base.w
+          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
+          const pageWMap = halfWMap * 2
+          const mmToPx = (pageWMap * vpRef.current.scale) / pageW
+
+          const dx = (e.clientX - dragLayoutEl.sx) / mmToPx
+          const dy = (e.clientY - dragLayoutEl.sy) / mmToPx
+          const newX = Math.max(0, Math.min(pageW - 10, dragLayoutEl.ox + dx))
+          const newY = Math.max(0, Math.min(pageH - 5, dragLayoutEl.oy + dy))
+          st.updateLayoutElement(st.editor.layoutCourseId!, dragLayoutEl.element, { x: newX, y: newY })
+        }
+        return
+      }
+
       if (dragBend && pos.size === 1) {
         if (!dragBendStarted) {
           const start = down.get(e.pointerId)
@@ -315,6 +481,7 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveControl()
           useStore.getState().setDraggingControl(dragControlId)
           dragStarted = true
+          setDraggingControlId(dragControlId)
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
@@ -334,10 +501,13 @@ export function MapCanvas({ loadedMap }: Props) {
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
-        if (dragOverlay.kind === 'scalebar') {
-          useStore.getState().moveScaleBar(dragOverlay.id, newPos)
+        const st = useStore.getState()
+        if (st.editor.layoutMode && st.editor.layoutCourseId) {
+          st.setLayoutOverlayPosition(st.editor.layoutCourseId, dragOverlay.id, newPos)
+        } else if (dragOverlay.kind === 'scalebar') {
+          st.moveScaleBar(dragOverlay.id, newPos)
         } else {
-          useStore.getState().moveTextLabel(dragOverlay.id, newPos)
+          st.moveTextLabel(dragOverlay.id, newPos)
         }
         return
       }
@@ -349,7 +519,7 @@ export function MapCanvas({ loadedMap }: Props) {
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
         if (!vpDirty) startPanning()
         vpDirty = true
-      } else if (pos.size === 2) {
+      } else if (pos.size === 2 && !useStore.getState().editor.layoutMode) {
         const [a, b] = [...pos.values()]
         const dist = Math.hypot(b.x - a.x, b.y - a.y)
         const rect = getRect()
@@ -383,9 +553,21 @@ export function MapCanvas({ loadedMap }: Props) {
         syncTransform()
         setVpState(vpRef.current)
         stopPanning()
+
+        const st = useStore.getState()
+        if (st.editor.layoutMode && st.editor.layoutCourseId) {
+          const rect = getRect()
+          const v = vpRef.current
+          const centerX = (rect.width / 2 - v.x) / v.scale
+          const centerY = (rect.height / 2 - v.y) / v.scale
+          st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY })
+        }
       }
 
       if (longPressFired) { longPressFired = false; return }
+
+      if (dragLayoutEl && dragLayoutElStarted) { dragLayoutEl = null; dragLayoutElStarted = false; return }
+      dragLayoutEl = null; dragLayoutElStarted = false
 
       if (dragLabel && dragLabelStarted) { dragLabel = null; dragLabelStarted = false; return }
       dragLabel = null; dragLabelStarted = false
@@ -393,7 +575,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
       dragBend = null; dragBendStarted = false
 
-      if (dragControlId && dragStarted) { useStore.getState().setDraggingControl(null); dragControlId = null; dragOffset = null; dragStarted = false; return }
+      if (dragControlId && dragStarted) { dragControlId = null; dragOffset = null; dragStarted = false; setDraggingControlId(null); return }
       dragControlId = null; dragOffset = null; dragStarted = false
 
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
@@ -404,6 +586,8 @@ export function MapCanvas({ loadedMap }: Props) {
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) return
 
       // ── It's a tap ──────────────────────────────────────────────────────────
+      if (useStore.getState().editor.layoutMode) return
+
       const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
@@ -498,7 +682,10 @@ export function MapCanvas({ loadedMap }: Props) {
 
     function onCancel(e: PointerEvent) {
       clearLongPress()
+      dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
+      if (dragStarted) setDraggingControlId(null)
+      dragControlId = null; dragOffset = null; dragStarted = false
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
       if (vpDirty && pos.size === 0) {
@@ -618,7 +805,8 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [selectedCourseRaw, selectedVariationId])
   const isCourseMode = !!selectedCourseId
 
-  const cursor = activeTool === 'bend' ? 'crosshair'
+  const cursor = layoutMode ? 'grab'
+    : activeTool === 'bend' ? 'crosshair'
     : activeTool === 'gap' ? 'none'
     : isCourseMode ? 'default'
     : activeTool === 'select' ? 'grab'
@@ -677,6 +865,16 @@ export function MapCanvas({ loadedMap }: Props) {
             appearance={appearance}
             projectSpec={projectSpec}
           />
+          <DragLegsLayer
+            draggingControlId={draggingControlId}
+            courses={courses}
+            selectedCourse={selectedCourse}
+            controls={controls}
+            map={map}
+            appearance={appearance}
+            projectSpec={projectSpec}
+            viewportScale={vp.scale}
+          />
           <AnnotationsLayer
             annotations={annotations}
             pendingPoints={pendingAnnotationPoints}
@@ -689,6 +887,7 @@ export function MapCanvas({ loadedMap }: Props) {
             textLabels={textLabels}
             map={map}
             selectedOverlayId={selectedOverlayId}
+            positionOverrides={layoutCourse?.layout?.overlayPositions}
           />
           <ControlsLayer
             controls={controls}
@@ -721,6 +920,17 @@ export function MapCanvas({ loadedMap }: Props) {
         })()}
       </svg>
 
+      {/* Layout mode page overlay */}
+      {layoutMode && layoutCourse?.layout && (
+        <PageOverlay
+          layout={layoutCourse.layout}
+          map={map}
+          viewport={vp}
+          canvasW={rectCacheRef.current?.width ?? 800}
+          canvasH={rectCacheRef.current?.height ?? 600}
+        />
+      )}
+
       {/* Saturation slider + HD toggle (hidden on mobile — slider is in Header) */}
       <div className="absolute top-2 left-2 hidden md:flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
         <span className="text-[10px] text-gray-400 select-none">Map</span>
@@ -746,6 +956,9 @@ export function MapCanvas({ loadedMap }: Props) {
               HD
             </button>
           </>
+        )}
+        {layoutMode && layoutCourse?.layout && (
+          <LayoutScaleInput courseId={layoutCourse.id} printScale={layoutCourse.layout.printScale} />
         )}
       </div>
 

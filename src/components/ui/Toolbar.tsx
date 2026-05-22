@@ -65,8 +65,10 @@ function GapSizeSlider() {
 export function Toolbar() {
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
+  const layoutMode = useStore(s => s.editor.layoutMode)
   const setActiveTool = useStore(s => s.setActiveTool)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
+  const exitLayoutMode = useStore(s => s.exitLayoutMode)
   const undo = useStore(s => s.undo)
   const redo = useStore(s => s.redo)
   const canUndo = useStore(s => s.undoStack.length > 0)
@@ -74,6 +76,9 @@ export function Toolbar() {
 
   const selectedCourse = useStore(s =>
     s.project?.courses.find(c => c.id === s.editor.selectedCourseId) ?? null
+  )
+  const layoutCourse = useStore(s =>
+    s.editor.layoutCourseId ? s.project?.courses.find(c => c.id === s.editor.layoutCourseId) ?? null : null
   )
 
   useEffect(() => {
@@ -94,6 +99,10 @@ export function Toolbar() {
           return
         }
       }
+      if (useStore.getState().editor.layoutMode) {
+        if (e.key === 'Escape') exitLayoutMode()
+        return
+      }
       if (selectedCourseId) {
         if (e.key === 'Escape') setSelectedCourse(null)
         else if (e.key.toLowerCase() === 'g') setActiveTool(activeTool === 'gap' ? 'select' : 'gap')
@@ -105,7 +114,7 @@ export function Toolbar() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, activeTool])
+  }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, exitLayoutMode, activeTool])
 
   const btnClass = "w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all"
 
@@ -123,6 +132,35 @@ export function Toolbar() {
       </button>
     </>
   )
+
+  if (layoutMode && layoutCourse) {
+    return (
+      <div className="
+        absolute bottom-4 left-1/2 -translate-x-1/2
+        flex items-center gap-1.5 md:gap-2
+        bg-white/95 backdrop-blur border border-orange-300 shadow-lg
+        rounded-2xl px-3 py-1.5 md:px-4 md:py-2
+        z-20
+      ">
+        <div
+          className="w-3 h-3 rounded-full shrink-0"
+          style={{ background: layoutCourse.color }}
+        />
+        <span className="text-xs md:text-sm text-gray-700">
+          <span className="hidden md:inline">Layout — pan to position map on page</span>
+          <span className="md:hidden">Layout mode</span>
+        </span>
+        <button
+          onClick={exitLayoutMode}
+          className="ml-1 md:ml-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg px-2.5 py-1 md:px-3 md:py-1.5 transition-colors"
+        >
+          Done
+        </button>
+        <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
+        {undoRedo}
+      </div>
+    )
+  }
 
   if (selectedCourseId) {
     return (

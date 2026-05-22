@@ -2,6 +2,7 @@ import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
+  CourseLayout, LayoutElementPosition,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -17,6 +18,8 @@ export interface EditorState {
   gapSize: number
   appearance: AppearanceSettings
   pendingAnnotationPoints: MapPoint[]
+  layoutMode: boolean
+  layoutCourseId: string | null
 }
 
 export interface AppState {
@@ -115,6 +118,14 @@ export interface AppActions {
   setGapSize: (size: number) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void
 
+  enterLayoutMode: (courseId: string) => void
+  exitLayoutMode: () => void
+  updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
+  beginLayoutDrag: () => void
+  setLayoutMapCenter: (courseId: string, center: MapPoint) => void
+  updateLayoutElement: (courseId: string, element: 'clueSheet', pos: Partial<LayoutElementPosition>) => void
+  setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint) => void
+
   clearSession: () => void
 
   undo: () => void
@@ -153,4 +164,6 @@ export const defaultEditor: EditorState = {
   gapSize: 35,
   appearance: defaultAppearance,
   pendingAnnotationPoints: [],
+  layoutMode: false,
+  layoutCourseId: null,
 }
