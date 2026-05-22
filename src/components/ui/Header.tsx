@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, FileDown, Map, ImageUp } from 'lucide-react'
+import { Save, FileDown, Map, ImageUp } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
@@ -106,7 +106,7 @@ export function Header({ onGoHome }: Props) {
           className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors"
           title="Save project as .oco"
         >
-          <Download size={14} />
+          <Save size={14} />
           <span className="hidden sm:inline">Save .oco</span>
         </button>
 
