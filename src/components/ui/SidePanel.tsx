@@ -53,7 +53,7 @@ export function SidePanel() {
         ${collapsed ? 'w-12' : 'w-88 overflow-hidden'}
       `}>
         {collapsed ? (
-          <CollapsedSidebar onExpand={() => setCollapsed(false)} />
+          <CollapsedSidebar onExpand={() => setCollapsed(false)} onSelectTab={setTab} />
         ) : (
           <>
             <div className="flex border-b border-gray-200">
@@ -100,7 +100,7 @@ function courseChipLabel(name: string): string {
   return name.slice(0, 2).toUpperCase()
 }
 
-function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
+function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onSelectTab: (t: Tab) => void }) {
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
@@ -124,7 +124,10 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
             return (
               <button
                 key={course.id}
-                onClick={() => setSelectedCourse(isActive ? null : course.id)}
+                onClick={() => {
+                  if (isActive) { setSelectedCourse(null) }
+                  else { setSelectedCourse(course.id); onSelectTab('courses'); onExpand() }
+                }}
                 title={isActive ? `${course.name} (click to deselect)` : course.name}
                 className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 ${
                   isActive
@@ -180,8 +183,8 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     <div className={`
       md:hidden fixed top-12 left-0 right-0 z-30
       bg-white border-b border-gray-200 shadow-2xl
-      transition-all duration-300 ease-out overflow-hidden
-      ${expanded ? 'h-[60vh]' : 'h-10'}
+      transition-all duration-300 ease-out
+      ${expanded ? 'h-[50vh] flex flex-col overflow-hidden' : 'h-10 overflow-hidden'}
     `}>
       {/* Icon tabs + course chips */}
       <div className="flex items-center gap-1.5 h-10 px-2 shrink-0">
@@ -209,7 +212,10 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
                 return (
                   <button
                     key={course.id}
-                    onClick={() => setSelectedCourse(isActive ? null : course.id)}
+                    onClick={() => {
+                      if (isActive) { setSelectedCourse(null) }
+                      else { setSelectedCourse(course.id); setTab('courses'); setExpanded(true) }
+                    }}
                     className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
                       isActive
                         ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
@@ -264,7 +270,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
 
       {/* Content */}
       {expanded && (
-        <div className="overflow-y-auto panel-scroll h-[calc(100%-2.5rem)]">
+        <div className="overflow-y-auto panel-scroll flex-1 min-h-0">
           {tab === 'controls' ? <ControlsPanel /> : tab === 'courses' ? <CoursesPanel /> : <LayoutPanel />}
         </div>
       )}

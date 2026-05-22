@@ -398,7 +398,14 @@ export function CoursesPanel() {
                 if (wasExpanded) setSelectedCourse(null)
                 else setSelectedCourse(course.id)
               }}
-              onToggleSelect={() => setSelectedCourse(course.id === selectedCourseId ? null : course.id)}
+              onToggleSelect={() => {
+                if (course.id === selectedCourseId) {
+                  setSelectedCourse(null)
+                } else {
+                  setSelectedCourse(course.id)
+                  setExpanded(prev => new Set([...prev, course.id]))
+                }
+              }}
             />
           ))
         )}
