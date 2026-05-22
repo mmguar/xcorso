@@ -4,12 +4,13 @@
  */
 
 import { useEffect, useLayoutEffect, useState } from 'react'
-import { MapPin, Navigation, PanelRightClose, PanelRight, Plus } from 'lucide-react'
+import { MapPin, Navigation, LayoutPanelLeft, PanelRightClose, PanelRight, Plus } from 'lucide-react'
 import { useStore } from '../../store'
 import { ControlsPanel } from '../panels/ControlsPanel'
 import { CoursesPanel } from '../panels/CoursesPanel'
+import { LayoutPanel } from '../panels/LayoutPanel'
 
-type Tab = 'controls' | 'courses'
+type Tab = 'controls' | 'courses' | 'layout'
 
 const SIDEBAR_W = 352 // w-88 = 22 rem = 352px
 
@@ -17,6 +18,7 @@ const SIDEBAR_W = 352 // w-88 = 22 rem = 352px
 export function SidePanel() {
   const [tab, setTab] = useState<Tab>('controls')
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
+  const layoutMode = useStore(s => s.editor.layoutMode)
 
   const [collapsed, setCollapsed] = useState(() =>
     typeof window !== 'undefined' && SIDEBAR_W > window.innerWidth / 3
@@ -37,6 +39,10 @@ export function SidePanel() {
     }
   }, [selectedCourseId])
 
+  useEffect(() => {
+    if (layoutMode) setTab('layout')
+  }, [layoutMode])
+
   return (
     <>
       {/* Desktop: right sidebar */}
@@ -51,7 +57,7 @@ export function SidePanel() {
         ) : (
           <>
             <div className="flex border-b border-gray-200">
-              {(['controls', 'courses'] as Tab[]).map(t => (
+              {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -61,7 +67,7 @@ export function SidePanel() {
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {t === 'controls' ? <MapPin size={13} /> : <Navigation size={13} />}
+                  {t === 'controls' ? <MapPin size={13} /> : t === 'courses' ? <Navigation size={13} /> : <LayoutPanelLeft size={13} />}
                   {t}
                 </button>
               ))}
@@ -74,7 +80,7 @@ export function SidePanel() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto panel-scroll">
-              {tab === 'controls' ? <ControlsPanel /> : <CoursesPanel />}
+              {tab === 'controls' ? <ControlsPanel /> : tab === 'courses' ? <CoursesPanel /> : <LayoutPanel />}
             </div>
           </>
         )}
@@ -179,7 +185,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     `}>
       {/* Icon tabs + course chips */}
       <div className="flex items-center gap-1.5 h-10 px-2 shrink-0">
-        {(['controls', 'courses'] as Tab[]).map(t => (
+        {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => { setTab(t); setExpanded(e => t === tab ? !e : true) }}
@@ -190,7 +196,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
                 : 'text-gray-400 hover:text-gray-600'
             }`}
           >
-            {t === 'controls' ? <MapPin size={15} /> : <Navigation size={15} />}
+            {t === 'controls' ? <MapPin size={15} /> : t === 'courses' ? <Navigation size={15} /> : <LayoutPanelLeft size={15} />}
           </button>
         ))}
 
@@ -259,7 +265,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
       {/* Content */}
       {expanded && (
         <div className="overflow-y-auto panel-scroll h-[calc(100%-2.5rem)]">
-          {tab === 'controls' ? <ControlsPanel /> : <CoursesPanel />}
+          {tab === 'controls' ? <ControlsPanel /> : tab === 'courses' ? <CoursesPanel /> : <LayoutPanel />}
         </div>
       )}
     </div>
