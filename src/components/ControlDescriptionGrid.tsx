@@ -1,5 +1,5 @@
 import { memo, useState, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { GripVertical, X } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -324,6 +324,7 @@ function SortableDescRow({
           {...attributes}
           {...listeners}
         >
+          <GripVertical size={8} className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-300 group-hover:text-gray-400" />
           {seqLabel}
           {onRemove && (
             <button
