@@ -165,30 +165,28 @@ export const DragLegsLayer = forwardRef<DragLegsHandle, Props>(function DragLegs
           ]
         }
 
-        const showLine = !leg.selectedCourseUsesThis
-        const arrowColor = leg.selectedCourseUsesThis ? leg.selectedCourseColor : LIGHT_PURPLE
+        const lineColor = leg.selectedCourseUsesThis ? leg.selectedCourseColor : LIGHT_PURPLE
+        const arrowColor = lineColor
 
-        if (showLine) {
-          if (clippedPts.length === 2) {
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-            line.setAttribute('x1', String(clippedPts[0].x))
-            line.setAttribute('y1', String(clippedPts[0].y))
-            line.setAttribute('x2', String(clippedPts[1].x))
-            line.setAttribute('y2', String(clippedPts[1].y))
-            line.setAttribute('stroke', LIGHT_PURPLE)
-            line.setAttribute('stroke-width', String(leg.strokeWidth))
-            line.setAttribute('stroke-linecap', 'round')
-            g.appendChild(line)
-          } else {
-            const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline')
-            pl.setAttribute('points', clippedPts.map(p => `${p.x},${p.y}`).join(' '))
-            pl.setAttribute('fill', 'none')
-            pl.setAttribute('stroke', LIGHT_PURPLE)
-            pl.setAttribute('stroke-width', String(leg.strokeWidth))
-            pl.setAttribute('stroke-linecap', 'round')
-            pl.setAttribute('stroke-linejoin', 'round')
-            g.appendChild(pl)
-          }
+        if (clippedPts.length === 2) {
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+          line.setAttribute('x1', String(clippedPts[0].x))
+          line.setAttribute('y1', String(clippedPts[0].y))
+          line.setAttribute('x2', String(clippedPts[1].x))
+          line.setAttribute('y2', String(clippedPts[1].y))
+          line.setAttribute('stroke', lineColor)
+          line.setAttribute('stroke-width', String(leg.strokeWidth))
+          line.setAttribute('stroke-linecap', 'round')
+          g.appendChild(line)
+        } else {
+          const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline')
+          pl.setAttribute('points', clippedPts.map(p => `${p.x},${p.y}`).join(' '))
+          pl.setAttribute('fill', 'none')
+          pl.setAttribute('stroke', lineColor)
+          pl.setAttribute('stroke-width', String(leg.strokeWidth))
+          pl.setAttribute('stroke-linecap', 'round')
+          pl.setAttribute('stroke-linejoin', 'round')
+          g.appendChild(pl)
         }
 
         const arrowFraction = leg.fromControlId === controlId ? 0.15 : 0.85
