@@ -106,6 +106,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const appearance = useStore(s => s.editor.appearance)
   const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
+  const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const layoutCourse = useStore(s => {
@@ -653,6 +654,7 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'place-start':   state.addControl('start',   mapPt); break
         case 'place-finish':  state.addControl('finish',  mapPt); break
         case 'place-control': state.addControl('control', mapPt); break
+        case 'place-exchange': state.addControl('exchange', mapPt); break
         case 'forbidden-route': state.addAnnotationPoint(mapPt); break
         case 'out-of-bounds': state.addAnnotationPoint(mapPt); break
         case 'crossing-point':
@@ -864,6 +866,7 @@ export function MapCanvas({ loadedMap }: Props) {
             showBendHandles={activeTool === 'bend'}
             appearance={appearance}
             projectSpec={projectSpec}
+            selectedSubmapIndex={selectedSubmapIndex}
           />
           <DragLegsLayer
             draggingControlId={draggingControlId}

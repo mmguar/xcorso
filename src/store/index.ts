@@ -143,12 +143,17 @@ export const useStore = create<Store>((set, get) => {
           ...state.editor,
           selectedCourseId: id,
           selectedVariationId: null,
+          selectedSubmapIndex: null,
           selectedControlId: id ? null : state.editor.selectedControlId,
           selectedOverlayId: id ? null : state.editor.selectedOverlayId,
           activeTool: id ? (state.editor.activeTool === 'gap' || state.editor.activeTool === 'bend' ? state.editor.activeTool : 'select') : state.editor.activeTool,
           pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
         },
       }))
+    },
+
+    setSelectedSubmap: (index) => {
+      set(state => ({ editor: { ...state.editor, selectedSubmapIndex: index } }))
     },
 
     setSelectedOverlay: (id) => {

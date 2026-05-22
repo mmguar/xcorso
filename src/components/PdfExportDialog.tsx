@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
-import { PAGE_SIZES, MARGIN, ALL_CONTROLS_ID, mapToMm } from '../lib/pdfExport'
+import { Lock, Unlock } from 'lucide-react'
+import { PAGE_SIZES, MARGIN, ALL_CONTROLS_ID, mapToMm, parseSubmapPreviewId } from '../lib/pdfExport'
 import type { CoursePreview, DescMode } from '../lib/pdfExport'
 import type { LoadedMap } from '../lib/mapLoader'
 import type { MapConfig } from '../types'
@@ -64,14 +65,15 @@ function PrintPreview({
 }) {
   const dragRef = useRef<{ target: 'map' | 'sheet'; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
-  const { positions, centerX, centerY } = preview
+  const { positions, fadedPositions, centerX, centerY } = preview
 
+  const allPos = fadedPositions ? [...positions, ...fadedPositions] : positions
   const showW = Math.max(
-    ...positions.map(p => Math.abs(p.x - centerX)),
+    ...allPos.map(p => Math.abs(p.x - centerX)),
     printableW / 2,
   ) * 2.8
   const showH = Math.max(
-    ...positions.map(p => Math.abs(p.y - centerY)),
+    ...allPos.map(p => Math.abs(p.y - centerY)),
     printableH / 2,
   ) * 2.8
 
@@ -166,6 +168,16 @@ function PrintPreview({
         strokeWidth={1.5}
         strokeDasharray="4 3"
       />
+      {fadedPositions?.map((c, i) => (
+        <circle
+          key={`f${i}`}
+          cx={pcx + (c.x - centerX) * mmScale}
+          cy={pcy + (c.y - centerY) * mmScale}
+          r={2.5}
+          fill={dotColor}
+          opacity={0.2}
+        />
+      ))}
       {positions.map((c, i) => (
         <circle
           key={i}
@@ -340,25 +352,45 @@ export function PdfExportDialog({ onClose }: Props) {
               )}
             </div>
             {s.previewIds.length > 1 && (
-              <div className="flex gap-1 flex-wrap">
-                {s.previewIds.map(id => {
-                  const course = id === ALL_CONTROLS_ID ? null : s.project.courses.find(c => c.id === id)
-                  const label = id === ALL_CONTROLS_ID ? 'All controls' : (course?.name ?? id)
+              <div className="flex gap-1 flex-wrap items-center">
+                {s.previewIds.map((id, idx) => {
+                  const parsed = parseSubmapPreviewId(id)
+                  const realCourseId = parsed ? parsed.courseId : id
+                  const course = id === ALL_CONTROLS_ID ? null : s.project.courses.find(c => c.id === realCourseId)
+                  const label = id === ALL_CONTROLS_ID
+                    ? 'All controls'
+                    : parsed
+                      ? `${course?.name ?? realCourseId} — Map ${parsed.submapIndex + 1}`
+                      : (course?.name ?? id)
                   const color = id === ALL_CONTROLS_ID ? '#ea580c' : (course?.color ?? '#7B2FBE')
                   const isActive = id === s.activePreviewId
+
+                  const isFirstSubmap = parsed && (idx === 0 || parseSubmapPreviewId(s.previewIds[idx - 1])?.courseId !== parsed.courseId)
+                  const locked = parsed ? s.isSubmapLocked(parsed.courseId) : false
+
                   return (
-                    <button
-                      key={id}
-                      onClick={() => s.setPreviewCourseId(id)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                        isActive
-                          ? 'bg-orange-100 text-orange-700 ring-1 ring-orange-300'
-                          : 'text-gray-500 hover:bg-gray-100'
-                      }`}
-                    >
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                      {label}
-                    </button>
+                    <div key={id} className="flex items-center">
+                      {isFirstSubmap && (
+                        <button
+                          onClick={() => s.toggleSubmapLock(parsed!.courseId)}
+                          className="p-0.5 text-gray-400 hover:text-gray-600 mr-0.5"
+                          title={locked ? 'Unlock submap positions' : 'Lock submap positions'}
+                        >
+                          {locked ? <Lock size={12} /> : <Unlock size={12} />}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => s.setPreviewCourseId(id)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          isActive
+                            ? 'bg-orange-100 text-orange-700 ring-1 ring-orange-300'
+                            : 'text-gray-500 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                        {label}
+                      </button>
+                    </div>
                   )
                 })}
               </div>
@@ -400,7 +432,7 @@ export function PdfExportDialog({ onClose }: Props) {
               offsetY={s.activeLayout ? 0 : s.activeOffset.y}
               onOffsetChange={s.setActiveOffset}
               mapImage={mapImage}
-              dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === s.activePreviewId)?.color ?? '#7B2FBE')}
+              dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === (parseSubmapPreviewId(s.activePreviewId)?.courseId ?? s.activePreviewId))?.color ?? '#7B2FBE')}
               {...(s.sheetSize ? {
                 sheetW: s.sheetSize.width,
                 sheetH: s.sheetSize.height,

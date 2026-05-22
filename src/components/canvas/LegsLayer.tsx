@@ -6,10 +6,10 @@
 
 import { memo, useMemo } from 'react'
 import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings, EventSpec } from '../../types'
-import { unitsPerMm } from '../../lib/courseUtils'
+import { unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
-import { clipPolylineStart, clipPolylineEnd } from '../../lib/geometry'
+import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
 
 interface Props {
   course: Course | null
@@ -18,28 +18,10 @@ interface Props {
   showBendHandles?: boolean
   appearance: AppearanceSettings
   projectSpec?: EventSpec
+  selectedSubmapIndex?: number | null
 }
 
 const BEND_HANDLE_R_MM = 0.8
-
-function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
-  const dims = getSymbolDims(spec)
-  const sf = specScaleFactor(spec, mapScale)
-  const r = dims.controlR * upm * controlScale * sf * 1.3
-  if (control.type === 'start') {
-    const side = dims.startSide * upm * controlScale * sf
-    return side * Math.sqrt(3) / 2 * 2 / 3
-  }
-  return r
-}
-
-function polylineLength(pts: MapPoint[]): number {
-  let len = 0
-  for (let i = 1; i < pts.length; i++) {
-    len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-  }
-  return len
-}
 
 function legGapsToDashArray(gaps: LegGap[], lineLen: number): string | null {
   if (gaps.length === 0) return null
@@ -217,13 +199,22 @@ function renderLegs(
   return elements
 }
 
-export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec }: Props) {
+export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec, selectedSubmapIndex }: Props) {
   useRenderTracker('LegsLayer')
   const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
   if (!course) return null
+
+  let effectiveCourse = course
+  if (selectedSubmapIndex != null) {
+    const submaps = computeSubmaps(course, controls)
+    if (selectedSubmapIndex < submaps.length) {
+      effectiveCourse = { ...course, controls: submaps[selectedSubmapIndex].controls }
+    }
+  }
+
   const spec = resolveSpec(projectSpec, course.spec)
   const upm = unitsPerMm(map)
-  const elements = renderLegs(course, controlMap, map.scale, upm, showBendHandles, appearance, spec)
+  const elements = renderLegs(effectiveCourse, controlMap, map.scale, upm, showBendHandles, appearance, spec)
   if (elements.length === 0) return null
   return <g style={{ pointerEvents: 'none' }}>{elements}</g>
 })

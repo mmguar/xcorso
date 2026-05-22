@@ -231,11 +231,11 @@ export function ControlsPanel() {
               control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
             } />
 
-            <span className="text-xs uppercase font-medium text-gray-500 w-12">
+            <span className="text-xs uppercase font-medium text-gray-500 w-16 shrink-0">
               {control.type}
             </span>
 
-            {control.type === 'control' ? (
+            {(control.type === 'control' || control.type === 'exchange') ? (
               <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
             ) : (
               <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />
