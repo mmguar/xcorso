@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
 import { walkPath, clipPolyline } from './geometry'
@@ -971,132 +971,137 @@ export async function exportCoursePdf(
     const cPrintableW = cpw - 2 * MARGIN
     const cPrintableH = cph - 2 * MARGIN
 
-    const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-    if (!bounds && !layout) continue
+    const submaps = computeSubmaps(course, project.controls)
+    const hasSubmaps = submaps.length > 1
+    const submapSlices = hasSubmaps ? submaps : [{ index: 0, controls: course.controls, label: '' }]
 
-    // Build tile grid
-    const useTiling = options.tiling && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH) && !layout
-    const cols = useTiling ? tileCount(bounds!.width, cPrintableW) : 1
-    const rows = useTiling ? tileCount(bounds!.height, cPrintableH) : 1
+    for (const submap of submapSlices) {
+      const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
+      const pageTitle = hasSubmaps ? `${course.name} — ${submap.label}` : course.name
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        if (pageIndex > 0) doc.addPage([cpw, cph], cOrientFlag)
-        pageIndex++
+      const bounds = courseBoundsMm(pageCourse, project.controls, project.map, courseScale)
+      if (!bounds && !layout) continue
 
-        let viewCenterX: number, viewCenterY: number
-        if (layout) {
-          const mc = mapToMm(layout.mapCenter, project.map, courseScale)
-          viewCenterX = mc.x
-          viewCenterY = mc.y
-        } else {
-          const { x: ox, y: oy } = options.offsets?.[oKey] ?? { x: 0, y: 0 }
-          if (useTiling && bounds) {
-            viewCenterX = bounds.minX + ox + col * (cPrintableW - TILE_OVERLAP) + cPrintableW / 2
-            viewCenterY = bounds.minY + oy + row * (cPrintableH - TILE_OVERLAP) + cPrintableH / 2
-          } else if (bounds) {
-            viewCenterX = bounds.centerX + ox
-            viewCenterY = bounds.centerY + oy
+      const useTiling = options.tiling && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH) && !layout
+      const cols = useTiling ? tileCount(bounds!.width, cPrintableW) : 1
+      const rows = useTiling ? tileCount(bounds!.height, cPrintableH) : 1
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          if (pageIndex > 0) doc.addPage([cpw, cph], cOrientFlag)
+          pageIndex++
+
+          let viewCenterX: number, viewCenterY: number
+          if (layout && !hasSubmaps) {
+            const mc = mapToMm(layout.mapCenter, project.map, courseScale)
+            viewCenterX = mc.x
+            viewCenterY = mc.y
           } else {
-            viewCenterX = 0; viewCenterY = 0
+            const { x: ox, y: oy } = options.offsets?.[oKey] ?? { x: 0, y: 0 }
+            if (useTiling && bounds) {
+              viewCenterX = bounds.minX + ox + col * (cPrintableW - TILE_OVERLAP) + cPrintableW / 2
+              viewCenterY = bounds.minY + oy + row * (cPrintableH - TILE_OVERLAP) + cPrintableH / 2
+            } else if (bounds) {
+              viewCenterX = bounds.centerX + ox
+              viewCenterY = bounds.centerY + oy
+            } else {
+              viewCenterX = 0; viewCenterY = 0
+            }
           }
-        }
 
-        const cx = cpw / 2
-        const cy = cph / 2
+          const cx = cpw / 2
+          const cy = cph / 2
 
-        function toPage(pt: MapPoint): Pos {
-          const mm = mapToMm(pt, project.map, courseScale)
-          return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
-        }
-
-        // Map background
-        await embedMap(toPage)
-
-        const mapScale = project.map.scale
-        const annColor = '#a626ff'
-        const courseSpec = resolveSpec(project.spec, course.spec)
-        setColor(doc, annColor)
-
-        // Annotations
-        for (const ann of project.annotations) {
-          if (ann.type === 'forbidden_route') {
-            drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
-          } else if (ann.type === 'crossing_point' && ann.points[0]) {
-            drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, courseSpec)
-          } else if (ann.type === 'out_of_bounds') {
-            drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
+          function toPage(pt: MapPoint): Pos {
+            const mm = mapToMm(pt, project.map, courseScale)
+            return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
-        }
 
-        setColor(doc, course.color)
+          await embedMap(toPage)
 
-        // Legs
-        if (course.type === 'linear' && course.controls.length >= 2) {
-          for (let i = 0; i < course.controls.length - 1; i++) {
-            const from = controlMap.get(course.controls[i].controlId)
-            const to = controlMap.get(course.controls[i + 1].controlId)
-            if (!from || !to) continue
-            setColor(doc, course.color)
-            const bends = course.controls[i + 1].legBendPoints?.map(p => toPage(p))
-            drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends)
+          const mapScale = project.map.scale
+          const annColor = '#a626ff'
+          const courseSpec = resolveSpec(project.spec, course.spec)
+          setColor(doc, annColor)
+
+          for (const ann of project.annotations) {
+            if (ann.type === 'forbidden_route') {
+              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
+            } else if (ann.type === 'crossing_point' && ann.points[0]) {
+              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, courseSpec)
+            } else if (ann.type === 'out_of_bounds') {
+              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
+            }
           }
-        }
 
-        // Controls
-        const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
-        const drawn = new Set<string>()
-
-        for (const cc of course.controls) {
-          if (drawn.has(cc.controlId)) continue
-          drawn.add(cc.controlId)
-
-          const ctrl = controlMap.get(cc.controlId)
-          if (!ctrl) continue
-
-          const pos = toPage(ctrl.position)
           setColor(doc, course.color)
-          drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec)
-          const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
-          drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
-        }
 
-        // Overlays — use per-course position overrides from layout if available
-        for (const sb of project.scaleBars) {
-          const overridePos = layout?.overlayPositions?.[sb.id]
-          const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
-          drawScaleBar(doc, effectiveSb, toPage, courseScale)
-        }
-        for (const tl of project.textLabels) {
-          const overridePos = layout?.overlayPositions?.[tl.id]
-          const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
-          drawTextLabel(doc, effectiveTl, toPage)
-        }
+          if (pageCourse.type === 'linear' && pageCourse.controls.length >= 2) {
+            for (let i = 0; i < pageCourse.controls.length - 1; i++) {
+              const from = controlMap.get(pageCourse.controls[i].controlId)
+              const to = controlMap.get(pageCourse.controls[i + 1].controlId)
+              if (!from || !to) continue
+              setColor(doc, course.color)
+              const bends = pageCourse.controls[i + 1].legBendPoints?.map(p => toPage(p))
+              drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends)
+            }
+          }
 
-        // Description sheet overlay on map
-        if (descMode === 'on-map' && course.controls.length > 0) {
-          const sheetPos = layout?.clueSheet ?? options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
-          const dist = computeCourseDistances(course, project.controls, project.map)
-          drawDescriptionSheetOverlay(doc, course, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs)
-        }
+          // Sequence map uses the full course for consistent numbering across submaps
+          const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
+          const drawn = new Set<string>()
+          const lastCcId = pageCourse.controls[pageCourse.controls.length - 1]?.controlId
 
-        // Header line
-        doc.setFontSize(8)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(130, 130, 130)
-        const tileLabel = cols * rows > 1
-          ? `${course.name}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-          : ``
-        doc.text(tileLabel, MARGIN, MARGIN + 3)
+          for (const cc of pageCourse.controls) {
+            if (drawn.has(cc.controlId)) continue
+            drawn.add(cc.controlId)
+
+            const ctrl = controlMap.get(cc.controlId)
+            if (!ctrl) continue
+
+            const pos = toPage(ctrl.position)
+            setColor(doc, course.color)
+            // Exchange at submap boundary: last control → circle, first → exchange symbol
+            const drawType = (ctrl.type === 'exchange' && hasSubmaps && cc.controlId === lastCcId)
+              ? 'control' : ctrl.type
+            drawControlSymbol(doc, drawType, pos, courseScale, courseSpec)
+            const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
+            drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
+          }
+
+          for (const sb of project.scaleBars) {
+            const overridePos = layout?.overlayPositions?.[sb.id]
+            const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
+            drawScaleBar(doc, effectiveSb, toPage, courseScale)
+          }
+          for (const tl of project.textLabels) {
+            const overridePos = layout?.overlayPositions?.[tl.id]
+            const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
+            drawTextLabel(doc, effectiveTl, toPage)
+          }
+
+          if (descMode === 'on-map' && pageCourse.controls.length > 0) {
+            const sheetPos = layout?.clueSheet ?? options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
+            const dist = computeCourseDistances(pageCourse, project.controls, project.map)
+            drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs)
+          }
+
+          doc.setFontSize(8)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(130, 130, 130)
+          const tileLabel = cols * rows > 1
+            ? `${pageTitle}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
+            : (hasSubmaps ? `${pageTitle}  —  1:${courseScale.toLocaleString()}` : ``)
+          doc.text(tileLabel, MARGIN, MARGIN + 3)
+        }
       }
-    }
 
-    // Description sheet on separate page(s)
-    if (descMode === 'separate' && course.controls.length > 0) {
-      doc.addPage([cpw, cph], cOrientFlag)
-      pageIndex++
-      const dist = computeCourseDistances(course, project.controls, project.map)
-      drawDescriptionSheet(doc, course, project.controls, courseScale, cpw, cph, dist.total, course.textDescriptions, dist.legs)
+      if (descMode === 'separate' && pageCourse.controls.length > 0) {
+        doc.addPage([cpw, cph], cOrientFlag)
+        pageIndex++
+        const dist = computeCourseDistances(pageCourse, project.controls, project.map)
+        drawDescriptionSheet(doc, pageCourse, project.controls, courseScale, cpw, cph, dist.total, course.textDescriptions, dist.legs)
+      }
     }
   }
 
