@@ -18,6 +18,7 @@ export interface EditorState {
   gapSize: number
   appearance: AppearanceSettings
   pendingAnnotationPoints: MapPoint[]
+  selectedSubmapIndex: number | null
   layoutMode: boolean
   layoutCourseId: string | null
 }
@@ -65,6 +66,9 @@ export interface AppActions {
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
+
+  setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
+  setSelectedSubmap: (index: number | null) => void
 
   toggleCourseLoop: (courseId: string, forkControlId: string) => void
   removeCourseLoop: (courseId: string, loopId: string) => void
@@ -164,6 +168,7 @@ export const defaultEditor: EditorState = {
   gapSize: 35,
   appearance: defaultAppearance,
   pendingAnnotationPoints: [],
+  selectedSubmapIndex: null,
   layoutMode: false,
   layoutCourseId: null,
 }

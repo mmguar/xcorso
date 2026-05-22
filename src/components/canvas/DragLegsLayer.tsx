@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 import type { Course, Control, MapConfig, MapPoint, AppearanceSettings, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
-import { clipPolylineStart, clipPolylineEnd } from '../../lib/geometry'
+import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
 
 interface Props {
   draggingControlId: string | null
@@ -18,25 +18,6 @@ interface Props {
 const LIGHT_PURPLE = '#c4a0e0'
 const ARROW_LEN_MM = 2
 const ARROW_WIDTH_MM = 1.4
-
-function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
-  const dims = getSymbolDims(spec)
-  const sf = specScaleFactor(spec, mapScale)
-  const r = dims.controlR * upm * controlScale * sf * 1.3
-  if (control.type === 'start') {
-    const side = dims.startSide * upm * controlScale * sf
-    return side * Math.sqrt(3) / 2 * 2 / 3
-  }
-  return r
-}
-
-function polylineLength(pts: MapPoint[]): number {
-  let len = 0
-  for (let i = 1; i < pts.length; i++) {
-    len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-  }
-  return len
-}
 
 function pointAlongPolyline(pts: MapPoint[], fraction: number): { x: number; y: number; angle: number } | null {
   if (pts.length < 2) return null

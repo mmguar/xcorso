@@ -15,8 +15,8 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
 
     updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>) => {
       h.mutateProject(p => {
-        const sb = p.scaleBars.find(s => s.id === id)
-        if (sb) Object.assign(sb, updates)
+        const i = p.scaleBars.findIndex(s => s.id === id)
+        if (i !== -1) p.scaleBars[i] = { ...p.scaleBars[i], ...updates }
       })
     },
 
@@ -48,8 +48,8 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
 
     updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>) => {
       h.mutateProject(p => {
-        const tl = p.textLabels.find(t => t.id === id)
-        if (tl) Object.assign(tl, updates)
+        const i = p.textLabels.findIndex(t => t.id === id)
+        if (i !== -1) p.textLabels[i] = { ...p.textLabels[i], ...updates }
       })
     },
 

@@ -3,7 +3,7 @@ import type { Control, ControlType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
 function nextControlCode(controls: Control[]): number {
-  const codes = controls.filter(c => c.type === 'control').map(c => c.code)
+  const codes = controls.filter(c => c.type === 'control' || c.type === 'exchange').map(c => c.code)
   if (codes.length === 0) return 31
   return Math.max(...codes) + 1
 }
@@ -20,7 +20,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       const { project } = get()
       if (!project) throw new Error('No project')
       let finalCode = code ?? 0
-      if (type === 'control' && !code) finalCode = nextControlCode(project.controls)
+      if ((type === 'control' || type === 'exchange') && !code) finalCode = nextControlCode(project.controls)
       if (type === 'start' && !code) finalCode = nextTypeCode(project.controls, 'start')
       if (type === 'finish' && !code) finalCode = nextTypeCode(project.controls, 'finish')
       const control: Control = { id: uuidv4(), type, code: finalCode, position }
@@ -50,7 +50,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
     updateControlCode: (id: string, code: number) => {
       const { project } = get()
       if (!project) return
-      const existing = project.controls.find(c => c.id !== id && c.code === code && c.type === 'control')
+      const existing = project.controls.find(c => c.id !== id && c.code === code && (c.type === 'control' || c.type === 'exchange'))
       if (existing) return
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === id)
