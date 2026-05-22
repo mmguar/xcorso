@@ -17,8 +17,6 @@ interface Props {
 const LIGHT_PURPLE = '#c4a0e0'
 const ARROW_LEN_MM = 2
 const ARROW_WIDTH_MM = 1.4
-const LABEL_SIZE_MM = 1.5
-const LABEL_OFFSET_MM = 2
 
 function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
   const dims = getSymbolDims(spec)
@@ -92,6 +90,8 @@ interface CollectedLeg {
   strokeWidth: number
   arrowLen: number
   arrowWidth: number
+  fontSize: number
+  fromControlId: string
   selectedCourseUsesThis: boolean
   selectedCourseColor: string
   courseNames: string[]
@@ -165,6 +165,8 @@ export const DragLegsLayer = memo(function DragLegsLayer({
           strokeWidth: dims.legW * upm * scaleFactor * appearance.lineWidth,
           arrowLen: ARROW_LEN_MM * upm * scaleFactor,
           arrowWidth: ARROW_WIDTH_MM * upm * scaleFactor,
+          fontSize: dims.controlR * upm * scaleFactor * appearance.controlScale * 1.1,
+          fromControlId: fromCc.controlId,
           selectedCourseUsesThis: false,
           selectedCourseColor: '',
           courseNames: [],
@@ -181,10 +183,19 @@ export const DragLegsLayer = memo(function DragLegsLayer({
     }
   }
 
-  // ── Pass 2: render ─────────────────────────────────────────────────────
+  // ── Pass 2: render lines + arrows, collect label positions ──────────
   const elements: React.ReactNode[] = []
-  const fontSize = LABEL_SIZE_MM * upm
-  const labelOffset = LABEL_OFFSET_MM * upm
+
+  interface LabelInfo {
+    key: string
+    text: string
+    x: number
+    y: number
+    perpX: number
+    perpY: number
+    fontSize: number
+  }
+  const labels: LabelInfo[] = []
 
   for (const [key, leg] of legs) {
     const { clippedPts, strokeWidth, arrowLen, arrowWidth } = leg
@@ -221,29 +232,58 @@ export const DragLegsLayer = memo(function DragLegsLayer({
     const mid = pointAlongPolyline(clippedPts, 0.5)
     if (mid) {
       elements.push(renderArrow(mid.x, mid.y, mid.angle, arrowLen, arrowWidth, arrowColor, `${key}-arrow`))
+    }
 
-      if (leg.courseNames.length > 0) {
-        const offX = -Math.sin(mid.angle) * labelOffset
-        const offY = Math.cos(mid.angle) * labelOffset
-        elements.push(
-          <text
-            key={`${key}-label`}
-            x={mid.x + offX}
-            y={mid.y + offY}
-            fontSize={fontSize}
-            fill={LIGHT_PURPLE}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            stroke="white"
-            strokeWidth={fontSize * 0.25}
-            paintOrder="stroke"
-            fontWeight={600}
-          >
-            {leg.courseNames.join(', ')}
-          </text>
-        )
+    if (leg.courseNames.length > 0) {
+      const fraction = leg.fromControlId === draggingControlId ? 0.7 : 0.3
+      const pt = pointAlongPolyline(clippedPts, fraction)
+      if (pt) {
+        const perpDist = leg.fontSize * 1.2
+        const perpX = -Math.sin(pt.angle) * perpDist
+        const perpY = Math.cos(pt.angle) * perpDist
+        labels.push({
+          key: `${key}-label`,
+          text: leg.courseNames.join(', '),
+          x: pt.x + perpX,
+          y: pt.y + perpY,
+          perpX, perpY,
+          fontSize: leg.fontSize,
+        })
       }
     }
+  }
+
+  // ── Pass 3: resolve label overlaps then render ────────────────────────
+  for (let i = 0; i < labels.length; i++) {
+    const li = labels[i]
+    for (let j = 0; j < i; j++) {
+      if (Math.hypot(li.x - labels[j].x, li.y - labels[j].y) < li.fontSize * 3) {
+        li.x -= 2 * li.perpX
+        li.y -= 2 * li.perpY
+        break
+      }
+    }
+  }
+
+  for (const l of labels) {
+    elements.push(
+      <text
+        key={l.key}
+        x={l.x}
+        y={l.y}
+        fontSize={l.fontSize}
+        fill={LIGHT_PURPLE}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        stroke="white"
+        strokeWidth={l.fontSize * 0.25}
+        paintOrder="stroke"
+        fontWeight="bold"
+        fontFamily="sans-serif"
+      >
+        {l.text}
+      </text>
+    )
   }
 
   if (elements.length === 0) return null
