@@ -2,6 +2,7 @@ import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
+  CourseLayout, LayoutElementPosition,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -11,11 +12,14 @@ export interface EditorState {
   selectedCourseId: string | null
   selectedVariationId: string | null
   selectedOverlayId: string | null
+  draggingControlId: string | null
   viewport: Viewport
   mapSaturation: number
   gapSize: number
   appearance: AppearanceSettings
   pendingAnnotationPoints: MapPoint[]
+  layoutMode: boolean
+  layoutCourseId: string | null
 }
 
 export interface AppState {
@@ -107,11 +111,20 @@ export interface AppActions {
 
   setActiveTool: (tool: ActiveTool) => void
   setSelectedControl: (id: string | null) => void
+  setDraggingControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setGapSize: (size: number) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void
+
+  enterLayoutMode: (courseId: string) => void
+  exitLayoutMode: () => void
+  updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
+  beginLayoutDrag: () => void
+  setLayoutMapCenter: (courseId: string, center: MapPoint) => void
+  updateLayoutElement: (courseId: string, element: 'clueSheet', pos: Partial<LayoutElementPosition>) => void
+  setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint) => void
 
   clearSession: () => void
 
@@ -145,9 +158,12 @@ export const defaultEditor: EditorState = {
   selectedCourseId: null,
   selectedVariationId: null,
   selectedOverlayId: null,
+  draggingControlId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,
   gapSize: 35,
   appearance: defaultAppearance,
   pendingAnnotationPoints: [],
+  layoutMode: false,
+  layoutCourseId: null,
 }

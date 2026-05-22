@@ -52,6 +52,16 @@ interface ShapeProps {
   labelOffset?: MapPoint
   dims: SymbolDims
   scaleFactor: number
+  showCrosshair: boolean
+}
+
+function Crosshair({ x, y, extent, sw, color }: { x: number; y: number; extent: number; sw: number; color: string }) {
+  return (
+    <>
+      <line x1={x - extent} y1={y} x2={x + extent} y2={y} stroke={color} strokeWidth={sw} />
+      <line x1={x} y1={y - extent} x2={x} y2={y + extent} stroke={color} strokeWidth={sw} />
+    </>
+  )
 }
 
 function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
@@ -66,7 +76,7 @@ function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
   }
 }
 
-function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor }: ShapeProps) {
+function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
   const scale = appearance.controlScale * scaleFactor
   const cr = dims.controlR * upm * scale
   const { x, y } = control.position
@@ -82,8 +92,10 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const lx = labelOffset ? x + labelOffset.x : x + halfSide * 1.1
   const ly = labelOffset ? y + labelOffset.y : y - h * 0.4
+  const chExtent = h * 2 / 3
   return (
     <g>
+      {showCrosshair && <Crosshair x={x} y={y} extent={chExtent} sw={sw * 0.5} color={color} />}
       {appearance.outlineEnabled && (
         <polygon points={points} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
           strokeLinejoin="round"
@@ -103,7 +115,7 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
   )
 }
 
-function FinishCircles({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor }: ShapeProps) {
+function FinishCircles({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
   const scale = appearance.controlScale
   const cr = dims.finishROuter * upm * scaleFactor * scale
   const innerR = dims.finishRInner * upm * scaleFactor * scale
@@ -118,6 +130,7 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
   const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
   return (
     <g>
+      {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
       {appearance.outlineEnabled && (
         <>
           <circle cx={x} cy={y} r={innerR} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
@@ -144,7 +157,7 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
   )
 }
 
-function ControlCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor }: ShapeProps) {
+function ControlCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
   const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
   const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
   const { x, y } = control.position
@@ -155,6 +168,7 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
   const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
   return (
     <g>
+      {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
       {appearance.outlineEnabled && (
         <circle
           cx={x} cy={y} r={cr}
@@ -187,6 +201,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const map = useStore(s => s.project!.map)
   const upm = unitsPerMm(map)
   const selectedId = useStore(s => s.editor.selectedControlId)
+  const draggingControlId = useStore(s => s.editor.draggingControlId)
   const appearance = useStore(s => s.editor.appearance)
   const projectSpec = useStore(s => s.project!.spec)
 
@@ -243,9 +258,11 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           : control.type === 'finish' ? FinishCircles
           : ControlCircle
 
+        const showCrosshair = !isCourseMode || control.id === draggingControlId
+
         return (
           <g key={control.id} opacity={opacity}>
-            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} />
+            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} />
           </g>
         )
       })}

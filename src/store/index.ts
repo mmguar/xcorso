@@ -10,6 +10,7 @@ import { createGapsSlice } from './gapsSlice'
 import { createLegsSlice } from './legsSlice'
 import { createAnnotationsSlice } from './annotationsSlice'
 import { createOverlaysSlice } from './overlaysSlice'
+import { createLayoutSlice } from './layoutSlice'
 
 const MAX_UNDO = 100
 
@@ -114,6 +115,7 @@ export const useStore = create<Store>((set, get) => {
     ...createLegsSlice(set, get, h),
     ...createAnnotationsSlice(set, get, h),
     ...createOverlaysSlice(set, get, h),
+    ...createLayoutSlice(set, get, h),
 
     // ── Map rendering ────────────────────────────────────────────────────
 
@@ -129,6 +131,10 @@ export const useStore = create<Store>((set, get) => {
 
     setSelectedControl: (id) => {
       set(state => ({ editor: { ...state.editor, selectedControlId: id } }))
+    },
+
+    setDraggingControl: (id) => {
+      set(state => ({ editor: { ...state.editor, draggingControlId: id } }))
     },
 
     setSelectedCourse: (id) => {

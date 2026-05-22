@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { ScaleBar, TextLabel, MapConfig } from '../../types'
+import type { ScaleBar, TextLabel, MapConfig, MapPoint } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
   textLabels: TextLabel[]
   map: MapConfig
   selectedOverlayId: string | null
+  positionOverrides?: Record<string, MapPoint>
 }
 
 function ScaleBarSvg({ sb, map, selected }: { sb: ScaleBar; map: MapConfig; selected: boolean }) {
@@ -143,25 +144,33 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
   )
 }
 
-export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId }: Props) {
+export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId, positionOverrides }: Props) {
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {scaleBars.map(sb => (
-        <ScaleBarSvg
-          key={sb.id}
-          sb={sb}
-          map={map}
-          selected={sb.id === selectedOverlayId}
-        />
-      ))}
-      {textLabels.map(tl => (
-        <TextLabelSvg
-          key={tl.id}
-          tl={tl}
-          map={map}
-          selected={tl.id === selectedOverlayId}
-        />
-      ))}
+      {scaleBars.map(sb => {
+        const override = positionOverrides?.[sb.id]
+        const effectiveSb = override ? { ...sb, position: override } : sb
+        return (
+          <ScaleBarSvg
+            key={sb.id}
+            sb={effectiveSb}
+            map={map}
+            selected={sb.id === selectedOverlayId}
+          />
+        )
+      })}
+      {textLabels.map(tl => {
+        const override = positionOverrides?.[tl.id]
+        const effectiveTl = override ? { ...tl, position: override } : tl
+        return (
+          <TextLabelSvg
+            key={tl.id}
+            tl={effectiveTl}
+            map={map}
+            selected={tl.id === selectedOverlayId}
+          />
+        )
+      })}
     </g>
   )
 })

@@ -20,8 +20,20 @@ export function usePdfExportState(onClose: () => void) {
     () => new Set(project.courses.map(c => c.id)),
   )
   const [allControls, setAllControls] = useState(false)
-  const [descModes, setDescModes] = useState<Record<string, DescMode>>({})
-  const [scaleOverrides, setScaleOverrides] = useState<Record<string, number>>({})
+  const [descModes, setDescModes] = useState<Record<string, DescMode>>(() => {
+    const modes: Record<string, DescMode> = {}
+    for (const c of project.courses) {
+      if (c.layout?.clueSheet.visible) modes[c.id] = 'on-map'
+    }
+    return modes
+  })
+  const [scaleOverrides, setScaleOverrides] = useState<Record<string, number>>(() => {
+    const overrides: Record<string, number> = {}
+    for (const c of project.courses) {
+      if (c.layout) overrides[c.id] = c.layout.printScale
+    }
+    return overrides
+  })
   const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
   const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [tiling, setTiling] = useState(false)
@@ -72,6 +84,20 @@ export function usePdfExportState(onClose: () => void) {
   const activeScale = activePreviewId
     ? scaleOverrides[activePreviewId] ?? printScale
     : printScale
+
+  const activeLayout = activePreviewId && activePreviewId !== ALL_CONTROLS_ID
+    ? project.courses.find(c => c.id === activePreviewId)?.layout
+    : undefined
+  const activePageBase = activeLayout ? (PAGE_SIZES[activeLayout.pageSize] ?? PAGE_SIZES.a4) : null
+  const activePw = activePageBase
+    ? (activeLayout!.orientation === 'landscape' ? activePageBase.h : activePageBase.w)
+    : pw
+  const activePh = activePageBase
+    ? (activeLayout!.orientation === 'landscape' ? activePageBase.w : activePageBase.h)
+    : ph
+  const activePrintableW = activePw - 2 * MARGIN
+  const activePrintableH = activePh - 2 * MARGIN
+
   const preview = activePreviewId
     ? coursePreviewMm(project, activePreviewId, activeScale)
     : null
@@ -223,6 +249,8 @@ export function usePdfExportState(onClose: () => void) {
 
     // Derived
     pw, ph, printableW, printableH,
+    activePw, activePh, activePrintableW, activePrintableH,
+    activeLayout,
     fitScale, fitInfo, tileInfo,
     hasSelection, anyOverflow, totalPages, scalable,
 

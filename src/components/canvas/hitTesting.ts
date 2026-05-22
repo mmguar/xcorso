@@ -136,32 +136,35 @@ export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport,
   return null
 }
 
-export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project): { id: string; kind: 'scalebar' | 'text' } | null {
+export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' } | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
+  const hitSlop = HIT_PX / vp.scale
 
   for (const sb of project.scaleBars) {
-    const segMmOnPaper = (sb.segmentLengthM * 1000) / sb.scale
+    const pos = posOverrides?.[sb.id] ?? sb.position
+    const segMmOnPaper = (sb.segmentLengthM * 1000) / (sb.scale ?? project.map.scale)
     const segU = segMmOnPaper * upm
     const totalU = segU * sb.segments
-    const pad = 1.5 * upm
+    const pad = 3 * upm
     const textH = 2.5 * upm
     const barH = 2.0 * upm
     const tickH = 0.5 * upm
     const boxW = totalU + pad * 2
     const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
-    if (mapPt.x >= sb.position.x && mapPt.x <= sb.position.x + boxW &&
-        mapPt.y >= sb.position.y && mapPt.y <= sb.position.y + boxH) {
+    if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + boxW + hitSlop &&
+        mapPt.y >= pos.y - hitSlop && mapPt.y <= pos.y + boxH + hitSlop) {
       return { id: sb.id, kind: 'scalebar' }
     }
   }
 
   for (const tl of project.textLabels) {
+    const pos = posOverrides?.[tl.id] ?? tl.position
     const fontSize = tl.fontSizeMm * upm
     const w = tl.text.length * fontSize * 0.65
     const h = fontSize * 1.3
-    if (mapPt.x >= tl.position.x && mapPt.x <= tl.position.x + w &&
-        mapPt.y >= tl.position.y - fontSize && mapPt.y <= tl.position.y - fontSize + h) {
+    if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
+        mapPt.y >= pos.y - fontSize - hitSlop && mapPt.y <= pos.y - fontSize + h + hitSlop) {
       return { id: tl.id, kind: 'text' }
     }
   }
