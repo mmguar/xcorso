@@ -7,6 +7,7 @@ import { FpsCounter } from './FpsCounter'
 import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
 import { DragLegsLayer } from './DragLegsLayer'
+import type { DragLegsHandle } from './DragLegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
@@ -67,13 +68,13 @@ export function MapCanvas({ loadedMap }: Props) {
   const divRef = useRef<HTMLDivElement>(null)
 
   const [vp, setVpState] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
-  const [draggingControlId, setDraggingControlId] = useState<string | null>(null)
-  const vpRef = useRef<Viewport>(vp)
+    const vpRef = useRef<Viewport>(vp)
   const fitScaleRef = useRef<number>(MIN_SCALE)
   const mapDivRef = useRef<HTMLDivElement>(null)
   const hdSvgRef = useRef<SVGSVGElement>(null)
   const hdMapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
+  const dragLegsRef = useRef<DragLegsHandle>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
   const canvasPixelRef = useRef<[number, number]>([1, 1])
 
@@ -202,6 +203,8 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragControlId: string | null = null
     let dragOffset: { dx: number; dy: number } | null = null
     let dragStarted = false
+    let dragOrigPos: { x: number; y: number } | null = null
+    let dragControlEl: SVGGElement | null = null
     let pendingControlPos: { x: number; y: number } | null = null
     let pendingControlRaf = 0
 
@@ -484,7 +487,11 @@ export function MapCanvas({ loadedMap }: Props) {
           useStore.getState().beginMoveControl()
           useStore.getState().setDraggingControl(dragControlId)
           dragStarted = true
-          setDraggingControlId(dragControlId)
+          const ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
+          dragOrigPos = ctrl ? { ...ctrl.position } : null
+          const og = overlayGRef.current
+          dragControlEl = og?.querySelector(`[data-control-id="${dragControlId}"]`) as SVGGElement | null
+          dragLegsRef.current?.begin(dragControlId)
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
@@ -492,8 +499,13 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!pendingControlRaf) {
           pendingControlRaf = requestAnimationFrame(() => {
             pendingControlRaf = 0
-            if (pendingControlPos && dragControlId) {
-              useStore.getState().moveControl(dragControlId, pendingControlPos)
+            if (pendingControlPos && dragOrigPos && dragControlEl) {
+              const dx = pendingControlPos.x - dragOrigPos.x
+              const dy = pendingControlPos.y - dragOrigPos.y
+              dragControlEl.style.transform = `translate(${dx}px,${dy}px)`
+            }
+            if (pendingControlPos) {
+              dragLegsRef.current?.update(pendingControlPos)
             }
           })
         }
@@ -587,7 +599,11 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragControlId && dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
-        dragControlId = null; dragOffset = null; dragStarted = false; setDraggingControlId(null); return
+        if (dragControlEl) { dragControlEl.style.transform = ''; dragControlEl = null }
+        dragLegsRef.current?.end()
+        dragOrigPos = null
+        useStore.getState().setDraggingControl(null)
+        dragControlId = null; dragOffset = null; dragStarted = false; return
       }
       dragControlId = null; dragOffset = null; dragStarted = false
 
@@ -700,7 +716,10 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
-        setDraggingControlId(null)
+        if (dragControlEl) { dragControlEl.style.transform = ''; dragControlEl = null }
+        dragLegsRef.current?.end()
+        dragOrigPos = null
+        useStore.getState().setDraggingControl(null)
       }
       dragControlId = null; dragOffset = null; dragStarted = false
       pos.delete(e.pointerId)
@@ -885,7 +904,7 @@ export function MapCanvas({ loadedMap }: Props) {
             selectedSubmapIndex={selectedSubmapIndex}
           />
           <DragLegsLayer
-            draggingControlId={draggingControlId}
+            ref={dragLegsRef}
             courses={courses}
             selectedCourse={selectedCourse}
             controls={controls}

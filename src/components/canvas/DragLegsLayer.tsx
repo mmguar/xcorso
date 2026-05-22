@@ -1,11 +1,35 @@
-import { memo, useMemo } from 'react'
+import { forwardRef, useImperativeHandle, useRef } from 'react'
 import type { Course, Control, MapConfig, MapPoint, AppearanceSettings, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
 
+const LIGHT_PURPLE = '#c4a0e0'
+const ARROW_LEN_MM = 2
+const ARROW_WIDTH_MM = 1.4
+const LABEL_PX = 25
+
+interface LegTopology {
+  fromControlId: string
+  toControlId: string
+  fromR: number
+  toR: number
+  bendPoints?: MapPoint[]
+  strokeWidth: number
+  arrowLen: number
+  arrowWidth: number
+  selectedCourseUsesThis: boolean
+  selectedCourseColor: string
+  courseNames: string[]
+}
+
+export interface DragLegsHandle {
+  begin: (controlId: string) => void
+  update: (pos: MapPoint) => void
+  end: () => void
+}
+
 interface Props {
-  draggingControlId: string | null
   courses: Course[]
   selectedCourse: Course | null
   controls: Control[]
@@ -14,10 +38,6 @@ interface Props {
   projectSpec?: EventSpec
   viewportScale: number
 }
-
-const LIGHT_PURPLE = '#c4a0e0'
-const ARROW_LEN_MM = 2
-const ARROW_WIDTH_MM = 1.4
 
 function pointAlongPolyline(pts: MapPoint[], fraction: number): { x: number; y: number; angle: number } | null {
   if (pts.length < 2) return null
@@ -41,235 +61,199 @@ function pointAlongPolyline(pts: MapPoint[], fraction: number): { x: number; y: 
   return null
 }
 
-function renderArrow(
-  cx: number, cy: number, angle: number,
-  arrowLen: number, arrowWidth: number,
-  color: string, key: string,
-): React.ReactNode {
-  const cosA = Math.cos(angle)
-  const sinA = Math.sin(angle)
-  const halfLen = arrowLen / 2
-  const halfW = arrowWidth / 2
+export const DragLegsLayer = forwardRef<DragLegsHandle, Props>(function DragLegsLayer(
+  { courses, selectedCourse, controls, map, appearance, projectSpec, viewportScale },
+  ref,
+) {
+  const gRef = useRef<SVGGElement>(null)
+  const topoRef = useRef<LegTopology[]>([])
+  const controlMapRef = useRef<Map<string, Control>>(new Map())
+  const draggingIdRef = useRef<string | null>(null)
 
-  const tipX = cx + halfLen * cosA
-  const tipY = cy + halfLen * sinA
-  const leftX = cx - halfLen * cosA - halfW * sinA
-  const leftY = cy - halfLen * sinA + halfW * cosA
-  const rightX = cx - halfLen * cosA + halfW * sinA
-  const rightY = cy - halfLen * sinA - halfW * cosA
+  useImperativeHandle(ref, () => ({
+    begin(controlId: string) {
+      draggingIdRef.current = controlId
+      const cMap = new Map(controls.map(c => [c.id, c]))
+      controlMapRef.current = cMap
+      const upm = unitsPerMm(map)
+      const topo: LegTopology[] = []
+      const seen = new Set<string>()
 
-  return (
-    <polygon
-      key={key}
-      points={`${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`}
-      fill={color}
-    />
-  )
-}
+      for (const rawCourse of courses) {
+        if (rawCourse.type !== 'linear') continue
+        const isSelected = rawCourse.id === selectedCourse?.id
+        const course = isSelected && selectedCourse ? selectedCourse : rawCourse
+        if (course.controls.length < 2) continue
 
-const LABEL_PX = 25
+        const spec = resolveSpec(projectSpec, course.spec)
+        const scaleFactor = specScaleFactor(spec, map.scale)
+        const dims = getSymbolDims(spec)
 
-interface CollectedLeg {
-  clippedPts: MapPoint[]
-  strokeWidth: number
-  arrowLen: number
-  arrowWidth: number
-  fromControlId: string
-  selectedCourseUsesThis: boolean
-  selectedCourseColor: string
-  courseNames: string[]
-}
+        for (let i = 0; i < course.controls.length - 1; i++) {
+          const fromCc = course.controls[i]
+          const toCc = course.controls[i + 1]
+          if (fromCc.controlId !== controlId && toCc.controlId !== controlId) continue
 
-export const DragLegsLayer = memo(function DragLegsLayer({
-  draggingControlId,
-  courses,
-  selectedCourse,
-  controls,
-  map,
-  appearance,
-  projectSpec,
-  viewportScale,
-}: Props) {
-  const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
+          const legKey = `${fromCc.controlId}->${toCc.controlId}`
+          const fromCtrl = cMap.get(fromCc.controlId)
+          const toCtrl = cMap.get(toCc.controlId)
+          if (!fromCtrl || !toCtrl) continue
 
-  if (!draggingControlId) return null
+          let entry = topo.find(t => t.fromControlId === fromCc.controlId && t.toControlId === toCc.controlId)
+          if (!entry) {
+            entry = {
+              fromControlId: fromCc.controlId,
+              toControlId: toCc.controlId,
+              fromR: clipRadius(fromCtrl, map.scale, upm, appearance.controlScale, spec),
+              toR: clipRadius(toCtrl, map.scale, upm, appearance.controlScale, spec),
+              bendPoints: toCc.legBendPoints,
+              strokeWidth: dims.legW * upm * scaleFactor * appearance.lineWidth,
+              arrowLen: ARROW_LEN_MM * upm * scaleFactor,
+              arrowWidth: ARROW_WIDTH_MM * upm * scaleFactor,
+              selectedCourseUsesThis: false,
+              selectedCourseColor: '',
+              courseNames: [],
+            }
+            topo.push(entry)
+          }
 
-  const upm = unitsPerMm(map)
+          if (isSelected) {
+            entry.selectedCourseUsesThis = true
+            entry.selectedCourseColor = appearance.color || course.color
+          } else if (!seen.has(legKey + course.id)) {
+            seen.add(legKey + course.id)
+            entry.courseNames.push(course.name)
+          }
+        }
+      }
+      topoRef.current = topo
+    },
 
-  // ── Pass 1: collect unique legs and their course names ─────────────────
-  const legs = new Map<string, CollectedLeg>()
+    update(dragPos: MapPoint) {
+      const g = gRef.current
+      if (!g) return
+      const controlId = draggingIdRef.current
+      if (!controlId) return
 
-  for (const rawCourse of courses) {
-    if (rawCourse.type !== 'linear') continue
-    const isSelectedCourse = rawCourse.id === selectedCourse?.id
-    const course = isSelectedCourse && selectedCourse ? selectedCourse : rawCourse
-    if (course.controls.length < 2) continue
+      while (g.firstChild) g.removeChild(g.firstChild)
 
-    const spec = resolveSpec(projectSpec, course.spec)
-    const scaleFactor = specScaleFactor(spec, map.scale)
-    const dims = getSymbolDims(spec)
+      const cMap = controlMapRef.current
+      const fontSize = LABEL_PX / viewportScale
+      const labelPerpDist = fontSize * 1.2
 
-    for (let i = 0; i < course.controls.length - 1; i++) {
-      const fromCc = course.controls[i]
-      const toCc = course.controls[i + 1]
-      const fromControl = controlMap.get(fromCc.controlId)
-      const toControl = controlMap.get(toCc.controlId)
-      if (!fromControl || !toControl) continue
-      if (fromCc.controlId !== draggingControlId && toCc.controlId !== draggingControlId) continue
+      interface LabelInfo { text: string; x: number; y: number; perpX: number; perpY: number }
+      const labels: LabelInfo[] = []
 
-      const legKey = `${fromCc.controlId}->${toCc.controlId}`
-      let leg = legs.get(legKey)
+      for (const leg of topoRef.current) {
+        const fromPos = leg.fromControlId === controlId ? dragPos : cMap.get(leg.fromControlId)!.position
+        const toPos = leg.toControlId === controlId ? dragPos : cMap.get(leg.toControlId)!.position
 
-      if (!leg) {
-        const fromR = clipRadius(fromControl, map.scale, upm, appearance.controlScale, spec)
-        const toR = clipRadius(toControl, map.scale, upm, appearance.controlScale, spec)
-        const bendPoints = toCc.legBendPoints
         let clippedPts: MapPoint[]
-
-        if (bendPoints && bendPoints.length > 0) {
-          const fullPath: MapPoint[] = [fromControl.position, ...bendPoints, toControl.position]
+        if (leg.bendPoints && leg.bendPoints.length > 0) {
+          const fullPath: MapPoint[] = [fromPos, ...leg.bendPoints, toPos]
           if (polylineLength(fullPath) === 0) continue
-          clippedPts = clipPolylineEnd(clipPolylineStart(fullPath, fromR), toR)
+          clippedPts = clipPolylineEnd(clipPolylineStart(fullPath, leg.fromR), leg.toR)
           if (clippedPts.length < 2) continue
         } else {
-          const { x: x1, y: y1 } = fromControl.position
-          const { x: x2, y: y2 } = toControl.position
-          const dx = x2 - x1, dy = y2 - y1
-          const len = Math.sqrt(dx * dx + dy * dy)
+          const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y
+          const len = Math.hypot(dx, dy)
           if (len === 0) continue
           const ux = dx / len, uy = dy / len
           clippedPts = [
-            { x: x1 + ux * fromR, y: y1 + uy * fromR },
-            { x: x2 - ux * toR, y: y2 - uy * toR },
+            { x: fromPos.x + ux * leg.fromR, y: fromPos.y + uy * leg.fromR },
+            { x: toPos.x - ux * leg.toR, y: toPos.y - uy * leg.toR },
           ]
         }
 
-        leg = {
-          clippedPts,
-          strokeWidth: dims.legW * upm * scaleFactor * appearance.lineWidth,
-          arrowLen: ARROW_LEN_MM * upm * scaleFactor,
-          arrowWidth: ARROW_WIDTH_MM * upm * scaleFactor,
-          fromControlId: fromCc.controlId,
-          selectedCourseUsesThis: false,
-          selectedCourseColor: '',
-          courseNames: [],
+        const showLine = !leg.selectedCourseUsesThis
+        const arrowColor = leg.selectedCourseUsesThis ? leg.selectedCourseColor : LIGHT_PURPLE
+
+        if (showLine) {
+          if (clippedPts.length === 2) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+            line.setAttribute('x1', String(clippedPts[0].x))
+            line.setAttribute('y1', String(clippedPts[0].y))
+            line.setAttribute('x2', String(clippedPts[1].x))
+            line.setAttribute('y2', String(clippedPts[1].y))
+            line.setAttribute('stroke', LIGHT_PURPLE)
+            line.setAttribute('stroke-width', String(leg.strokeWidth))
+            line.setAttribute('stroke-linecap', 'round')
+            g.appendChild(line)
+          } else {
+            const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline')
+            pl.setAttribute('points', clippedPts.map(p => `${p.x},${p.y}`).join(' '))
+            pl.setAttribute('fill', 'none')
+            pl.setAttribute('stroke', LIGHT_PURPLE)
+            pl.setAttribute('stroke-width', String(leg.strokeWidth))
+            pl.setAttribute('stroke-linecap', 'round')
+            pl.setAttribute('stroke-linejoin', 'round')
+            g.appendChild(pl)
+          }
         }
-        legs.set(legKey, leg)
+
+        const arrowFraction = leg.fromControlId === controlId ? 0.15 : 0.85
+        const arrowPt = pointAlongPolyline(clippedPts, arrowFraction)
+        if (arrowPt) {
+          const cosA = Math.cos(arrowPt.angle), sinA = Math.sin(arrowPt.angle)
+          const halfLen = leg.arrowLen / 2, halfW = leg.arrowWidth / 2
+          const tipX = arrowPt.x + halfLen * cosA, tipY = arrowPt.y + halfLen * sinA
+          const leftX = arrowPt.x - halfLen * cosA - halfW * sinA
+          const leftY = arrowPt.y - halfLen * sinA + halfW * cosA
+          const rightX = arrowPt.x - halfLen * cosA + halfW * sinA
+          const rightY = arrowPt.y - halfLen * sinA - halfW * cosA
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon')
+          poly.setAttribute('points', `${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`)
+          poly.setAttribute('fill', arrowColor)
+          g.appendChild(poly)
+        }
+
+        if (leg.courseNames.length > 0) {
+          const fraction = leg.fromControlId === controlId ? 0.7 : 0.3
+          const pt = pointAlongPolyline(clippedPts, fraction)
+          if (pt) {
+            const perpX = -Math.sin(pt.angle) * labelPerpDist
+            const perpY = Math.cos(pt.angle) * labelPerpDist
+            labels.push({ text: leg.courseNames.join(', '), x: pt.x + perpX, y: pt.y + perpY, perpX, perpY })
+          }
+        }
       }
 
-      if (isSelectedCourse) {
-        leg.selectedCourseUsesThis = true
-        leg.selectedCourseColor = appearance.color || course.color
-      } else {
-        leg.courseNames.push(course.name)
+      for (let i = 0; i < labels.length; i++) {
+        const li = labels[i]
+        for (let j = 0; j < i; j++) {
+          if (Math.hypot(li.x - labels[j].x, li.y - labels[j].y) < fontSize * 3) {
+            li.x -= 2 * li.perpX
+            li.y -= 2 * li.perpY
+            break
+          }
+        }
       }
-    }
-  }
 
-  // ── Pass 2: render lines + arrows, collect label positions ──────────
-  const elements: React.ReactNode[] = []
-
-  const fontSize = LABEL_PX / viewportScale
-  const labelPerpDist = fontSize * 1.2
-
-  interface LabelInfo {
-    key: string
-    text: string
-    x: number
-    y: number
-    perpX: number
-    perpY: number
-  }
-  const labels: LabelInfo[] = []
-
-  for (const [key, leg] of legs) {
-    const { clippedPts, strokeWidth, arrowLen, arrowWidth } = leg
-    const showLine = !leg.selectedCourseUsesThis
-    const arrowColor = leg.selectedCourseUsesThis ? leg.selectedCourseColor : LIGHT_PURPLE
-
-    if (showLine) {
-      if (clippedPts.length === 2) {
-        elements.push(
-          <line
-            key={key}
-            x1={clippedPts[0].x} y1={clippedPts[0].y}
-            x2={clippedPts[1].x} y2={clippedPts[1].y}
-            stroke={LIGHT_PURPLE}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-          />
-        )
-      } else {
-        elements.push(
-          <polyline
-            key={key}
-            points={clippedPts.map(p => `${p.x},${p.y}`).join(' ')}
-            fill="none"
-            stroke={LIGHT_PURPLE}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )
+      for (const l of labels) {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+        text.setAttribute('x', String(l.x))
+        text.setAttribute('y', String(l.y))
+        text.setAttribute('font-size', String(fontSize))
+        text.setAttribute('fill', LIGHT_PURPLE)
+        text.setAttribute('text-anchor', 'middle')
+        text.setAttribute('dominant-baseline', 'middle')
+        text.setAttribute('stroke', 'white')
+        text.setAttribute('stroke-width', String(fontSize * 0.25))
+        text.setAttribute('paint-order', 'stroke')
+        text.setAttribute('font-weight', 'bold')
+        text.setAttribute('font-family', 'sans-serif')
+        text.textContent = l.text
+        g.appendChild(text)
       }
-    }
+    },
 
-    const arrowFraction = leg.fromControlId === draggingControlId ? 0.15 : 0.85
-    const arrowPt = pointAlongPolyline(clippedPts, arrowFraction)
-    if (arrowPt) {
-      elements.push(renderArrow(arrowPt.x, arrowPt.y, arrowPt.angle, arrowLen, arrowWidth, arrowColor, `${key}-arrow`))
-    }
+    end() {
+      draggingIdRef.current = null
+      topoRef.current = []
+      const g = gRef.current
+      if (g) while (g.firstChild) g.removeChild(g.firstChild)
+    },
+  }), [courses, selectedCourse, controls, map, appearance, projectSpec, viewportScale])
 
-    if (leg.courseNames.length > 0) {
-      const fraction = leg.fromControlId === draggingControlId ? 0.7 : 0.3
-      const pt = pointAlongPolyline(clippedPts, fraction)
-      if (pt) {
-        const perpX = -Math.sin(pt.angle) * labelPerpDist
-        const perpY = Math.cos(pt.angle) * labelPerpDist
-        labels.push({
-          key: `${key}-label`,
-          text: leg.courseNames.join(', '),
-          x: pt.x + perpX,
-          y: pt.y + perpY,
-          perpX, perpY,
-        })
-      }
-    }
-  }
-
-  // ── Pass 3: resolve label overlaps then render ────────────────────────
-  for (let i = 0; i < labels.length; i++) {
-    const li = labels[i]
-    for (let j = 0; j < i; j++) {
-      if (Math.hypot(li.x - labels[j].x, li.y - labels[j].y) < fontSize * 3) {
-        li.x -= 2 * li.perpX
-        li.y -= 2 * li.perpY
-        break
-      }
-    }
-  }
-
-  for (const l of labels) {
-    elements.push(
-      <text
-        key={l.key}
-        x={l.x}
-        y={l.y}
-        fontSize={fontSize}
-        fill={LIGHT_PURPLE}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        stroke="white"
-        strokeWidth={fontSize * 0.25}
-        paintOrder="stroke"
-        fontWeight="bold"
-        fontFamily="sans-serif"
-      >
-        {l.text}
-      </text>
-    )
-  }
-
-  if (elements.length === 0) return null
-  return <g style={{ pointerEvents: 'none' }}>{elements}</g>
+  return <g ref={gRef} style={{ pointerEvents: 'none' }} />
 })

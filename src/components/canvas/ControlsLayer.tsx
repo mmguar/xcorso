@@ -345,7 +345,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         const showCrosshair = !isCourseMode || control.id === draggingControlId
 
         return (
-          <g key={control.id} opacity={opacity}>
+          <g key={control.id} data-control-id={control.id} opacity={opacity}>
             <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} />
           </g>
         )
