@@ -17,7 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
-import { columns, getColumnSymbols, columnFields, isDimensionText } from '../lib/iofSymbols'
+import { columns, getColumnSymbols, columnFields, isDimensionText, getSymbol } from '../lib/iofSymbols'
 import { defaultControlLabel, computeSubmaps } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
@@ -202,6 +202,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       setPicker={setPicker}
                       onRemove={onRemove}
                       onToggleLoop={toggleCourseLoop}
+                      textDescriptions={course.textDescriptions}
                       submapButton={startButton}
                       exchangeSeparator={submapEndIdx != null ? {
                         submapEndIdx,
@@ -273,6 +274,7 @@ function SortableDescRow({
   setPicker,
   onRemove,
   onToggleLoop,
+  textDescriptions,
   submapButton,
   exchangeSeparator,
 }: {
@@ -283,6 +285,7 @@ function SortableDescRow({
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
+  textDescriptions?: boolean
   submapButton?: SubmapButtonProps
   exchangeSeparator?: ExchangeSeparatorProps
 }) {
@@ -337,6 +340,7 @@ function SortableDescRow({
           const value = desc[field]
           const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
           const isDimText = col.id === 'F' && value && isDimensionText(value)
+          const sym = value ? getSymbol(value) : undefined
 
           return (
             <td
@@ -345,9 +349,11 @@ function SortableDescRow({
               style={{ width: CELL, height: CELL, padding: 0 }}
               onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
             >
-              {value && (isDimText
-                ? <span className="text-[9px] font-bold leading-none">{value}</span>
-                : <IofSymbolIcon code={value} size={CELL - 4} />
+              {value && (textDescriptions && sym
+                ? <span className="text-[8px] leading-tight px-0.5">{sym.name}</span>
+                : isDimText
+                  ? <span className="text-[9px] font-bold leading-none">{value}</span>
+                  : <IofSymbolIcon code={value} size={CELL - 4} />
               )}
             </td>
           )
