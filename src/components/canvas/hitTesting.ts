@@ -1,5 +1,6 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
-import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel } from '../../lib/courseUtils'
+import type { EditorState } from '../../store/types'
+import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, computeSubmaps } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
 
 const HIT_PX = 20
@@ -27,10 +28,20 @@ export function controlHitRadius(control: Control, vp: Viewport, project: Projec
   return Math.max(HIT_PX, symbolScreenR + HIT_TOLERANCE_PX)
 }
 
-export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): Control | null {
+export function getVisibleControlIds(project: Project, editor: EditorState): Set<string> | null {
+  if (editor.selectedSubmapIndex == null || !editor.selectedCourseId) return null
+  const course = project.courses.find(c => c.id === editor.selectedCourseId)
+  if (!course) return null
+  const submaps = computeSubmaps(course, project.controls)
+  if (editor.selectedSubmapIndex >= submaps.length) return null
+  return new Set(submaps[editor.selectedSubmapIndex].controls.map(cc => cc.controlId))
+}
+
+export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, visibleControlIds?: Set<string> | null): Control | null {
   let best: Control | null = null
   let bestDist = Infinity
   for (const c of project.controls) {
+    if (visibleControlIds && !visibleControlIds.has(c.id)) continue
     const s = controlToScreen(c, vp)
     const d = Math.hypot(screenX - s.x, screenY - s.y)
     const hitR = controlHitRadius(c, vp, project, selectedCourseId)
