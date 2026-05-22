@@ -157,7 +157,7 @@ export const DragLegsLayer = forwardRef<DragLegsHandle, Props>(function DragLegs
         } else {
           const dx = toPos.x - fromPos.x, dy = toPos.y - fromPos.y
           const len = Math.hypot(dx, dy)
-          if (len === 0) continue
+          if (len === 0 || leg.fromR + leg.toR >= len) continue
           const ux = dx / len, uy = dy / len
           clippedPts = [
             { x: fromPos.x + ux * leg.fromR, y: fromPos.y + uy * leg.fromR },

@@ -184,7 +184,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
       md:hidden fixed top-12 left-0 right-0 z-30
       bg-white border-b border-gray-200 shadow-2xl
       transition-all duration-300 ease-out
-      ${expanded ? 'h-[50vh] flex flex-col overflow-hidden' : 'h-10 overflow-hidden'}
+      ${expanded ? 'h-[50vh] flex flex-col overflow-hidden' : 'h-10'}
     `}>
       {/* Icon tabs + course chips */}
       <div className="flex items-center gap-1.5 h-10 px-2 shrink-0">
@@ -206,7 +206,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {courses.length > 0 && (
           <>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
-            <div className="flex items-center gap-1 overflow-x-auto">
+            <div className="flex items-center gap-1 py-0.5">
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
@@ -214,11 +214,11 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
                     key={course.id}
                     onClick={() => {
                       if (isActive) { setSelectedCourse(null) }
-                      else { setSelectedCourse(course.id); setTab('courses'); setExpanded(true) }
+                      else { setSelectedCourse(course.id); if (expanded) setTab('courses') }
                     }}
                     className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
                       isActive
-                        ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
+                        ? 'ring-2 ring-orange-500 ring-offset-1'
                         : 'opacity-60 hover:opacity-100'
                     }`}
                     style={{ background: course.color, color: 'white' }}
