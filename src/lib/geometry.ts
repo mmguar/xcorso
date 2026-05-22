@@ -1,3 +1,6 @@
+import type { Control, EventSpec } from '../types'
+import { getSymbolDims, symbolScaleFactor as specScaleFactor } from './symbolSpec'
+
 interface Point { x: number; y: number }
 
 export function walkPath<T extends Point>(points: T[], spacing: number): { x: number; y: number; angle: number }[] {
@@ -78,4 +81,23 @@ export function clipPolyline<T extends Point>(pts: T[], startClip: number, endCl
   const clipped = clipPolylineStart(pts, startClip)
   if (clipped.length < 2) return []
   return clipPolylineEnd(clipped, endClip)
+}
+
+export function polylineLength<T extends Point>(pts: T[]): number {
+  let len = 0
+  for (let i = 1; i < pts.length; i++) {
+    len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+  }
+  return len
+}
+
+export function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
+  const dims = getSymbolDims(spec)
+  const sf = specScaleFactor(spec, mapScale)
+  const r = dims.controlR * upm * controlScale * sf * 1.3
+  if (control.type === 'start') {
+    const side = dims.startSide * upm * controlScale * sf
+    return side * Math.sqrt(3) / 2 * 2 / 3
+  }
+  return r
 }

@@ -13,6 +13,15 @@ const MAX_RASTER_PX = 5000
 
 export const ALL_CONTROLS_ID = '__all_controls__'
 
+export function submapPreviewId(courseId: string, index: number): string {
+  return `${courseId}__sub${index}`
+}
+
+export function parseSubmapPreviewId(id: string): { courseId: string; submapIndex: number } | null {
+  const m = id.match(/^(.+)__sub(\d+)$/)
+  return m ? { courseId: m[1], submapIndex: parseInt(m[2]) } : null
+}
+
 interface ExportCourse extends Course {
   _parentId?: string
 }
@@ -303,17 +312,35 @@ export function checkFit(project: Project, options: PdfExportOptions): CourseFit
   }
 
   for (const course of project.courses.filter(c => options.courseIds.includes(c.id))) {
-    const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
-    const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-    results.push({
-      courseId: course.id,
-      courseName: course.name,
-      fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
-      widthMm: bounds?.width ?? 0,
-      heightMm: bounds?.height ?? 0,
-      printableW,
-      printableH,
-    })
+    const submaps = computeSubmaps(course, project.controls)
+    if (submaps.length > 1) {
+      for (const submap of submaps) {
+        const smKey = submapPreviewId(course.id, submap.index)
+        const courseScale = options.scaleOverrides?.[smKey] ?? options.scaleOverrides?.[course.id] ?? options.printScale
+        const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
+        results.push({
+          courseId: smKey,
+          courseName: `${course.name} — ${submap.label}`,
+          fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
+          widthMm: bounds?.width ?? 0,
+          heightMm: bounds?.height ?? 0,
+          printableW,
+          printableH,
+        })
+      }
+    } else {
+      const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
+      const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
+      results.push({
+        courseId: course.id,
+        courseName: course.name,
+        fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
+        widthMm: bounds?.width ?? 0,
+        heightMm: bounds?.height ?? 0,
+        printableW,
+        printableH,
+      })
+    }
   }
 
   return results
@@ -396,12 +423,26 @@ export function checkTiling(project: Project, options: PdfExportOptions): Course
   }
 
   for (const course of project.courses.filter(c => options.courseIds.includes(c.id))) {
-    const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
-    const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-    if (!bounds) { results.push({ courseId: course.id, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }); continue }
-    const cols = tileCount(bounds.width, printableW)
-    const rows = tileCount(bounds.height, printableH)
-    results.push({ courseId: course.id, courseName: course.name, cols, rows, totalPages: cols * rows })
+    const submaps = computeSubmaps(course, project.controls)
+    if (submaps.length > 1) {
+      for (const submap of submaps) {
+        const smKey = submapPreviewId(course.id, submap.index)
+        const courseScale = options.scaleOverrides?.[smKey] ?? options.scaleOverrides?.[course.id] ?? options.printScale
+        const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
+        const label = `${course.name} — ${submap.label}`
+        if (!bounds) { results.push({ courseId: smKey, courseName: label, cols: 1, rows: 1, totalPages: 1 }); continue }
+        const cols = tileCount(bounds.width, printableW)
+        const rows = tileCount(bounds.height, printableH)
+        results.push({ courseId: smKey, courseName: label, cols, rows, totalPages: cols * rows })
+      }
+    } else {
+      const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
+      const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
+      if (!bounds) { results.push({ courseId: course.id, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }); continue }
+      const cols = tileCount(bounds.width, printableW)
+      const rows = tileCount(bounds.height, printableH)
+      results.push({ courseId: course.id, courseName: course.name, cols, rows, totalPages: cols * rows })
+    }
   }
 
   return results
@@ -411,6 +452,7 @@ export function checkTiling(project: Project, options: PdfExportOptions): Course
 
 export interface CoursePreview {
   positions: Pos[]
+  fadedPositions?: Pos[]
   centerX: number
   centerY: number
 }
@@ -419,33 +461,80 @@ export function coursePreviewMm(
   project: Project,
   courseId: string,
   printScale: number,
+  locked?: boolean,
 ): CoursePreview | null {
   let positions: Pos[]
+  let fadedPositions: Pos[] | undefined
 
   if (courseId === ALL_CONTROLS_ID) {
     positions = project.controls.map(c => mapToMm(c.position, project.map, printScale))
   } else {
-    const course = project.courses.find(c => c.id === courseId)
+    const parsed = parseSubmapPreviewId(courseId)
+    const realCourseId = parsed ? parsed.courseId : courseId
+    const course = project.courses.find(c => c.id === realCourseId)
     if (!course) return null
+
     const controlMap = new Map(project.controls.map(c => [c.id, c]))
-    positions = course.controls
-      .map(cc => controlMap.get(cc.controlId))
-      .filter((c): c is Control => c != null)
-      .map(c => mapToMm(c.position, project.map, printScale))
-    for (const cc of course.controls) {
-      if (cc.legBendPoints) {
-        for (const bp of cc.legBendPoints) {
-          positions.push(mapToMm(bp, project.map, printScale))
+
+    if (parsed && locked) {
+      const submaps = computeSubmaps(course, project.controls)
+      const submap = submaps.find(s => s.index === parsed.submapIndex)
+      if (!submap) return null
+
+      const submapControlIds = new Set(submap.controls.map(cc => cc.controlId))
+
+      positions = []
+      fadedPositions = []
+      const seen = new Set<string>()
+      for (const cc of course.controls) {
+        if (seen.has(cc.controlId)) continue
+        seen.add(cc.controlId)
+        const ctrl = controlMap.get(cc.controlId)
+        if (!ctrl) continue
+        const pos = mapToMm(ctrl.position, project.map, printScale)
+        if (submapControlIds.has(cc.controlId)) {
+          positions.push(pos)
+        } else {
+          fadedPositions.push(pos)
+        }
+      }
+      for (const cc of course.controls) {
+        if (cc.legBendPoints) {
+          for (const bp of cc.legBendPoints) {
+            fadedPositions.push(mapToMm(bp, project.map, printScale))
+          }
+        }
+      }
+    } else {
+      let courseControls = course.controls
+      if (parsed) {
+        const submaps = computeSubmaps(course, project.controls)
+        const submap = submaps.find(s => s.index === parsed.submapIndex)
+        if (!submap) return null
+        courseControls = submap.controls
+      }
+
+      positions = courseControls
+        .map(cc => controlMap.get(cc.controlId))
+        .filter((c): c is Control => c != null)
+        .map(c => mapToMm(c.position, project.map, printScale))
+      for (const cc of courseControls) {
+        if (cc.legBendPoints) {
+          for (const bp of cc.legBendPoints) {
+            positions.push(mapToMm(bp, project.map, printScale))
+          }
         }
       }
     }
   }
 
-  const bounds = computeBounds(positions)
+  const allPositions = fadedPositions ? [...positions, ...fadedPositions] : positions
+  const bounds = computeBounds(allPositions)
   if (!bounds) return null
 
   return {
     positions,
+    fadedPositions,
     centerX: bounds.centerX,
     centerY: bounds.centerY,
   }
@@ -960,7 +1049,7 @@ export async function exportCoursePdf(
     const origCourse = project.courses.find(c => c.id === (course._parentId ?? course.id))
     const layout = origCourse?.layout
 
-    const courseScale = layout?.printScale ?? options.scaleOverrides?.[oKey] ?? options.printScale
+    const baseCourseScale = layout?.printScale ?? options.scaleOverrides?.[oKey] ?? options.printScale
     const descMode = layout?.clueSheet.visible ? 'on-map' as DescMode : options.descModes?.[oKey] ?? 'none'
 
     const cPageBase = layout ? (PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
@@ -976,10 +1065,24 @@ export async function exportCoursePdf(
     const submapSlices = hasSubmaps ? submaps : [{ index: 0, controls: course.controls, label: '' }]
 
     for (const submap of submapSlices) {
+      const smKey = hasSubmaps ? submapPreviewId(oKey, submap.index) : oKey
+      const courseScale = options.scaleOverrides?.[smKey] ?? baseCourseScale
       const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
       const pageTitle = hasSubmaps ? `${course.name} — ${submap.label}` : course.name
 
-      const bounds = courseBoundsMm(pageCourse, project.controls, project.map, courseScale)
+      // Detect trailing flip: last control in this submap is an exchange with flip mode (not the final submap)
+      let trailingFlip = false
+      if (hasSubmaps && submap.index < submaps.length - 1) {
+        const lastCc = submap.controls[submap.controls.length - 1]
+        const lastCtrl = lastCc ? controlMap.get(lastCc.controlId) : null
+        if (lastCtrl?.type === 'exchange' && lastCc?.exchangeMode === 'flip') {
+          trailingFlip = true
+        }
+      }
+
+      // Use full course bounds for centering when course has submaps, so all submap pages share the same view area
+      const boundsSource = hasSubmaps ? course : pageCourse
+      const bounds = courseBoundsMm(boundsSource, project.controls, project.map, courseScale)
       if (!bounds && !layout) continue
 
       const useTiling = options.tiling && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH) && !layout
@@ -997,7 +1100,7 @@ export async function exportCoursePdf(
             viewCenterX = mc.x
             viewCenterY = mc.y
           } else {
-            const { x: ox, y: oy } = options.offsets?.[oKey] ?? { x: 0, y: 0 }
+            const { x: ox, y: oy } = options.offsets?.[smKey] ?? options.offsets?.[oKey] ?? { x: 0, y: 0 }
             if (useTiling && bounds) {
               viewCenterX = bounds.minX + ox + col * (cPrintableW - TILE_OVERLAP) + cPrintableW / 2
               viewCenterY = bounds.minY + oy + row * (cPrintableH - TILE_OVERLAP) + cPrintableH / 2
@@ -1051,6 +1154,7 @@ export async function exportCoursePdf(
           const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
           const drawn = new Set<string>()
           const lastCcId = pageCourse.controls[pageCourse.controls.length - 1]?.controlId
+          const firstCcId = hasSubmaps && submap.index > 0 ? pageCourse.controls[0]?.controlId : null
 
           for (const cc of pageCourse.controls) {
             if (drawn.has(cc.controlId)) continue
@@ -1061,12 +1165,14 @@ export async function exportCoursePdf(
 
             const pos = toPage(ctrl.position)
             setColor(doc, course.color)
-            // Exchange at submap boundary: last control → circle, first → exchange symbol
             const drawType = (ctrl.type === 'exchange' && hasSubmaps && cc.controlId === lastCcId)
               ? 'control' : ctrl.type
             drawControlSymbol(doc, drawType, pos, courseScale, courseSpec)
-            const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
-            drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
+            const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && ctrl.type === 'exchange'
+            if (!isSubmapStart) {
+              const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
+              drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
+            }
           }
 
           for (const sb of project.scaleBars) {
@@ -1083,7 +1189,7 @@ export async function exportCoursePdf(
           if (descMode === 'on-map' && pageCourse.controls.length > 0) {
             const sheetPos = layout?.clueSheet ?? options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
-            drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs)
+            drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
           }
 
           doc.setFontSize(8)
@@ -1100,7 +1206,7 @@ export async function exportCoursePdf(
         doc.addPage([cpw, cph], cOrientFlag)
         pageIndex++
         const dist = computeCourseDistances(pageCourse, project.controls, project.map)
-        drawDescriptionSheet(doc, pageCourse, project.controls, courseScale, cpw, cph, dist.total, course.textDescriptions, dist.legs)
+        drawDescriptionSheet(doc, pageCourse, project.controls, courseScale, cpw, cph, dist.total, course.textDescriptions, dist.legs, trailingFlip)
       }
     }
   }

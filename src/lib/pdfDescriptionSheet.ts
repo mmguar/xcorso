@@ -34,9 +34,10 @@ export function descriptionSheetPageCount(
   course: Course,
   controls: Control[],
   pageH: number,
+  trailingFlip?: boolean,
 ): number {
   const controlMap = new Map(controls.map(c => [c.id, c]))
-  const count = course.controls.filter(cc => controlMap.has(cc.controlId)).length
+  const count = course.controls.filter(cc => controlMap.has(cc.controlId)).length + (trailingFlip ? 1 : 0)
   if (count === 0) return 0
   const rows = maxControlRows(pageH)
   if (rows <= 0) return 1
@@ -331,14 +332,60 @@ function drawFinishIofRow(
   }
 }
 
+// ── Draw IOF map flip row (15.3) ──────────────────────────────────────────
+
+function drawFlipRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
+  doc.setDrawColor(0, 0, 0)
+  doc.setLineWidth(LINE_W)
+  doc.rect(gridX, y, gridW, CELL, 'S')
+
+  const cx = gridX + gridW / 2
+  const cy = y + CELL / 2
+
+  // Scale the IOF flip symbol SVG to fit inside the row
+  // Original viewBox: -82,-18 to 156,52 → width=238, height=70
+  const svgW = 238
+  const svgH = 70
+  const svgCx = -82 + svgW / 2  // 37
+  const svgCy = -18 + svgH / 2  // 17
+
+  const maxH = CELL * 0.75
+  const maxW = gridW * 0.35
+  const s = Math.min(maxW / svgW, maxH / svgH)
+
+  function tx(svgX: number): number { return cx + (svgX - svgCx) * s }
+  function ty(svgY: number): number { return cy + (svgY - svgCy) * s }
+
+  // Rectangle (map outline)
+  const sw = 3.22857 * s
+  doc.setLineWidth(Math.max(sw, 0.15))
+  doc.rect(tx(-80.36), ty(-17.21), 134.92 * s, 66.97 * s, 'S')
+
+  // Curved arrow (filled)
+  doc.setFillColor(0, 0, 0)
+  doc.moveTo(tx(49.30), ty(11.02))
+  doc.lineTo(tx(49.30), ty(17.92))
+  doc.lineTo(tx(8.27), ty(2.82))
+  doc.lineTo(tx(49.96), ty(-14.91))
+  doc.lineTo(tx(49.96), ty(-6.38))
+  doc.curveTo(tx(65.39), ty(-8.86), tx(83.21), ty(-4.49), tx(93.95), ty(13.97))
+  doc.curveTo(tx(98.97), ty(26.39), tx(89.35), ty(35.01), tx(77.62), ty(40.72))
+  doc.curveTo(tx(69.52), ty(44.67), tx(60.72), ty(49.00), tx(54.56), ty(49.75))
+  doc.curveTo(tx(64.53), ty(43.02), tx(82.36), ty(37.72), tx(77.53), ty(24.48))
+  doc.curveTo(tx(73.27), ty(16.67), tx(68.17), ty(9.39), tx(49.30), ty(11.02))
+  doc.close()
+  doc.fill()
+}
+
 // ── Size calculation ────────────────────────────────────────────────────────
 
 export function descriptionSheetSize(
   course: Course,
   controls: Control[],
+  trailingFlip?: boolean,
 ): { width: number; height: number } {
   const controlMap = new Map(controls.map(c => [c.id, c]))
-  const rowCount = course.controls.filter(cc => controlMap.has(cc.controlId)).length
+  const rowCount = course.controls.filter(cc => controlMap.has(cc.controlId)).length + (trailingFlip ? 1 : 0)
   if (rowCount === 0) return { width: 0, height: 0 }
   const height = CELL + COL_HEADER_H + rowCount * CELL
   const width = course.textDescriptions
@@ -359,6 +406,7 @@ export function drawDescriptionSheetOverlay(
   distanceM?: number,
   textDescriptions?: boolean,
   legDistances?: number[],
+  trailingFlip?: boolean,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -367,7 +415,7 @@ export function drawDescriptionSheetOverlay(
 
   if (resolved.length === 0) return
 
-  const { width, height } = descriptionSheetSize(course, controls)
+  const { width, height } = descriptionSheetSize(course, controls, trailingFlip)
   const descW = width - 2 * CELL
 
   // White background
@@ -482,6 +530,10 @@ export function drawDescriptionSheetOverlay(
     drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
     y += CELL
   }
+
+  if (trailingFlip) {
+    drawFlipRow(doc, gridX, y, width)
+  }
 }
 
 // ── Main export (separate pages) ────────────────────────────────────────────
@@ -496,6 +548,7 @@ export function drawDescriptionSheet(
   distanceM?: number,
   textDescriptions?: boolean,
   legDistances?: number[],
+  trailingFlip?: boolean,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -640,5 +693,15 @@ export function drawDescriptionSheet(
     }
     const finishLegDist = finishIdx > 0 && legDistances ? legDistances[finishIdx - 1] : undefined
     drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
+    y += CELL
+    rowOnPage++
+  }
+
+  if (trailingFlip) {
+    if (rowOnPage >= maxRows) {
+      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
+      startPage()
+    }
+    drawFlipRow(doc, gridX, y, gridW)
   }
 }

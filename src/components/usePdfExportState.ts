@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import {
   checkFit, checkTiling, canExportPdf, PAGE_SIZES, MARGIN,
   suggestFitScale, coursePreviewMm, ALL_CONTROLS_ID, exportCoursePdf,
+  submapPreviewId, parseSubmapPreviewId,
 } from '../lib/pdfExport'
+import { computeSubmaps } from '../lib/courseUtils'
 import type { PdfExportOptions, DescMode } from '../lib/pdfExport'
 import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
 import { downloadBlob } from '../lib/projectFile'
@@ -38,6 +40,7 @@ export function usePdfExportState(onClose: () => void) {
   const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [tiling, setTiling] = useState(false)
   const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
+  const [submapLocks, setSubmapLocks] = useState<Record<string, boolean>>({})
   const [mapOpacity, setMapOpacity] = useState(1)
   const [exporting, setExporting] = useState(false)
 
@@ -74,10 +77,19 @@ export function usePdfExportState(onClose: () => void) {
     : fitInfo.length) + descPages
   const scalable = canExportPdf(project.map)
 
-  const previewIds = [
-    ...(allControls ? [ALL_CONTROLS_ID] : []),
-    ...project.courses.filter(c => selectedIds.has(c.id)).map(c => c.id),
-  ]
+  const previewIds = useMemo(() => {
+    const ids: string[] = []
+    if (allControls) ids.push(ALL_CONTROLS_ID)
+    for (const c of project.courses.filter(c => selectedIds.has(c.id))) {
+      const subs = computeSubmaps(c, project.controls)
+      if (subs.length > 1) {
+        for (const s of subs) ids.push(submapPreviewId(c.id, s.index))
+      } else {
+        ids.push(c.id)
+      }
+    }
+    return ids
+  }, [project, selectedIds, allControls])
   const activePreviewId = previewCourseId && previewIds.includes(previewCourseId)
     ? previewCourseId
     : previewIds[0] ?? null
@@ -85,8 +97,11 @@ export function usePdfExportState(onClose: () => void) {
     ? scaleOverrides[activePreviewId] ?? printScale
     : printScale
 
-  const activeLayout = activePreviewId && activePreviewId !== ALL_CONTROLS_ID
-    ? project.courses.find(c => c.id === activePreviewId)?.layout
+  const activeRealCourseId = activePreviewId && activePreviewId !== ALL_CONTROLS_ID
+    ? (parseSubmapPreviewId(activePreviewId)?.courseId ?? activePreviewId)
+    : null
+  const activeLayout = activeRealCourseId
+    ? project.courses.find(c => c.id === activeRealCourseId)?.layout
     : undefined
   const activePageBase = activeLayout ? (PAGE_SIZES[activeLayout.pageSize] ?? PAGE_SIZES.a4) : null
   const activePw = activePageBase
@@ -98,15 +113,19 @@ export function usePdfExportState(onClose: () => void) {
   const activePrintableW = activePw - 2 * MARGIN
   const activePrintableH = activePh - 2 * MARGIN
 
+  const activeParsed = activePreviewId ? parseSubmapPreviewId(activePreviewId) : null
+  const activeLocked = activeParsed ? isSubmapLocked(activeParsed.courseId) : false
+
   const preview = activePreviewId
-    ? coursePreviewMm(project, activePreviewId, activeScale)
+    ? coursePreviewMm(project, activePreviewId, activeScale, activeLocked)
     : null
 
   const activeOffset = activePreviewId ? offsets[activePreviewId] ?? { x: 0, y: 0 } : { x: 0, y: 0 }
   const hasOffset = activeOffset.x !== 0 || activeOffset.y !== 0
 
-  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && descModes[activePreviewId] === 'on-map'
-    ? project.courses.find(c => c.id === activePreviewId)
+  const activeDescKey = activeRealCourseId ?? activePreviewId
+  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && activeDescKey && descModes[activeDescKey] === 'on-map'
+    ? project.courses.find(c => c.id === activeRealCourseId)
     : null
   const sheetSize = previewCourse
     ? descriptionSheetSize(previewCourse, project.controls)
@@ -148,18 +167,56 @@ export function usePdfExportState(onClose: () => void) {
     setSelectedIds(new Set())
   }
 
+  function isSubmapLocked(courseId: string): boolean {
+    return submapLocks[courseId] !== false
+  }
+
+  function toggleSubmapLock(courseId: string) {
+    setSubmapLocks(prev => ({ ...prev, [courseId]: prev[courseId] === false }))
+  }
+
+  function siblingSubmapIds(id: string): string[] {
+    const parsed = parseSubmapPreviewId(id)
+    if (!parsed) return []
+    return previewIds.filter(pid => {
+      const p = parseSubmapPreviewId(pid)
+      return p && p.courseId === parsed.courseId && pid !== id
+    })
+  }
+
   function resetOffset() {
     if (!activePreviewId) return
-    setOffsets(prev => {
-      const next = { ...prev }
-      delete next[activePreviewId]
-      return next
-    })
+    const parsed = parseSubmapPreviewId(activePreviewId)
+    if (parsed && isSubmapLocked(parsed.courseId)) {
+      setOffsets(prev => {
+        const next = { ...prev }
+        delete next[activePreviewId]
+        for (const sib of siblingSubmapIds(activePreviewId)) delete next[sib]
+        return next
+      })
+    } else {
+      setOffsets(prev => {
+        const next = { ...prev }
+        delete next[activePreviewId]
+        return next
+      })
+    }
   }
 
   function setActiveOffset(x: number, y: number) {
     if (!activePreviewId) return
-    setOffsets(prev => ({ ...prev, [activePreviewId]: { x, y } }))
+    const parsed = parseSubmapPreviewId(activePreviewId)
+    if (parsed && isSubmapLocked(parsed.courseId)) {
+      setOffsets(o => {
+        const next = { ...o, [activePreviewId]: { x, y } }
+        for (const sib of siblingSubmapIds(activePreviewId)) {
+          next[sib] = { x, y }
+        }
+        return next
+      })
+    } else {
+      setOffsets(prev => ({ ...prev, [activePreviewId]: { x, y } }))
+    }
   }
 
   function setActiveSheetPos(x: number, y: number) {
@@ -169,17 +226,37 @@ export function usePdfExportState(onClose: () => void) {
 
   function setActiveScaleOverride(value: string) {
     if (!activePreviewId) return
+    const parsed = parseSubmapPreviewId(activePreviewId)
+    const locked = parsed && isSubmapLocked(parsed.courseId)
     if (value === '') {
-      setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
+      setScaleOverrides(prev => {
+        const next = { ...prev }
+        delete next[activePreviewId]
+        if (locked) for (const sib of siblingSubmapIds(activePreviewId)) delete next[sib]
+        return next
+      })
     } else {
       const v = parseInt(value)
-      if (!isNaN(v) && v > 0) setScaleOverrides(prev => ({ ...prev, [activePreviewId]: v }))
+      if (!isNaN(v) && v > 0) {
+        setScaleOverrides(prev => {
+          const next = { ...prev, [activePreviewId]: v }
+          if (locked) for (const sib of siblingSubmapIds(activePreviewId)) next[sib] = v
+          return next
+        })
+      }
     }
   }
 
   function resetActiveScaleOverride() {
     if (!activePreviewId) return
-    setScaleOverrides(prev => { const next = { ...prev }; delete next[activePreviewId]; return next })
+    const parsed = parseSubmapPreviewId(activePreviewId)
+    const locked = parsed && isSubmapLocked(parsed.courseId)
+    setScaleOverrides(prev => {
+      const next = { ...prev }
+      delete next[activePreviewId]
+      if (locked) for (const sib of siblingSubmapIds(activePreviewId)) delete next[sib]
+      return next
+    })
   }
 
   function blurActiveScaleOverride(value: string) {
@@ -246,6 +323,7 @@ export function usePdfExportState(onClose: () => void) {
     // Preview
     previewIds, activePreviewId, setPreviewCourseId,
     activeScale, preview,
+    isSubmapLocked, toggleSubmapLock,
 
     // Derived
     pw, ph, printableW, printableH,

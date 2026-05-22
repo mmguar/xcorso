@@ -301,6 +301,10 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           label = defaultControlLabel(control)
         }
 
+        if (submapInfo && control.type === 'exchange' && control.id === submapInfo.firstCcId) {
+          label = ''
+        }
+
         if (selectedCourse?.showPoints && control.points != null && isInCourse) {
           label += ` [${control.points}]`
         }
