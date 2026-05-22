@@ -44,7 +44,7 @@ export function buildSequenceMap(course: Course, controls: Control[]): Map<strin
   let seq = 1
   for (const cc of course.controls) {
     const ctrl = controls.find(c => c.id === cc.controlId)
-    if (ctrl && (ctrl.type === 'control' || ctrl.type === 'exchange')) {
+    if (ctrl && ctrl.type === 'control') {
       const existing = map.get(cc.controlId)
       if (existing) existing.push(seq)
       else map.set(cc.controlId, [seq])
@@ -66,11 +66,10 @@ export interface Submap {
   label: string
 }
 
-export function computeSubmaps(course: Course, controls: Control[]): Submap[] {
-  const getType = (id: string) => controls.find(c => c.id === id)?.type
+export function computeSubmaps(course: Course, _controls?: Control[]): Submap[] {
   const exchangeIndices: number[] = []
   for (let i = 0; i < course.controls.length; i++) {
-    if (getType(course.controls[i].controlId) === 'exchange') exchangeIndices.push(i)
+    if (course.controls[i].exchangeMode) exchangeIndices.push(i)
   }
   if (exchangeIndices.length === 0) {
     return [{ index: 0, controls: course.controls, label: 'Map 1' }]

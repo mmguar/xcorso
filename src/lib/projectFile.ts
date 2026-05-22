@@ -56,12 +56,28 @@ function validateProject(raw: unknown): Project {
     if (typeof sb.scale !== 'number' || !isFinite(sb.scale) || sb.scale <= 0) sb.scale = mapScale
   }
 
+  const exchangeControlIds = new Set<string>()
   for (const c of obj.controls as Record<string, unknown>[]) {
     if (typeof c.id !== 'string') c.id = crypto.randomUUID()
     if (typeof c.code !== 'number' || !isFinite(c.code)) c.code = 0
     const pos = c.position as Record<string, unknown> | undefined
     if (!pos || typeof pos.x !== 'number' || !isFinite(pos.x) || typeof pos.y !== 'number' || !isFinite(pos.y)) {
       c.position = { x: 0, y: 0 }
+    }
+    if (c.type === 'exchange') {
+      c.type = 'control'
+      exchangeControlIds.add(c.id as string)
+    }
+  }
+
+  if (exchangeControlIds.size > 0) {
+    for (const course of obj.courses as Record<string, unknown>[]) {
+      if (!Array.isArray(course.controls)) continue
+      for (const cc of course.controls as Record<string, unknown>[]) {
+        if (exchangeControlIds.has(cc.controlId as string) && !cc.exchangeMode) {
+          cc.exchangeMode = 'exchange'
+        }
+      }
     }
   }
 

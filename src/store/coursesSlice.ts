@@ -127,7 +127,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       if (!project) return
       const course = project.courses.find(c => c.id === courseId)
       if (!course) return
-      const controlsByCode = new Map(project.controls.filter(c => c.type === 'control').map(c => [c.code, c]))
+      const controlsByCode = new Map(project.controls.map(c => [c.code, c]))
       const validControls = codes.map(code => controlsByCode.get(code)).filter((c): c is Control => c != null)
       if (validControls.length === 0) return
       h.mutateProject(p => {
@@ -265,7 +265,16 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const course = p.courses.find(c => c.id === courseId)
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.exchangeMode = mode === 'exchange' ? undefined : mode
+        if (cc) cc.exchangeMode = mode
+      })
+    },
+
+    toggleExchangeControl: (courseId: string, courseControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.exchangeMode = cc.exchangeMode ? undefined : 'exchange'
       })
     },
 

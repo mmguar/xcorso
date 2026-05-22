@@ -68,6 +68,7 @@ export interface AppActions {
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
   setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
+  toggleExchangeControl: (courseId: string, courseControlId: string) => void
   setSelectedSubmap: (index: number | null) => void
 
   toggleCourseLoop: (courseId: string, forkControlId: string) => void
