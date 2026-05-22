@@ -270,7 +270,7 @@ export function PdfExportDialog({ onClose }: Props) {
             <input
               type="text"
               inputMode="numeric"
-              value={parseInt(s.scaleInput)}
+              value={s.scaleInput}
               onChange={e => s.setScaleInput(e.target.value)}
               onBlur={s.handleScaleBlur}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
@@ -278,12 +278,12 @@ export function PdfExportDialog({ onClose }: Props) {
             />
             {s.printScale !== s.project.map.scale && (
               <button onClick={s.resetScale} className="text-xs text-orange-600 hover:text-orange-800">
-                Reset to 1:{parseInt(s.project.map.scale.toLocaleString())}
+                Reset to 1:{s.project.map.scale}
               </button>
             )}
             {s.fitScale && s.fitScale !== s.printScale && (
               <button onClick={s.applyFitScale} className="text-xs text-orange-600 hover:text-orange-800">
-                Fit to page (1:{parseInt(s.fitScale.toLocaleString())})
+                Fit to page (1:{s.fitScale})
               </button>
             )}
           </div>
@@ -371,7 +371,7 @@ export function PdfExportDialog({ onClose }: Props) {
                   type="text"
                   inputMode="numeric"
                   value={s.scaleOverrides[s.activePreviewId] != null ? String(s.scaleOverrides[s.activePreviewId]) : ''}
-                  placeholder={String(parseInt(String(s.printScale)))}
+                  placeholder={String(s.printScale)}
                   onChange={e => s.setActiveScaleOverride(e.target.value)}
                   onBlur={e => s.blurActiveScaleOverride(e.target.value)}
                   className="w-20 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
@@ -381,7 +381,7 @@ export function PdfExportDialog({ onClose }: Props) {
                     onClick={s.resetActiveScaleOverride}
                     className="text-[11px] text-orange-600 hover:text-orange-800"
                   >
-                    Reset to 1:{parseInt(s.printScale.toLocaleString())}
+                    Reset to 1:{s.printScale}
                   </button>
                 )}
               </div>

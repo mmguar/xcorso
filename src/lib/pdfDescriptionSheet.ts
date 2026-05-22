@@ -248,7 +248,6 @@ function drawFinishIofRow(
 
   const chevronW = CELL * 0.14
   const chevronH = circleR
-  const hasLeftChevron = finishType !== 'taped'
   const hasLines = finishType !== 'navigate'
 
   doc.setLineWidth(sw)
@@ -272,8 +271,8 @@ function drawFinishIofRow(
   const contentLeft = circleX + circleR + 0.5
   const contentRight = finishCx - circleR - 0.5
 
-  // Left chevron < (navigate / funnel)
-  if (hasLeftChevron) {
+  // Left chevron < (navigate only)
+  if (finishType === 'navigate') {
     drawChevron(contentLeft, '<')
   }
 
@@ -288,14 +287,14 @@ function drawFinishIofRow(
     doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })
   }
 
-  // Dashes (taped: 3+3, funnel: 2+3, navigate: none)
+  // Dashes (taped: 3+3, funnel: [space]+>+2 on left / 3 on right, navigate: none)
   if (hasLines) {
-    const leftDashCount = finishType === 'funnel' ? 2 : 3
+    const leftDashCount = 3
     const rightDashCount = 3
     const dashGapRatio = 1.8
     const textHalfW = distM != null ? CELL * 0.55 : 0
 
-    const leftStart = contentLeft + (hasLeftChevron ? chevronW + 0.3 : 0)
+    const leftStart = contentLeft
     const leftEnd = midX - textHalfW - 0.3
     const leftTotal = leftEnd - leftStart
     const leftDashLen = leftTotal / (leftDashCount + (leftDashCount - 1) / dashGapRatio)
@@ -303,7 +302,18 @@ function drawFinishIofRow(
 
     doc.setLineWidth(sw)
     doc.setLineCap(1)
-    for (let i = 0; i < leftDashCount; i++) {
+
+    if (finishType === 'funnel') {
+      const dash1X = leftStart + leftDashLen + leftGapLen
+      const tipX = dash1X
+      const backX = tipX - chevronW
+      doc.setLineCap(1)
+      doc.line(backX, cy - chevronH, tipX, cy)
+      doc.line(tipX, cy, backX, cy + chevronH)
+    }
+
+    const leftSkip = finishType === 'funnel' ? 1 : 0
+    for (let i = leftSkip; i < leftDashCount; i++) {
       const x1 = leftStart + i * (leftDashLen + leftGapLen)
       doc.line(x1, cy, x1 + leftDashLen, cy)
     }

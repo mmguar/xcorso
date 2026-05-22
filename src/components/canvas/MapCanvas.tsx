@@ -479,6 +479,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
           useStore.getState().beginMoveControl()
+          useStore.getState().setDraggingControl(dragControlId)
           dragStarted = true
           setDraggingControlId(dragControlId)
         }
