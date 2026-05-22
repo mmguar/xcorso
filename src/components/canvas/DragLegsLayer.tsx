@@ -14,7 +14,7 @@ interface Props {
   projectSpec?: EventSpec
 }
 
-const LIGHT_PURPLE = 'rgba(123, 47, 190, 0.4)'
+const LIGHT_PURPLE = '#c4a0e0'
 const ARROW_LEN_MM = 2
 const ARROW_WIDTH_MM = 1.4
 
@@ -100,6 +100,7 @@ export const DragLegsLayer = memo(function DragLegsLayer({
 
   const upm = unitsPerMm(map)
   const elements: React.ReactNode[] = []
+  const seenLegs = new Set<string>()
 
   for (const rawCourse of courses) {
     if (rawCourse.type !== 'linear') continue
@@ -124,6 +125,10 @@ export const DragLegsLayer = memo(function DragLegsLayer({
       if (!fromControl || !toControl) continue
 
       if (fromCc.controlId !== draggingControlId && toCc.controlId !== draggingControlId) continue
+
+      const legPairKey = `${fromCc.controlId}->${toCc.controlId}`
+      if (seenLegs.has(legPairKey)) continue
+      seenLegs.add(legPairKey)
 
       const fromR = clipRadius(fromControl, map.scale, upm, appearance.controlScale, spec)
       const toR = clipRadius(toControl, map.scale, upm, appearance.controlScale, spec)
