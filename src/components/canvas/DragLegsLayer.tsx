@@ -86,7 +86,7 @@ function renderArrow(
   )
 }
 
-const LABEL_PX = 12
+const LABEL_PX = 25
 
 interface CollectedLeg {
   clippedPts: MapPoint[]
