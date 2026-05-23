@@ -607,6 +607,7 @@ export function isDimensionText(value: string): boolean {
 }
 
 export function getColumnSymbols(column: IofColumn): SymbolDef[] {
+  if (column === 'E') return allSymbols.filter(s => s.column === 'D' || s.column === 'E')
   return allSymbols.filter(s => s.column === column)
 }
 
