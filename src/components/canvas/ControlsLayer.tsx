@@ -105,12 +105,12 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
       <polygon points={points} fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <text x={lx} y={ly}
+      {label && <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
         textAnchor="start" dominantBaseline="auto"
         {...labelOutlineSvgProps(appearance, upm)}>
         {label}
-      </text>
+      </text>}
     </g>
   )
 }
@@ -147,12 +147,12 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
       <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
         {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
       />
-      <text x={lx} y={ly}
+      {label && <text x={lx} y={ly}
         fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
         textAnchor="start" dominantBaseline="auto"
         {...labelOutlineSvgProps(appearance, upm)}>
         {label}
-      </text>
+      </text>}
     </g>
   )
 }
@@ -315,6 +315,10 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         const cc = selectedCourse?.controls.find(cc => cc.controlId === control.id)
 
         if (submapInfo && cc?.exchangeMode && control.id === submapInfo.firstCcId) {
+          label = ''
+        }
+
+        if (isCourseMode && (control.type === 'start' || control.type === 'finish')) {
           label = ''
         }
 
