@@ -3,9 +3,9 @@ import { useStore } from '../../store'
 import { screenToMap, findControlAt, findLegAt, findBendPointAt } from './hitTesting'
 
 export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
-  const gapSize = useStore.getState().editor.gapSize
+  const { gapSize, appearance: { controlScale } } = useStore.getState().editor
   const mapPt = screenToMap(sx, sy, vp)
-  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId)
+  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale)
 
   if (hitControl) {
     const dx = mapPt.x - hitControl.position.x
@@ -29,7 +29,8 @@ export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Proj
 }
 
 export function handleGapRightClick(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
-  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId)
+  const { controlScale } = useStore.getState().editor.appearance
+  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale)
   if (hitControl && hitControl.gaps?.length) {
     useStore.getState().clearControlGaps(hitControl.id)
     return

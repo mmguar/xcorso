@@ -1,9 +1,8 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel } from '../../lib/courseUtils'
-import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 
-const HIT_PX = 20
-const HIT_TOLERANCE_PX = 8
+export const HIT_PX = 20
 
 export function screenToMap(sx: number, sy: number, vp: Viewport): MapPoint {
   return { x: (sx - vp.x) / vp.scale, y: (sy - vp.y) / vp.scale }
@@ -13,27 +12,30 @@ export function controlToScreen(c: Control, vp: Viewport): { x: number; y: numbe
   return { x: vp.x + c.position.x * vp.scale, y: vp.y + c.position.y * vp.scale }
 }
 
-export function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null): number {
+export function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): number {
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec, project.courses.find(c => c.id === selectedCourseId)?.spec)
   const dims = getSymbolDims(spec)
+  const sf = symbolScaleFactor(spec, project.map.scale)
+  const scale = controlScale * sf
   let symbolR: number
   if (control.type === 'start') {
-    symbolR = dims.startSide * upm * Math.sqrt(3) / 2 * 2 / 3
+    symbolR = dims.startSide * upm * scale * Math.sqrt(3) / 2 * 2 / 3
+  } else if (control.type === 'finish') {
+    symbolR = dims.finishROuter * upm * sf * controlScale
   } else {
-    symbolR = dims.controlR * upm
+    symbolR = dims.controlR * upm * sf * controlScale
   }
-  const symbolScreenR = symbolR * vp.scale
-  return Math.max(HIT_PX, symbolScreenR + HIT_TOLERANCE_PX)
+  return symbolR * vp.scale
 }
 
-export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): Control | null {
+export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): Control | null {
   let best: Control | null = null
   let bestDist = Infinity
   for (const c of project.controls) {
     const s = controlToScreen(c, vp)
     const d = Math.hypot(screenX - s.x, screenY - s.y)
-    const hitR = controlHitRadius(c, vp, project, selectedCourseId)
+    const hitR = controlHitRadius(c, vp, project, selectedCourseId, controlScale)
     if (d < hitR && d < bestDist) { best = c; bestDist = d }
   }
   return best
@@ -201,13 +203,14 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     seenControlIds.add(cc.controlId)
     const ctrl = controlMap.get(cc.controlId)
     if (!ctrl) continue
-    const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec)
+    const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)
     const labelMapX = ctrl.position.x + offset.x
     const labelMapY = ctrl.position.y + offset.y
     const labelScreenX = vp.x + labelMapX * vp.scale
     const labelScreenY = vp.y + labelMapY * vp.scale
 
-    const cr = labelDims.controlR * upm * controlScale
+    const sf = symbolScaleFactor(labelSpec, project.map.scale)
+    const cr = labelDims.controlR * upm * controlScale * sf
     const fontSize = cr * 1.1 * vp.scale
     let labelText: string
     if (seqMap && ctrl.type === 'control') {
@@ -216,12 +219,11 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     } else {
       labelText = defaultControlLabel(ctrl)
     }
-    const textW = labelText.length * fontSize * 0.7
-    const textH = fontSize
-    const pad = Math.max(HIT_PX * 0.5, 4)
+    const textW = labelText.length * fontSize * 0.6
+    const textH = fontSize * 0.75
 
-    if (screenX >= labelScreenX - pad && screenX <= labelScreenX + textW + pad &&
-        screenY >= labelScreenY - textH - pad && screenY <= labelScreenY + pad) {
+    if (screenX >= labelScreenX && screenX <= labelScreenX + textW &&
+        screenY >= labelScreenY - textH && screenY <= labelScreenY) {
       const cx = labelScreenX + textW / 2
       const cy = labelScreenY - textH / 2
       const d = Math.hypot(screenX - cx, screenY - cy)

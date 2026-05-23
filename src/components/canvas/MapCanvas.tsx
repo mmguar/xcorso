@@ -13,9 +13,9 @@ import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm, resolveVariation } from '../../lib/courseUtils'
-import type { AnnotationType, MapPoint, Viewport } from '../../types'
-import { resolveSpec, getSymbolDims } from '../../lib/symbolSpec'
+import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
+import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
+import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import {
   screenToMap,
@@ -58,6 +58,68 @@ function LayoutScaleInput({ courseId, printScale }: { courseId: string; printSca
         className="w-14 px-1 py-0.5 text-[11px] border border-gray-200 rounded focus:border-orange-400 focus:outline-none bg-white tabular-nums"
       />
     </>
+  )
+}
+
+function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projectSpec }: {
+  controls: Control[]
+  map: MapConfig
+  vp: Viewport
+  selectedCourseId: string | null
+  appearance: AppearanceSettings
+  projectSpec?: EventSpec
+}) {
+  const project = useStore(s => s.project!)
+  const upm = unitsPerMm(map)
+  const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
+  const spec = resolveSpec(projectSpec, course?.spec)
+  const dims = getSymbolDims(spec)
+  const controlScale = appearance.controlScale
+  const sf = symbolScaleFactor(spec, map.scale)
+
+  const seqMap = course?.type === 'linear' ? buildSequenceMap(course, project.controls) : null
+
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {controls.map(c => {
+        const scale = controlScale * sf
+        let symbolR: number
+        if (c.type === 'start') {
+          symbolR = dims.startSide * upm * scale * Math.sqrt(3) / 2 * 2 / 3
+        } else if (c.type === 'finish') {
+          symbolR = dims.finishROuter * upm * sf * controlScale
+        } else {
+          symbolR = dims.controlR * upm * sf * controlScale
+        }
+        return (
+          <circle key={`hit-${c.id}`} cx={c.position.x} cy={c.position.y} r={symbolR}
+            fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={1 / vp.scale} />
+        )
+      })}
+      {controls.map(c => {
+        const cc = course?.controls.find(cc => cc.controlId === c.id)
+        const offset = cc?.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
+        const lx = c.position.x + offset.x
+        const ly = c.position.y + offset.y
+        const cr = dims.controlR * upm * controlScale * sf
+        const fontSize = cr * 1.1
+        let labelText: string
+        if (seqMap && c.type === 'control') {
+          const seqs = seqMap.get(c.id)
+          labelText = seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
+        } else {
+          labelText = defaultControlLabel(c)
+        }
+        const textW = labelText.length * fontSize * 0.6
+        const textH = fontSize * 0.75
+        return (
+          <rect key={`lhit-${c.id}`}
+            x={lx} y={ly - textH}
+            width={textW} height={textH}
+            fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={1 / vp.scale} />
+        )
+      })}
+    </g>
   )
 }
 
@@ -277,7 +339,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const rect = getRect()
           const proj = state.project
           if (proj) {
-            const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid)
+            const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid, state.editor.appearance.controlScale)
             if (hit) {
               longPressTimer = setTimeout(() => {
                 longPressTimer = null
@@ -384,7 +446,7 @@ export function MapCanvas({ loadedMap }: Props) {
           dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
           dragLabelStarted = false
         } else {
-          const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
+          const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale)
           if (hit) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
             dragControlId = hit.id
@@ -626,7 +688,7 @@ export function MapCanvas({ loadedMap }: Props) {
       const proj = state.project
       if (!proj) return
       const ms = measureStartRef.current
-      const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId)
+      const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId, state.editor.appearance.controlScale)
 
       if (activeTool === 'gap') {
         handleGapTap(sx, sy, vpRef.current, proj, selectedCourseId)
@@ -764,7 +826,7 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       if (!selectedCourseId) return
-      const hit = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId)
+      const hit = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId, state.editor.appearance.controlScale)
       if (!hit) return
 
       const course = proj.courses.find(c => c.id === selectedCourseId)
@@ -931,6 +993,9 @@ export function MapCanvas({ loadedMap }: Props) {
             controls={controls}
             course={selectedCourse}
           />
+          {import.meta.env.DEV && (
+            <DebugHitboxes controls={controls} map={map} vp={vp} selectedCourseId={selectedCourseId} appearance={appearance} projectSpec={projectSpec} />
+          )}
         </g>
         {activeTool === 'gap' && (() => {
           const upm = unitsPerMm(map)
