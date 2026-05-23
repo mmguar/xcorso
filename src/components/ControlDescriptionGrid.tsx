@@ -704,7 +704,9 @@ function SymbolPicker({
     ? symbols.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.includes(search))
     : symbols
 
-  const grouped = column === 'G' ? groupLocationSymbols(filtered) : null
+  const grouped = column === 'G' ? groupLocationSymbols(filtered)
+    : column === 'E' ? groupBySourceColumn(filtered)
+    : null
 
   return (
     <div className="mt-1 border border-gray-300 rounded-lg bg-white shadow-lg p-2 max-h-64 overflow-y-auto">
@@ -795,6 +797,16 @@ function SymbolGrid({ symbols, current, onSelect }: {
       ))}
     </div>
   )
+}
+
+function groupBySourceColumn(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+  const groups: Record<string, SymbolDef[]> = {}
+  for (const s of syms) {
+    const group = s.column === 'D' ? 'Feature' : 'Appearance'
+    if (!groups[group]) groups[group] = []
+    groups[group].push(s)
+  }
+  return groups
 }
 
 function groupLocationSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {

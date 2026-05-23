@@ -26,7 +26,7 @@ function ControlCodeInput({ control }: { control: Control }) {
       onChange={e => setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+      className="w-10 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
     />
   )
 }
@@ -47,7 +47,7 @@ function ControlLabelInput({ control }: { control: Control }) {
       onChange={e => setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      className="w-16 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+      className="w-10 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
     />
   )
 }
@@ -102,6 +102,17 @@ export function ControlsPanel() {
   const selectedCourse = selectedCourseId
     ? project.courses.find(c => c.id === selectedCourseId) ?? null
     : null
+
+  const courseUsageCount = new Map<string, number>()
+  for (const course of project.courses) {
+    const seen = new Set<string>()
+    for (const cc of course.controls) {
+      if (!seen.has(cc.controlId)) {
+        seen.add(cc.controlId)
+        courseUsageCount.set(cc.controlId, (courseUsageCount.get(cc.controlId) ?? 0) + 1)
+      }
+    }
+  }
 
   const appearanceButton = (
     <div className="relative p-2 border-t border-gray-100">
@@ -239,6 +250,12 @@ export function ControlsPanel() {
               <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
             ) : (
               <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />
+            )}
+
+            {(courseUsageCount.get(control.id) ?? 0) > 0 && (
+              <span className="text-xs text-gray-400 font-medium">
+                {courseUsageCount.get(control.id)}x
+              </span>
             )}
 
             {showPoints && (

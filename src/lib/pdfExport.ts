@@ -1166,7 +1166,7 @@ export async function exportCoursePdf(
             const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
             drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange)
             const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
-            if (!isSubmapStart) {
+            if (!isSubmapStart && ctrl.type === 'control') {
               const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
             }
