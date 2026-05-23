@@ -1,5 +1,5 @@
 import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
-import { getSymbolDims } from './symbolSpec'
+import { getSymbolDims, symbolScaleFactor } from './symbolSpec'
 
 export function defaultControlLabel(control: { type: string; code: number; label?: string }): string {
   if (control.label) return control.label
@@ -24,11 +24,12 @@ export function unitsPerMm(map: MapConfig): number {
   return DEFAULT_PX_PER_MM
 }
 
-export function defaultLabelOffset(type: ControlType, upm: number, controlScale: number, spec: EventSpec = 'isom-2017'): MapPoint {
+export function defaultLabelOffset(type: ControlType, upm: number, controlScale: number, spec: EventSpec = 'isom-2017', mapScale?: number): MapPoint {
   const dims = getSymbolDims(spec)
-  const cr = dims.controlR * upm * controlScale
+  const sf = mapScale != null ? symbolScaleFactor(spec, mapScale) : 1
+  const cr = dims.controlR * upm * controlScale * sf
   if (type === 'start') {
-    const side = dims.startSide * upm * controlScale
+    const side = dims.startSide * upm * controlScale * sf
     const halfSide = side / 2
     const h = side * Math.sqrt(3) / 2
     return { x: halfSide * 1.1, y: -h * 0.4 }
