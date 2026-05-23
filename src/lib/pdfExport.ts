@@ -629,7 +629,7 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
     const dx = to.x - from.x
     const dy = to.y - from.y
     const len = Math.sqrt(dx * dx + dy * dy)
-    if (len === 0) return
+    if (len === 0 || fromR + toR >= len) return
     const ux = dx / len
     const uy = dy / len
     doc.line(

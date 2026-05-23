@@ -1,6 +1,6 @@
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
-  AnnotationType, MapPoint, ActiveTool, Viewport, RaceClass,
+  AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
   CourseLayout, LayoutElementPosition,
 } from '../types'
@@ -41,6 +41,7 @@ export interface AppActions {
   setMapScale: (scale: number, source: 'ocad' | 'manual') => void
   setMapScaleMeasurement: (p1: MapPoint, p2: MapPoint, realWorldMeters: number, renderScale?: number) => void
   setMapDimensions: (width: number, height: number) => void
+  replaceMapFile: (filename: string, type: MapType, mapData: ArrayBuffer) => void
 
   addControl: (type: ControlType, position: MapPoint, code?: number) => Control
   beginMoveControl: () => void

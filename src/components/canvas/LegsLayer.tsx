@@ -150,7 +150,7 @@ function renderLegs(
       const dx = x2 - x1
       const dy = y2 - y1
       const len = Math.sqrt(dx * dx + dy * dy)
-      if (len === 0) continue
+      if (len === 0 || fromR + toR >= len) continue
 
       const ux = dx / len
       const uy = dy / len
