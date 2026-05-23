@@ -318,6 +318,38 @@ export function PdfExportDialog({ onClose }: Props) {
           />
         </div>
 
+        {/* Map rendering */}
+        {s.isSvgMap && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-500 shrink-0">Resolution</label>
+            <select
+              value={s.rasterDpi}
+              disabled={s.mapRendering === 'vector'}
+              onChange={e => s.setRasterDpi(Number(e.target.value))}
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-40"
+            >
+              <option value={150}>150 DPI</option>
+              <option value={200}>200 DPI</option>
+              <option value={300}>300 DPI</option>
+              <option value={600}>600 DPI</option>
+            </select>
+            <span className="text-xs text-gray-400 flex-1">
+              {s.mapRendering === 'vector'
+                ? ''
+                : s.rasterDpi <= 200 ? 'smaller file' : s.rasterDpi >= 600 ? 'large file' : 'print quality'}
+            </span>
+            <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={s.mapRendering === 'vector'}
+                onChange={e => s.setMapRendering(e.target.checked ? 'vector' : 'raster')}
+                className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+              />
+              <span className="text-xs text-gray-500">Full SVG</span>
+            </label>
+          </div>
+        )}
+
         {/* Tiling */}
         {s.anyOverflow && s.hasSelection && (
           <label className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 cursor-pointer">

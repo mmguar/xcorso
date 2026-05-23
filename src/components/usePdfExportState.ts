@@ -42,6 +42,10 @@ export function usePdfExportState(onClose: () => void) {
   const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
   const [submapLocks, setSubmapLocks] = useState<Record<string, boolean>>({})
   const [mapOpacity, setMapOpacity] = useState(1)
+  const [mapRendering, setMapRendering] = useState<'vector' | 'raster'>(
+    loadedMap?.type === 'svg' ? 'raster' : 'vector',
+  )
+  const [rasterDpi, setRasterDpi] = useState(300)
   const [exporting, setExporting] = useState(false)
 
   const options: PdfExportOptions = {
@@ -56,6 +60,8 @@ export function usePdfExportState(onClose: () => void) {
     sheetPositions,
     tiling,
     mapOpacity,
+    mapRendering: loadedMap?.type === 'svg' ? mapRendering : undefined,
+    rasterDpi: mapRendering === 'raster' ? rasterDpi : undefined,
   }
 
   const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
@@ -316,6 +322,9 @@ export function usePdfExportState(onClose: () => void) {
 
     // Map
     mapOpacity, setMapOpacity,
+    mapRendering, setMapRendering,
+    rasterDpi, setRasterDpi,
+    isSvgMap: loadedMap?.type === 'svg',
 
     // Tiling
     tiling, setTiling,
