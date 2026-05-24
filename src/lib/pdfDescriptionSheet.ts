@@ -52,34 +52,74 @@ interface PathCmd {
 }
 
 function parseSvgPath(d: string): PathCmd[] {
-  const cmds: PathCmd[] = []
-  const tokens = d.match(/[MLCHVZ]|[-+]?(?:\d+\.?\d*|\.\d+)/g)
-  if (!tokens) return cmds
+  const result: PathCmd[] = []
+  const tokens = d.match(/[MLCHVZmlchvz]|[-+]?(?:\d+\.?\d*|\.\d+)/g)
+  if (!tokens) return result
 
-  let cur = ''
-  let args: number[] = []
   let x = 0, y = 0
+  let cmd = ''
+  let nums: number[] = []
 
-  for (const t of tokens) {
-    if (/^[MLCHVZ]$/.test(t)) {
-      if (cur) cmds.push({ cmd: cur, args })
-      cur = t
-      args = []
-    } else {
-      args.push(parseFloat(t))
+  function flush() {
+    if (!cmd) return
+    const rel = cmd === cmd.toLowerCase()
+    const C = cmd.toUpperCase()
+    const argsPerCmd = C === 'H' || C === 'V' ? 1 : C === 'Z' ? 0 : C === 'C' ? 6 : 2
+
+    if (argsPerCmd === 0) {
+      result.push({ cmd: 'Z', args: [] })
+      return
+    }
+
+    for (let i = 0; i + argsPerCmd <= nums.length; i += argsPerCmd) {
+      const chunk = nums.slice(i, i + argsPerCmd)
+      switch (C) {
+        case 'M': {
+          const ax = rel ? x + chunk[0] : chunk[0]
+          const ay = rel ? y + chunk[1] : chunk[1]
+          x = ax; y = ay
+          result.push({ cmd: i === 0 ? 'M' : 'L', args: [ax, ay] })
+          break
+        }
+        case 'L': {
+          x = rel ? x + chunk[0] : chunk[0]
+          y = rel ? y + chunk[1] : chunk[1]
+          result.push({ cmd: 'L', args: [x, y] })
+          break
+        }
+        case 'H': {
+          x = rel ? x + chunk[0] : chunk[0]
+          result.push({ cmd: 'L', args: [x, y] })
+          break
+        }
+        case 'V': {
+          y = rel ? y + chunk[0] : chunk[0]
+          result.push({ cmd: 'L', args: [x, y] })
+          break
+        }
+        case 'C': {
+          const args = rel
+            ? [x + chunk[0], y + chunk[1], x + chunk[2], y + chunk[3], x + chunk[4], y + chunk[5]]
+            : chunk
+          x = args[4]; y = args[5]
+          result.push({ cmd: 'C', args })
+          break
+        }
+      }
     }
   }
-  if (cur) cmds.push({ cmd: cur, args })
 
-  return cmds.map(c => {
-    switch (c.cmd) {
-      case 'M': case 'L': x = c.args[0]; y = c.args[1]; return c
-      case 'C': x = c.args[4]; y = c.args[5]; return c
-      case 'H': x = c.args[0]; return { cmd: 'L', args: [x, y] }
-      case 'V': y = c.args[0]; return { cmd: 'L', args: [x, y] }
-      default: return c
+  for (const t of tokens) {
+    if (/^[A-Za-z]$/.test(t)) {
+      flush()
+      cmd = t
+      nums = []
+    } else {
+      nums.push(parseFloat(t))
     }
-  })
+  }
+  flush()
+  return result
 }
 
 // ── Draw one IOF symbol into a cell ─────────────────────────────────────────
@@ -515,6 +555,7 @@ export function drawDescriptionSheetOverlay(
       if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
     } else {
       for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.setLineWidth(LINE_W)
         doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
         const colId = COL_IDS[ci]
         const field = columnFields[colId]
@@ -674,6 +715,7 @@ export function drawDescriptionSheet(
       if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
     } else {
       for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.setLineWidth(LINE_W)
         doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
         const colId = COL_IDS[ci]
         const field = columnFields[colId]

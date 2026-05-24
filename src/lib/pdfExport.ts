@@ -1113,13 +1113,13 @@ export async function exportCoursePdf(
           if (pageIndex > 0) doc.addPage([cpw, cph], cOrientFlag)
           pageIndex++
 
+          const { x: ox, y: oy } = options.offsets?.[smKey] ?? options.offsets?.[oKey] ?? { x: 0, y: 0 }
           let viewCenterX: number, viewCenterY: number
           if (layout && !hasSubmaps) {
             const mc = mapToMm(layout.mapCenter, project.map, courseScale)
-            viewCenterX = mc.x
-            viewCenterY = mc.y
+            viewCenterX = mc.x + ox
+            viewCenterY = mc.y + oy
           } else {
-            const { x: ox, y: oy } = options.offsets?.[smKey] ?? options.offsets?.[oKey] ?? { x: 0, y: 0 }
             if (useTiling && bounds) {
               viewCenterX = bounds.minX + ox + col * (cPrintableW - TILE_OVERLAP) + cPrintableW / 2
               viewCenterY = bounds.minY + oy + row * (cPrintableH - TILE_OVERLAP) + cPrintableH / 2
@@ -1205,7 +1205,7 @@ export async function exportCoursePdf(
           }
 
           if (descMode === 'on-map' && pageCourse.controls.length > 0) {
-            const sheetPos = layout?.clueSheet ?? options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
+            const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
             drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
           }
