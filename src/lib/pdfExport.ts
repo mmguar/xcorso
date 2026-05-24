@@ -77,6 +77,8 @@ export interface PdfExportOptions {
   sheetPositions?: Record<string, { x: number; y: number }>
   tiling?: boolean
   mapOpacity?: number
+  mapRendering?: 'vector' | 'raster'
+  rasterDpi?: number
 }
 
 export interface CourseFitInfo {
@@ -139,17 +141,23 @@ export function canExportPdf(map: MapConfig): boolean {
 
 // ── Map rasterization ──────────────────────────────────────────────────────
 
-async function rasterizeMap(loadedMap: LoadedMap, opacity = 1): Promise<string> {
+async function rasterizeMap(loadedMap: LoadedMap, opacity = 1, targetPx?: { w: number; h: number }): Promise<string> {
   if (loadedMap.type === 'svg') {
     const svgEl = loadedMap.content as SVGElement
     const clone = svgEl.cloneNode(true) as SVGElement
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
 
     const { width, height } = loadedMap.bounds
-    const maxDim = Math.max(width, height)
-    const renderScale = MAX_RASTER_PX / maxDim
-    const canvasW = Math.ceil(width * renderScale)
-    const canvasH = Math.ceil(height * renderScale)
+    let canvasW: number, canvasH: number
+    if (targetPx) {
+      canvasW = targetPx.w
+      canvasH = targetPx.h
+    } else {
+      const maxDim = Math.max(width, height)
+      const renderScale = MAX_RASTER_PX / maxDim
+      canvasW = Math.ceil(width * renderScale)
+      canvasH = Math.ceil(height * renderScale)
+    }
 
     clone.setAttribute('width', String(canvasW))
     clone.setAttribute('height', String(canvasH))
@@ -903,17 +911,30 @@ export async function exportCoursePdf(
   const printableW = pw - 2 * MARGIN
   const printableH = ph - 2 * MARGIN
 
-  if (loadedMap?.type === 'svg') await import('svg2pdf.js')
+  const useRaster = options.mapRendering === 'raster'
+  if (loadedMap?.type === 'svg' && !useRaster) await import('svg2pdf.js')
   const doc = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] })
   const controlMap = new Map(project.controls.map(c => [c.id, c]))
   const courses = expandVariations(project.courses.filter(c => options.courseIds.includes(c.id)))
 
   /** After svg2pdf fails once, use raster fallback for remaining pages. */
-  let svgEmbedDisabled = false
+  let svgEmbedDisabled = useRaster
   let mapDataUrl: string | null = null
 
-  if (loadedMap && loadedMap.type !== 'svg') {
-    try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
+  if (loadedMap && (loadedMap.type !== 'svg' || useRaster)) {
+    const dpi = options.rasterDpi ?? 300
+    let targetPx: { w: number; h: number } | undefined
+    if (loadedMap.type === 'svg') {
+      const mapMmW = mapToMm({ x: loadedMap.bounds.maxX, y: 0 }, project.map, options.printScale).x
+        - mapToMm({ x: loadedMap.bounds.minX, y: 0 }, project.map, options.printScale).x
+      const mapMmH = mapToMm({ x: 0, y: loadedMap.bounds.maxY }, project.map, options.printScale).y
+        - mapToMm({ x: 0, y: loadedMap.bounds.minY }, project.map, options.printScale).y
+      targetPx = {
+        w: Math.ceil(Math.abs(mapMmW) / 25.4 * dpi),
+        h: Math.ceil(Math.abs(mapMmH) / 25.4 * dpi),
+      }
+    }
+    try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1, targetPx) } catch { /* fall back to no map */ }
   }
 
   /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */

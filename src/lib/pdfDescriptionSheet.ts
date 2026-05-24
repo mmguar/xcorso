@@ -53,14 +53,15 @@ interface PathCmd {
 
 function parseSvgPath(d: string): PathCmd[] {
   const cmds: PathCmd[] = []
-  const tokens = d.match(/[MLCZ]|[-+]?(?:\d+\.?\d*|\.\d+)/g)
+  const tokens = d.match(/[MLCHVZ]|[-+]?(?:\d+\.?\d*|\.\d+)/g)
   if (!tokens) return cmds
 
   let cur = ''
   let args: number[] = []
+  let x = 0, y = 0
 
   for (const t of tokens) {
-    if (/^[MLCZ]$/.test(t)) {
+    if (/^[MLCHVZ]$/.test(t)) {
       if (cur) cmds.push({ cmd: cur, args })
       cur = t
       args = []
@@ -69,7 +70,16 @@ function parseSvgPath(d: string): PathCmd[] {
     }
   }
   if (cur) cmds.push({ cmd: cur, args })
-  return cmds
+
+  return cmds.map(c => {
+    switch (c.cmd) {
+      case 'M': case 'L': x = c.args[0]; y = c.args[1]; return c
+      case 'C': x = c.args[4]; y = c.args[5]; return c
+      case 'H': x = c.args[0]; return { cmd: 'L', args: [x, y] }
+      case 'V': y = c.args[0]; return { cmd: 'L', args: [x, y] }
+      default: return c
+    }
+  })
 }
 
 // ── Draw one IOF symbol into a cell ─────────────────────────────────────────
