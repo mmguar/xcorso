@@ -555,6 +555,7 @@ export function drawDescriptionSheetOverlay(
       if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
     } else {
       for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.setLineWidth(LINE_W)
         doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
         const colId = COL_IDS[ci]
         const field = columnFields[colId]
@@ -714,6 +715,7 @@ export function drawDescriptionSheet(
       if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
     } else {
       for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.setLineWidth(LINE_W)
         doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
         const colId = COL_IDS[ci]
         const field = columnFields[colId]
