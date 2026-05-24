@@ -1205,7 +1205,7 @@ export async function exportCoursePdf(
           }
 
           if (descMode === 'on-map' && pageCourse.controls.length > 0) {
-            const sheetPos = layout?.clueSheet ?? options.sheetPositions?.[oKey] ?? { x: MARGIN, y: MARGIN }
+            const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
             drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
           }
