@@ -372,14 +372,11 @@ export function PdfExportDialog({ onClose }: Props) {
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-gray-500">
                 Page position
-                {s.activeLayout
-                  ? <span className="text-gray-400 font-normal"> &mdash; from layout ({PAGE_SIZES[s.activeLayout.pageSize]?.label} {s.activeLayout.orientation})</span>
-                  : <span className="text-gray-400 font-normal"> &mdash; drag to reposition</span>
-                }
+                <span className="text-gray-400 font-normal"> &mdash; drag to reposition</span>
               </label>
-              {!s.activeLayout && s.hasOffset && (
+              {s.hasOffset && (
                 <button onClick={s.resetOffset} className="text-xs text-orange-600 hover:text-orange-800">
-                  Re-center
+                  {s.activeLayout ? 'Reset to layout' : 'Re-center'}
                 </button>
               )}
             </div>
@@ -460,8 +457,8 @@ export function PdfExportDialog({ onClose }: Props) {
               pageH={s.activePh}
               printableW={s.activePrintableW}
               printableH={s.activePrintableH}
-              offsetX={s.activeLayout ? 0 : s.activeOffset.x}
-              offsetY={s.activeLayout ? 0 : s.activeOffset.y}
+              offsetX={s.activeOffset.x}
+              offsetY={s.activeOffset.y}
               onOffsetChange={s.setActiveOffset}
               mapImage={mapImage}
               dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === (parseSubmapPreviewId(s.activePreviewId)?.courseId ?? s.activePreviewId))?.color ?? '#7B2FBE')}
