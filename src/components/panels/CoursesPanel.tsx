@@ -326,7 +326,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
               {course.name}
             </span>
           )}
-          <span className="text-xs text-gray-400 shrink-0">{course.controls.length} ctrls</span>
+          <span className="text-xs text-gray-400 shrink-0">{course.controls.length-2} ctrls</span>
         </div>
       </div>
       {isExpanded && <CourseEditor course={course} />}
