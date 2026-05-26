@@ -444,6 +444,36 @@ export function descriptionSheetSize(
   return { width, height }
 }
 
+export function descriptionSheetPartSizes(
+  course: Course,
+  controls: Control[],
+  breaks: number[],
+  trailingFlip?: boolean,
+): Array<{ width: number; height: number }> {
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const resolved = course.controls.filter(cc => controlMap.has(cc.controlId))
+  if (resolved.length === 0) return [{ width: 0, height: 0 }]
+
+  const width = course.textDescriptions
+    ? 2 * CELL + estimateDescColumnWidth(course, controls)
+    : GRID_W
+
+  const sortedBreaks = [...breaks].sort((a, b) => a - b)
+  const boundaries = [0, ...sortedBreaks, resolved.length]
+  const sizes: Array<{ width: number; height: number }> = []
+
+  for (let p = 0; p < boundaries.length - 1; p++) {
+    const start = boundaries[p]
+    const end = boundaries[p + 1]
+    let rowCount = end - start
+    if (p === boundaries.length - 2 && trailingFlip) rowCount++
+    const headerH = p === 0 ? CELL + COL_HEADER_H : COL_HEADER_H
+    sizes.push({ width, height: headerH + rowCount * CELL })
+  }
+
+  return sizes
+}
+
 // ── Draw overlay on existing page ───────────────────────────────────────────
 
 export function drawDescriptionSheetOverlay(
