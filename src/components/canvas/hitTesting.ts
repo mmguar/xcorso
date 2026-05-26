@@ -163,8 +163,9 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
   for (const tl of project.textLabels) {
     const pos = posOverrides?.[tl.id] ?? tl.position
     const fontSize = tl.fontSizeMm * upm
-    const w = tl.text.length * fontSize * 0.65
-    const h = fontSize * 1.3
+    const lines = tl.text.split('\n')
+    const w = Math.max(...lines.map(l => l.length)) * fontSize * 0.48
+    const h = fontSize * 1.25 * lines.length
     if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
         mapPt.y >= pos.y - fontSize - hitSlop && mapPt.y <= pos.y - fontSize + h + hitSlop) {
       return { id: tl.id, kind: 'text' }

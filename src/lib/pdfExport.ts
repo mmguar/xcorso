@@ -892,11 +892,28 @@ function drawTextLabel(
   toPage: (pt: MapPoint) => Pos,
 ) {
   const pos = toPage(tl.position)
+  const fontSize = tl.fontSizeMm
+  const lines = tl.text.split('\n')
+  const lineHeight = fontSize * 1.25
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(fontSize * MM_TO_PT)
+
+  if (tl.bgAlpha > 0) {
+    const pad = 0.15 * fontSize
+    const maxLineW = Math.max(...lines.map(l => doc.getStringUnitWidth(l) * fontSize))
+    const blockH = lineHeight * lines.length
+    doc.setFillColor(255, 255, 255)
+    doc.setGState(doc.GState({ opacity: tl.bgAlpha }))
+    doc.roundedRect(pos.x - pad, pos.y - fontSize - pad, maxLineW + pad * 2, blockH + pad * 2, 0.15 * fontSize, 0.15 * fontSize, 'F')
+    doc.setGState(doc.GState({ opacity: 1 }))
+  }
+
   const [r, g, b] = hexToRgb(tl.color)
   doc.setTextColor(r, g, b)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(tl.fontSizeMm * MM_TO_PT)
-  doc.text(tl.text, pos.x, pos.y)
+  for (let i = 0; i < lines.length; i++) {
+    doc.text(lines[i], pos.x, pos.y + i * lineHeight)
+  }
 }
 
 // ── Main export ─────────────────────────────────────────────────────────────
