@@ -12,7 +12,8 @@ interface Props {
 }
 
 function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; map: MapConfig; selected: boolean; printScaleOverride?: number }) {
-  const upm = unitsPerMm(map)
+  const baseUpm = unitsPerMm(map)
+  const upm = printScaleOverride ? baseUpm * printScaleOverride / map.scale : baseUpm
   /** Bar graphic is drawn for this denominator; falls back to map scale for older projects. */
   const scaleDen = printScaleOverride ?? sb.scale ?? map.scale
   const scaleStr = `1:${Math.round(scaleDen)}`
