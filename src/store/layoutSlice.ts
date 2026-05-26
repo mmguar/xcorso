@@ -1,4 +1,4 @@
-import type { MapPoint, CourseLayout, LayoutElementPosition, LayoutDefaults } from '../types'
+import type { MapPoint, CourseLayout, LayoutElementPosition, LayoutDefaults, MapBorder } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
 
@@ -38,7 +38,7 @@ function defaultLayout(courseId: string, get: GetState): CourseLayout {
     }
   }
 
-  return {
+  const layout: CourseLayout = {
     pageSize: defaults.pageSize,
     orientation: defaults.orientation,
     printScale: defaults.printScale,
@@ -46,6 +46,10 @@ function defaultLayout(courseId: string, get: GetState): CourseLayout {
     clueSheet: { x: MARGIN, y: MARGIN, visible: false },
     included: true,
   }
+  if (defaults.mapBorder) {
+    layout.mapBorder = { ...defaults.mapBorder }
+  }
+  return layout
 }
 
 export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers) {
@@ -103,17 +107,52 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           p.layoutDefaults = { ...oldDefaults }
         }
         const prev = { ...p.layoutDefaults }
+        const prevBorder: MapBorder | undefined = prev.mapBorder ? { ...prev.mapBorder } : undefined
         Object.assign(p.layoutDefaults, updates)
+
+        if (p.layoutDefaults.mapBorder && (updates.pageSize != null || updates.orientation != null)) {
+          const base = PAGE_SIZES[p.layoutDefaults.pageSize] ?? PAGE_SIZES.a4
+          const pw = p.layoutDefaults.orientation === 'landscape' ? base.h : base.w
+          const ph = p.layoutDefaults.orientation === 'landscape' ? base.w : base.h
+          p.layoutDefaults.mapBorder.width = pw - 2 * p.layoutDefaults.mapBorder.x
+          p.layoutDefaults.mapBorder.height = ph - 2 * p.layoutDefaults.mapBorder.y
+        }
+
         for (const course of p.courses) {
           if (!course.layout) continue
-          if (updates.pageSize != null && course.layout.pageSize === prev.pageSize) {
-            course.layout.pageSize = updates.pageSize
-          }
-          if (updates.orientation != null && course.layout.orientation === prev.orientation) {
-            course.layout.orientation = updates.orientation
-          }
+          const pageSizeChanged = updates.pageSize != null && course.layout.pageSize === prev.pageSize
+          const orientationChanged = updates.orientation != null && course.layout.orientation === prev.orientation
+
+          if (pageSizeChanged) course.layout.pageSize = updates.pageSize!
+          if (orientationChanged) course.layout.orientation = updates.orientation!
           if (updates.printScale != null && course.layout.printScale === prev.printScale) {
             course.layout.printScale = updates.printScale
+          }
+
+          if ('mapBorder' in updates) {
+            const cb = course.layout.mapBorder
+            const matchesOld = (!cb && !prevBorder) ||
+              (cb && prevBorder && cb.x === prevBorder.x && cb.y === prevBorder.y &&
+               cb.color === prevBorder.color && cb.strokeWidth === prevBorder.strokeWidth)
+            if (matchesOld) {
+              const nb = p.layoutDefaults.mapBorder
+              if (nb) {
+                const base = PAGE_SIZES[course.layout.pageSize] ?? PAGE_SIZES.a4
+                const pw = course.layout.orientation === 'landscape' ? base.h : base.w
+                const ph = course.layout.orientation === 'landscape' ? base.w : base.h
+                course.layout.mapBorder = { ...nb, width: pw - 2 * nb.x, height: ph - 2 * nb.y }
+              } else {
+                course.layout.mapBorder = undefined
+              }
+            }
+          }
+
+          if ((pageSizeChanged || orientationChanged) && course.layout.mapBorder && !('mapBorder' in updates)) {
+            const base = PAGE_SIZES[course.layout.pageSize] ?? PAGE_SIZES.a4
+            const pw = course.layout.orientation === 'landscape' ? base.h : base.w
+            const ph = course.layout.orientation === 'landscape' ? base.w : base.h
+            course.layout.mapBorder.width = pw - 2 * course.layout.mapBorder.x
+            course.layout.mapBorder.height = ph - 2 * course.layout.mapBorder.y
           }
         }
       })
@@ -171,6 +210,10 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           layout.overlayPositions[overlayId] = mapPos
         }
       })
+    },
+
+    requestLayoutSnap: () => {
+      set(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
     },
 
     addClueSheetBreak: (courseId: string, controlIndex: number) => {

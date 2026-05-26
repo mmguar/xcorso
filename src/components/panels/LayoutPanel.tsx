@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../../store'
 import {
-  PAGE_SIZES, canExportPdf, exportCoursePdf,
+  PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
   checkFitForCourse, checkTilingForCourse, suggestFitScaleForCourse,
 } from '../../lib/pdfExport'
 import { defaultControlLabel } from '../../lib/courseUtils'
@@ -57,6 +57,51 @@ function ScaleInput({
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:border-orange-400 focus:outline-none disabled:opacity-40"
       />
+    </div>
+  )
+}
+
+function MmInput({
+  value: externalValue,
+  onChange,
+  disabled,
+  max,
+}: {
+  value: number
+  onChange: (v: number) => void
+  disabled?: boolean
+  max: number
+}) {
+  const display = Math.round(externalValue * 10) / 10
+  const [text, setText] = useState(String(display))
+  const prevVal = useRef(externalValue)
+  if (externalValue !== prevVal.current) {
+    prevVal.current = externalValue
+    setText(String(Math.round(externalValue * 10) / 10))
+  }
+  function commit() {
+    const v = parseFloat(text)
+    if (isFinite(v) && v >= 0 && v <= max) {
+      const rounded = Math.round(v * 10) / 10
+      if (rounded !== display) onChange(rounded)
+      else setText(String(display))
+    } else {
+      setText(String(display))
+    }
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        disabled={disabled}
+        onChange={e => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        className="w-14 px-1.5 py-0.5 text-xs border border-gray-200 rounded focus:border-orange-400 focus:outline-none disabled:opacity-40 text-right tabular-nums"
+      />
+      <span className="text-[10px] text-gray-400">mm</span>
     </div>
   )
 }
@@ -192,6 +237,70 @@ function GeneralSection() {
               </label>
             </div>
           )}
+
+          {/* Map border */}
+          {(() => {
+            const base = PAGE_SIZES[defaults.pageSize] ?? PAGE_SIZES.a4
+            const pw = defaults.orientation === 'landscape' ? base.h : base.w
+            const ph = defaults.orientation === 'landscape' ? base.w : base.h
+            const border = defaults.mapBorder
+            return (
+              <div>
+                <SectionLabel>Map border</SectionLabel>
+                <div className="flex items-center gap-2 mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!border}
+                      onChange={e => {
+                        updateLayoutDefaults({
+                          mapBorder: e.target.checked
+                            ? { color: '#000000', strokeWidth: 0.35, x: MARGIN, y: MARGIN, width: pw - 2 * MARGIN, height: ph - 2 * MARGIN }
+                            : undefined,
+                        })
+                      }}
+                      className="accent-orange-600"
+                    />
+                    <span className="text-xs text-gray-600">Enabled</span>
+                  </label>
+                  {border && (
+                    <input
+                      type="color"
+                      value={border.color}
+                      onChange={e => updateLayoutDefaults({
+                        mapBorder: { ...border, color: e.target.value },
+                      })}
+                      className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
+                    />
+                  )}
+                </div>
+                {border && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 w-16">Left / Right</span>
+                      <MmInput
+                        value={border.x}
+                        onChange={v => updateLayoutDefaults({
+                          mapBorder: { ...border, x: v, width: pw - 2 * v },
+                        })}
+                        max={(pw - 20) / 2}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 w-16">Top / Bottom</span>
+                      <MmInput
+                        value={border.y}
+                        onChange={v => updateLayoutDefaults({
+                          mapBorder: { ...border, y: v, height: ph - 2 * v },
+                        })}
+                        max={(ph - 20) / 2}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>
@@ -216,6 +325,7 @@ function CourseCard({ courseId }: { courseId: string }) {
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
+  const requestLayoutSnap = useStore(s => s.requestLayoutSnap)
   const updateLayoutElement = useStore(s => s.updateLayoutElement)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
@@ -231,24 +341,35 @@ function CourseCard({ courseId }: { courseId: string }) {
   const isPageSizeOverride = layout != null && layout.pageSize !== defaults.pageSize
   const isOrientationOverride = layout != null && layout.orientation !== defaults.orientation
   const isScaleOverride = layout != null && layout.printScale !== defaults.printScale
+  const isBorderOverride = layout != null && (
+    (!!layout.mapBorder !== !!defaults.mapBorder) ||
+    (layout.mapBorder && defaults.mapBorder && (
+      layout.mapBorder.x !== defaults.mapBorder.x ||
+      layout.mapBorder.y !== defaults.mapBorder.y ||
+      layout.mapBorder.color !== defaults.mapBorder.color ||
+      layout.mapBorder.strokeWidth !== defaults.mapBorder.strokeWidth
+    ))
+  )
+
+  const effectiveBorder = layout?.mapBorder
 
   const fitInfo = useMemo(() =>
-    checkFitForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale),
-    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale],
+    checkFitForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder),
+    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder],
   )
 
   const tileInfo = useMemo(() =>
     fitInfo && !fitInfo.fits
-      ? checkTilingForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale)
+      ? checkTilingForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder)
       : null,
-    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, fitInfo],
+    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, fitInfo],
   )
 
   const suggestedScale = useMemo(() =>
     fitInfo && !fitInfo.fits
-      ? suggestFitScaleForCourse(project, courseId, effectivePageSize, effectiveOrientation)
+      ? suggestFitScaleForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectiveBorder)
       : null,
-    [project, courseId, effectivePageSize, effectiveOrientation, fitInfo],
+    [project, courseId, effectivePageSize, effectiveOrientation, effectiveBorder, fitInfo],
   )
 
   function toggleIncluded() {
@@ -529,6 +650,91 @@ function CourseCard({ courseId }: { courseId: string }) {
             )
           })()}
 
+          {/* Map border */}
+          {(() => {
+            const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
+            const pw = effectiveOrientation === 'landscape' ? base.h : base.w
+            const ph = effectiveOrientation === 'landscape' ? base.w : base.h
+            const cb = layout.mapBorder
+            return (
+              <div>
+                <SectionLabel>Map border{isBorderOverride && <OverrideTag />}</SectionLabel>
+                <div className="flex items-center gap-2 mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!cb}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          const db = defaults.mapBorder
+                          updateCourseLayout(courseId, {
+                            mapBorder: db
+                              ? { ...db, width: pw - 2 * db.x, height: ph - 2 * db.y }
+                              : { color: course.color, strokeWidth: 0.35, x: MARGIN, y: MARGIN, width: pw - 2 * MARGIN, height: ph - 2 * MARGIN },
+                          })
+                        } else {
+                          updateCourseLayout(courseId, { mapBorder: undefined })
+                        }
+                      }}
+                      className="accent-orange-600"
+                    />
+                    <span className="text-xs text-gray-600">Enabled</span>
+                  </label>
+                  {cb && (
+                    <input
+                      type="color"
+                      value={cb.color}
+                      onChange={e => updateCourseLayout(courseId, {
+                        mapBorder: { ...cb, color: e.target.value },
+                      })}
+                      className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
+                    />
+                  )}
+                  {isBorderOverride && (
+                    <button
+                      onClick={() => {
+                        if (defaults.mapBorder) {
+                          updateCourseLayout(courseId, {
+                            mapBorder: { ...defaults.mapBorder, width: pw - 2 * defaults.mapBorder.x, height: ph - 2 * defaults.mapBorder.y },
+                          })
+                        } else {
+                          updateCourseLayout(courseId, { mapBorder: undefined })
+                        }
+                      }}
+                      className="text-[10px] text-orange-600 hover:text-orange-800 ml-auto"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                {cb && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 w-16">Left / Right</span>
+                      <MmInput
+                        value={cb.x}
+                        onChange={v => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, x: v, width: pw - 2 * v },
+                        })}
+                        max={(pw - 20) / 2}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 w-16">Top / Bottom</span>
+                      <MmInput
+                        value={cb.y}
+                        onChange={v => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, y: v, height: ph - 2 * v },
+                        })}
+                        max={(ph - 20) / 2}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Reset to course center */}
           <button
             onClick={() => {
@@ -548,6 +754,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                     y: (Math.min(...ys) + Math.max(...ys)) / 2,
                   },
                 })
+                requestLayoutSnap()
               }
             }}
             className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
