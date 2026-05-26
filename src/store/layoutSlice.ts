@@ -1,13 +1,25 @@
-import type { MapPoint, CourseLayout, LayoutElementPosition } from '../types'
+import type { MapPoint, CourseLayout, LayoutElementPosition, LayoutDefaults } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
+
+export function getLayoutDefaults(get: GetState): LayoutDefaults {
+  const project = get().project!
+  return project.layoutDefaults ?? {
+    pageSize: 'a4',
+    orientation: 'portrait',
+    printScale: project.map.scale,
+    mapOpacity: 1,
+    mapRendering: 'raster',
+    rasterDpi: 300,
+  }
+}
 
 function defaultLayout(courseId: string, get: GetState): CourseLayout {
   const state = get()
   const project = state.project!
   const map = project.map
   const course = project.courses.find(c => c.id === courseId)
-  const printScale = map.scale
+  const defaults = getLayoutDefaults(get)
 
   let center: MapPoint = { x: map.width / 2, y: map.height / 2 }
   if (course) {
@@ -27,11 +39,12 @@ function defaultLayout(courseId: string, get: GetState): CourseLayout {
   }
 
   return {
-    pageSize: 'a4',
-    orientation: 'portrait',
-    printScale,
+    pageSize: defaults.pageSize,
+    orientation: defaults.orientation,
+    printScale: defaults.printScale,
     mapCenter: center,
     clueSheet: { x: MARGIN, y: MARGIN, visible: false },
+    included: true,
   }
 }
 
@@ -57,7 +70,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           ...state.editor,
           layoutMode: true,
           layoutCourseId: courseId,
-          selectedCourseId: null,
+          selectedCourseId: courseId,
           selectedControlId: null,
           selectedOverlayId: null,
           activeTool: 'select',
@@ -80,6 +93,43 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
         if (course?.layout) Object.assign(course.layout, updates)
+      })
+    },
+
+    updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => {
+      const oldDefaults = getLayoutDefaults(get)
+      h.mutateProject(p => {
+        if (!p.layoutDefaults) {
+          p.layoutDefaults = { ...oldDefaults }
+        }
+        const prev = { ...p.layoutDefaults }
+        Object.assign(p.layoutDefaults, updates)
+        for (const course of p.courses) {
+          if (!course.layout) continue
+          if (updates.pageSize != null && course.layout.pageSize === prev.pageSize) {
+            course.layout.pageSize = updates.pageSize
+          }
+          if (updates.orientation != null && course.layout.orientation === prev.orientation) {
+            course.layout.orientation = updates.orientation
+          }
+          if (updates.printScale != null && course.layout.printScale === prev.printScale) {
+            course.layout.printScale = updates.printScale
+          }
+        }
+      })
+    },
+
+    ensureAllCourseLayouts: () => {
+      const project = get().project
+      if (!project) return
+      const needsLayout = project.courses.some(c => !c.layout)
+      if (!needsLayout) return
+      h.mutateProject(p => {
+        for (const course of p.courses) {
+          if (!course.layout) {
+            course.layout = defaultLayout(course.id, get)
+          }
+        }
       })
     },
 

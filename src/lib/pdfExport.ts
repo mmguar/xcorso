@@ -63,7 +63,8 @@ export const PAGE_SIZES: Record<string, { w: number; h: number; label: string }>
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type DescMode = 'none' | 'separate' | 'on-map'
+export type { DescMode } from '../types'
+import type { DescMode } from '../types'
 
 export interface PdfExportOptions {
   pageSize: string
@@ -394,6 +395,78 @@ export function suggestFitScale(
   }
 
   return null
+}
+
+export function suggestFitScaleForCourse(
+  project: Project,
+  courseId: string,
+  pageSize: string,
+  orientation: 'portrait' | 'landscape',
+): number | null {
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const printableW = pw - 2 * MARGIN
+  const printableH = ph - 2 * MARGIN
+
+  const course = project.courses.find(c => c.id === courseId)
+  if (!course) return null
+
+  const sorted = [...COMMON_SCALES].sort((a, b) => a - b)
+  for (const scale of sorted) {
+    const bounds = courseBoundsMm(course, project.controls, project.map, scale)
+    if (!bounds) return scale
+    if (bounds.width <= printableW && bounds.height <= printableH) return scale
+  }
+
+  return null
+}
+
+export function checkFitForCourse(
+  project: Project,
+  courseId: string,
+  pageSize: string,
+  orientation: 'portrait' | 'landscape',
+  printScale: number,
+): CourseFitInfo | null {
+  const course = project.courses.find(c => c.id === courseId)
+  if (!course) return null
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const printableW = pw - 2 * MARGIN
+  const printableH = ph - 2 * MARGIN
+  const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
+  return {
+    courseId,
+    courseName: course.name,
+    fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
+    widthMm: bounds?.width ?? 0,
+    heightMm: bounds?.height ?? 0,
+    printableW,
+    printableH,
+  }
+}
+
+export function checkTilingForCourse(
+  project: Project,
+  courseId: string,
+  pageSize: string,
+  orientation: 'portrait' | 'landscape',
+  printScale: number,
+): CourseTileInfo | null {
+  const course = project.courses.find(c => c.id === courseId)
+  if (!course) return null
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const printableW = pw - 2 * MARGIN
+  const printableH = ph - 2 * MARGIN
+  const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
+  if (!bounds) return { courseId, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }
+  const cols = tileCount(bounds.width, printableW)
+  const rows = tileCount(bounds.height, printableH)
+  return { courseId, courseName: course.name, cols, rows, totalPages: cols * rows }
 }
 
 // ── Tiling ─────────────────────────────────────────────────────────────────
@@ -1088,7 +1161,7 @@ export async function exportCoursePdf(
     const layout = origCourse?.layout
 
     const baseCourseScale = layout?.printScale ?? options.scaleOverrides?.[oKey] ?? options.printScale
-    const descMode = layout?.clueSheet.visible ? 'on-map' as DescMode : options.descModes?.[oKey] ?? 'none'
+    const descMode: DescMode = layout?.descMode ?? (layout?.clueSheet.visible ? 'on-map' : options.descModes?.[oKey] ?? 'none')
 
     const cPageBase = layout ? (PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
     const cOrient = layout?.orientation ?? options.orientation
@@ -1121,7 +1194,7 @@ export async function exportCoursePdf(
       const bounds = courseBoundsMm(boundsSource, project.controls, project.map, courseScale)
       if (!bounds && !layout) continue
 
-      const useTiling = options.tiling && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH) && !layout
+      const useTiling = (layout?.tiling || (options.tiling && !layout)) && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH)
       const cols = useTiling ? tileCount(bounds!.width, cPrintableW) : 1
       const rows = useTiling ? tileCount(bounds!.height, cPrintableH) : 1
 
@@ -1221,7 +1294,7 @@ export async function exportCoursePdf(
             drawTextLabel(doc, effectiveTl, toPage)
           }
 
-          if (descMode === 'on-map' && pageCourse.controls.length > 0) {
+          if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
             const breaks = layout?.clueSheetBreaks
             if (breaks && breaks.length > 0) {
@@ -1249,7 +1322,7 @@ export async function exportCoursePdf(
         }
       }
 
-      if (descMode === 'separate' && pageCourse.controls.length > 0) {
+      if ((descMode === 'separate' || descMode === 'both') && pageCourse.controls.length > 0) {
         doc.addPage([cpw, cph], cOrientFlag)
         pageIndex++
         const dist = computeCourseDistances(pageCourse, project.controls, project.map)
