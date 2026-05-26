@@ -17,6 +17,7 @@ import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, for
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
+import { descriptionSheetSize } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap,
   findControlAt, findBendPointAt,
@@ -383,8 +384,9 @@ export function MapCanvas({ loadedMap }: Props) {
           const pageWMap = halfWMap * 2
           const mmToMapU = pageWMap / pageW
 
+          const sheet = descriptionSheetSize(course!, proj.controls)
           const elements: Array<{ key: 'clueSheet'; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = [
-            { key: 'clueSheet', el: layout.clueSheet, wMm: 50, hMm: 30 },
+            { key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height },
           ]
           for (const { key, el, wMm, hMm } of elements) {
             if (!el.visible) continue
@@ -1031,6 +1033,8 @@ export function MapCanvas({ loadedMap }: Props) {
           viewport={vp}
           canvasW={rectCacheRef.current?.width ?? 800}
           canvasH={rectCacheRef.current?.height ?? 600}
+          course={layoutCourse}
+          controls={controls}
         />
       )}
 

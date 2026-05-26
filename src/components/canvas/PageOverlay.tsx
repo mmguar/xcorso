@@ -1,5 +1,6 @@
-import type { CourseLayout, MapConfig, Viewport } from '../../types'
+import type { CourseLayout, MapConfig, Viewport, Course, Control } from '../../types'
 import { PAGE_SIZES, MARGIN, mmToMap } from '../../lib/pdfExport'
+import { descriptionSheetSize } from '../../lib/pdfDescriptionSheet'
 
 interface Props {
   layout: CourseLayout
@@ -7,13 +8,15 @@ interface Props {
   viewport: Viewport
   canvasW: number
   canvasH: number
+  course: Course
+  controls: Control[]
 }
 
 function mapToScreen(mapPt: { x: number; y: number }, vp: Viewport) {
   return { x: mapPt.x * vp.scale + vp.x, y: mapPt.y * vp.scale + vp.y }
 }
 
-export function PageOverlay({ layout, map, viewport, canvasW, canvasH }: Props) {
+export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls }: Props) {
   const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
   const pageW = layout.orientation === 'landscape' ? base.h : base.w
   const pageH = layout.orientation === 'landscape' ? base.w : base.h
@@ -74,8 +77,9 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH }: Props) 
       {/* Clue sheet indicator */}
       {layout.clueSheet.visible && (() => {
         const pos = elementScreenPos(layout.clueSheet)
-        const w = 50 * mmToPx
-        const h = 30 * mmToPx
+        const sheet = descriptionSheetSize(course, controls)
+        const w = sheet.width * mmToPx
+        const h = sheet.height * mmToPx
         return (
           <g>
             <rect

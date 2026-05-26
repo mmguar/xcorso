@@ -37,7 +37,15 @@ export function usePdfExportState(onClose: () => void) {
     return overrides
   })
   const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
-  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>(() => {
+    const pos: Record<string, { x: number; y: number }> = {}
+    for (const c of project.courses) {
+      if (c.layout?.clueSheet.visible) {
+        pos[c.id] = { x: c.layout.clueSheet.x, y: c.layout.clueSheet.y }
+      }
+    }
+    return pos
+  })
   const [tiling, setTiling] = useState(false)
   const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
   const [submapLocks, setSubmapLocks] = useState<Record<string, boolean>>({})
