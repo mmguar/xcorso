@@ -55,6 +55,9 @@ function validateProject(raw: unknown): Project {
   for (const sb of obj.scaleBars as Record<string, unknown>[]) {
     if (typeof sb.scale !== 'number' || !isFinite(sb.scale) || sb.scale <= 0) sb.scale = mapScale
   }
+  for (const tl of obj.textLabels as Record<string, unknown>[]) {
+    if (typeof tl.bgAlpha !== 'number') tl.bgAlpha = 0
+  }
 
   const exchangeControlIds = new Set<string>()
   for (const c of obj.controls as Record<string, unknown>[]) {

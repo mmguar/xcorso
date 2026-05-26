@@ -120,14 +120,27 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
   const fontSize = tl.fontSizeMm * upm
   const strokeW = 0.2 * upm
 
+  const pad = 0.3 * fontSize
+  const textW = tl.text.length * fontSize * 0.65
+  const textH = fontSize * 1.3
+  const bgX = tl.position.x - pad
+  const bgY = tl.position.y - fontSize - pad
+  const bgW = textW + pad * 2
+  const bgH = textH + pad * 2
+
   return (
     <g>
+      {tl.bgAlpha > 0 && (
+        <rect
+          x={bgX} y={bgY} width={bgW} height={bgH}
+          fill="white" opacity={tl.bgAlpha}
+          rx={0.2 * fontSize}
+        />
+      )}
       {selected && (
         <rect
-          x={tl.position.x - strokeW * 2}
-          y={tl.position.y - fontSize - strokeW * 2}
-          width={tl.text.length * fontSize * 0.65 + strokeW * 4}
-          height={fontSize * 1.3 + strokeW * 4}
+          x={bgX - strokeW * 2} y={bgY - strokeW * 2}
+          width={bgW + strokeW * 4} height={bgH + strokeW * 4}
           fill="none" stroke="#ea580c" strokeWidth={strokeW * 2}
           strokeDasharray={`${upm * 1} ${upm * 0.5}`}
           rx={0.3 * upm}

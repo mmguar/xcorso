@@ -185,6 +185,7 @@ export interface TextLabel {
   text: string
   fontSizeMm: number         // font size in mm on paper (e.g. 3)
   color: string              // hex color
+  bgAlpha: number            // 0 = transparent, 1 = opaque white
 }
 
 // ─── Project ────────────────────────────────────────────────────────────────

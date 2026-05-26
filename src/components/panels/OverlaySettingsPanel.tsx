@@ -181,6 +181,22 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
         />
         <span className="text-[10px] text-gray-400 font-mono">{tl.color}</span>
       </label>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Background</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={tl.bgAlpha}
+          onChange={e => updateTextLabel(tl.id, { bgAlpha: parseFloat(e.target.value) })}
+          className="flex-1 min-w-0 h-1 accent-orange-600"
+        />
+        <span className="text-[10px] text-gray-400 w-8 text-right">
+          {Math.round(tl.bgAlpha * 100)}%
+        </span>
+      </label>
     </div>
   )
 }
