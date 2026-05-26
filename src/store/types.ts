@@ -2,7 +2,7 @@ import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
-  CourseLayout, LayoutElementPosition,
+  CourseLayout, LayoutElementPosition, LayoutDefaults,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -127,6 +127,8 @@ export interface AppActions {
   enterLayoutMode: (courseId: string) => void
   exitLayoutMode: () => void
   updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
+  updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => void
+  ensureAllCourseLayouts: () => void
   beginLayoutDrag: () => void
   setLayoutMapCenter: (courseId: string, center: MapPoint) => void
   updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => void

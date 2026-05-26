@@ -4,7 +4,6 @@ import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
-import { PdfExportDialog } from '../PdfExportDialog'
 import type { EventSpec, MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
@@ -20,7 +19,6 @@ export function Header({ onGoHome }: Props) {
   const [nameVal, setNameVal] = useState(project.meta.name)
   const replaceMapFile = useStore(s => s.replaceMapFile)
   const [exportOpen, setExportOpen] = useState(false)
-  const [pdfDialogOpen, setPdfDialogOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
   const mapInputRef = useRef<HTMLInputElement>(null)
 
@@ -144,17 +142,10 @@ export function Header({ onGoHome }: Props) {
               >
                 IOF XML v3 (.xml)
               </button>
-              <button
-                onClick={() => { setPdfDialogOpen(true); setExportOpen(false) }}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors"
-              >
-                Course PDF overlay
-              </button>
             </div>
           )}
         </div>
       </div>
-      {pdfDialogOpen && <PdfExportDialog onClose={() => setPdfDialogOpen(false)} />}
     </header>
   )
 }

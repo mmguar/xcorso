@@ -1,47 +1,217 @@
-import { useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../../store'
-import { PAGE_SIZES } from '../../lib/pdfExport'
+import {
+  PAGE_SIZES, canExportPdf, exportCoursePdf,
+  checkFitForCourse, checkTilingForCourse, suggestFitScaleForCourse,
+} from '../../lib/pdfExport'
 import { defaultControlLabel } from '../../lib/courseUtils'
-import type { PageSizeKey, Control } from '../../types'
+import { downloadBlob } from '../../lib/projectFile'
+import { getLayoutDefaults } from '../../store/layoutSlice'
+import type { PageSizeKey, Control, DescMode } from '../../types'
+import type { PdfExportOptions } from '../../lib/pdfExport'
 
 const PAGE_SIZE_KEYS: PageSizeKey[] = ['a4', 'a3', 'letter', 'legal']
+const DESC_OPTIONS: { value: DescMode; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'on-map', label: 'On map' },
+  { value: 'separate', label: 'Own page' },
+  { value: 'both', label: 'Both' },
+]
 
-function ScaleInput({ courseId, printScale }: { courseId: string; printScale: number }) {
-  const [value, setValue] = useState(String(printScale))
-  const prevScale = useRef(printScale)
-  if (printScale !== prevScale.current) {
-    prevScale.current = printScale
-    setValue(String(printScale))
+function ScaleInput({
+  value: externalValue,
+  onChange,
+  disabled,
+  className = '',
+}: {
+  value: number
+  onChange: (v: number) => void
+  disabled?: boolean
+  className?: string
+}) {
+  const [value, setValue] = useState(String(externalValue))
+  const prevScale = useRef(externalValue)
+  if (externalValue !== prevScale.current) {
+    prevScale.current = externalValue
+    setValue(String(externalValue))
   }
-  const updateCourseLayout = useStore(s => s.updateCourseLayout)
   function commit() {
     const v = parseInt(value)
-    if (v > 0 && isFinite(v) && v !== printScale) {
-      updateCourseLayout(courseId, { printScale: v })
+    if (v > 0 && isFinite(v) && v !== externalValue) {
+      onChange(v)
     } else {
-      setValue(String(printScale))
+      setValue(String(externalValue))
     }
   }
   return (
-    <div className="flex items-center gap-1.5 mt-1">
+    <div className={`flex items-center gap-1.5 ${className}`}>
       <span className="text-xs text-gray-500">1:</span>
       <input
         type="text"
         inputMode="numeric"
         value={value}
+        disabled={disabled}
         onChange={e => setValue(e.target.value)}
         onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:border-orange-400 focus:outline-none"
+        className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:border-orange-400 focus:outline-none disabled:opacity-40"
       />
     </div>
   )
 }
 
-export function LayoutPanel() {
-  const courses = useStore(s => s.project?.courses ?? [])
-  const controls = useStore(s => s.project?.controls ?? [])
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{children}</label>
+}
+
+function OverrideTag() {
+  return <span className="text-[9px] text-orange-600 font-medium ml-1">override</span>
+}
+
+function GeneralSection() {
+  const project = useStore(s => s.project!)
+  const loadedMap = useStore(s => s.loadedMap)
+  const updateLayoutDefaults = useStore(s => s.updateLayoutDefaults)
+  const defaults = project.layoutDefaults ?? {
+    pageSize: 'a4' as PageSizeKey,
+    orientation: 'portrait' as const,
+    printScale: project.map.scale,
+    mapOpacity: 1,
+    mapRendering: 'raster' as const,
+    rasterDpi: 300,
+  }
+  const [open, setOpen] = useState(true)
+  const isSvgMap = loadedMap?.type === 'svg'
+
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+      >
+        {open ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+        <span className="text-sm font-medium text-gray-700 flex-1">General</span>
+        <span className="text-[10px] text-gray-400 tabular-nums">
+          {PAGE_SIZES[defaults.pageSize]?.label} · 1:{defaults.printScale.toLocaleString()}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100">
+          {/* Page size */}
+          <div>
+            <SectionLabel>Page size</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {PAGE_SIZE_KEYS.map(key => (
+                <button
+                  key={key}
+                  onClick={() => updateLayoutDefaults({ pageSize: key })}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    defaults.pageSize === key
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {PAGE_SIZES[key].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Orientation */}
+          <div>
+            <SectionLabel>Orientation</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {(['portrait', 'landscape'] as const).map(o => (
+                <button
+                  key={o}
+                  onClick={() => updateLayoutDefaults({ orientation: o })}
+                  className={`px-2 py-1 text-[11px] rounded capitalize transition-colors ${
+                    defaults.orientation === o
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {o}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Map scale */}
+          <div>
+            <SectionLabel>Map scale</SectionLabel>
+            <ScaleInput
+              value={defaults.printScale}
+              onChange={v => updateLayoutDefaults({ printScale: v })}
+              className="mt-1"
+            />
+          </div>
+
+          {/* Map opacity */}
+          <div>
+            <SectionLabel>
+              Map opacity
+              <span className="text-gray-400 font-normal normal-case tracking-normal"> — {Math.round(defaults.mapOpacity * 100)}%</span>
+            </SectionLabel>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={defaults.mapOpacity}
+              onChange={e => updateLayoutDefaults({ mapOpacity: parseFloat(e.target.value) })}
+              className="w-full accent-orange-600 mt-1"
+            />
+          </div>
+
+          {/* Resolution */}
+          {isSvgMap && (
+            <div className="flex items-center gap-2">
+              <SectionLabel>Resolution</SectionLabel>
+              <select
+                value={defaults.rasterDpi}
+                disabled={defaults.mapRendering === 'vector'}
+                onChange={e => updateLayoutDefaults({ rasterDpi: Number(e.target.value) })}
+                className="text-[11px] border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:border-orange-400 disabled:opacity-40"
+              >
+                <option value={150}>150 DPI</option>
+                <option value={200}>200 DPI</option>
+                <option value={300}>300 DPI</option>
+                <option value={600}>600 DPI</option>
+              </select>
+              <label className="flex items-center gap-1 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={defaults.mapRendering === 'vector'}
+                  onChange={e => updateLayoutDefaults({ mapRendering: e.target.checked ? 'vector' : 'raster' })}
+                  className="accent-orange-600"
+                />
+                <span className="text-[11px] text-gray-500">Full SVG</span>
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CourseCard({ courseId }: { courseId: string }) {
+  const project = useStore(s => s.project!)
+  const course = project.courses.find(c => c.id === courseId)!
+  const controls = project.controls
+  const layout = course.layout
+  const defaults = project.layoutDefaults ?? {
+    pageSize: 'a4' as PageSizeKey,
+    orientation: 'portrait' as const,
+    printScale: project.map.scale,
+    mapOpacity: 1,
+    mapRendering: 'raster' as const,
+    rasterDpi: 300,
+  }
+
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
@@ -49,6 +219,414 @@ export function LayoutPanel() {
   const updateLayoutElement = useStore(s => s.updateLayoutElement)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
+
+  const isActive = courseId === layoutCourseId
+  const included = layout?.included !== false
+  const descMode = layout?.descMode ?? 'none'
+
+  const effectivePageSize = layout?.pageSize ?? defaults.pageSize
+  const effectiveOrientation = layout?.orientation ?? defaults.orientation
+  const effectivePrintScale = layout?.printScale ?? defaults.printScale
+
+  const isPageSizeOverride = layout != null && layout.pageSize !== defaults.pageSize
+  const isOrientationOverride = layout != null && layout.orientation !== defaults.orientation
+  const isScaleOverride = layout != null && layout.printScale !== defaults.printScale
+
+  const fitInfo = useMemo(() =>
+    checkFitForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale),
+    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale],
+  )
+
+  const tileInfo = useMemo(() =>
+    fitInfo && !fitInfo.fits
+      ? checkTilingForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale)
+      : null,
+    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, fitInfo],
+  )
+
+  const suggestedScale = useMemo(() =>
+    fitInfo && !fitInfo.fits
+      ? suggestFitScaleForCourse(project, courseId, effectivePageSize, effectiveOrientation)
+      : null,
+    [project, courseId, effectivePageSize, effectiveOrientation, fitInfo],
+  )
+
+  function toggleIncluded() {
+    if (!layout) {
+      useStore.getState().ensureAllCourseLayouts()
+    }
+    updateCourseLayout(courseId, { included: layout ? !included : true })
+  }
+
+  function handleClick() {
+    if (!layout) {
+      enterLayoutMode(courseId)
+      return
+    }
+    if (isActive) {
+      exitLayoutMode()
+    } else {
+      enterLayoutMode(courseId)
+    }
+  }
+
+  return (
+    <div className={`rounded-lg border overflow-hidden transition-colors ${
+      !included ? 'border-gray-100 bg-gray-50/50' : isActive ? 'border-orange-200' : 'border-gray-200'
+    }`}>
+      {/* Header row */}
+      <div className={`flex items-center gap-2 px-3 py-2 ${!included ? 'opacity-50' : ''}`}>
+        <input
+          type="checkbox"
+          checked={included}
+          onChange={toggleIncluded}
+          className="accent-orange-600 shrink-0"
+        />
+        <button
+          onClick={handleClick}
+          className={`flex items-center gap-2 flex-1 min-w-0 text-left transition-colors rounded px-1 -mx-1 ${
+            isActive ? 'bg-orange-50' : 'hover:bg-gray-50'
+          }`}
+        >
+          {isActive
+            ? <ChevronDown size={12} className="text-gray-400 shrink-0" />
+            : <ChevronRight size={12} className="text-gray-400 shrink-0" />}
+          <div
+            className="w-3 h-3 rounded-full shrink-0"
+            style={{ background: course.color }}
+          />
+          <span className="text-sm font-medium text-gray-800 flex-1 truncate">
+            {course.name}
+          </span>
+        </button>
+        {included && layout && (
+          <select
+            value={descMode}
+            onClick={e => e.stopPropagation()}
+            onChange={e => {
+              const mode = e.target.value as DescMode
+              updateCourseLayout(courseId, { descMode: mode })
+              updateLayoutElement(courseId, 'clueSheet', { visible: mode === 'on-map' || mode === 'both' })
+            }}
+            className="text-[10px] border border-gray-200 rounded px-1 py-0.5 text-gray-500 bg-white focus:outline-none focus:border-orange-400 shrink-0"
+          >
+            {DESC_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        )}
+        {included && fitInfo && (
+          <span className={`text-[10px] shrink-0 tabular-nums ${
+            fitInfo.fits ? 'text-green-600' : 'text-amber-600'
+          }`}>
+            {fitInfo.fits ? 'fits' : `${Math.round(fitInfo.widthMm)}×${Math.round(fitInfo.heightMm)}mm`}
+          </span>
+        )}
+      </div>
+
+      {/* Summary line (collapsed, non-active) */}
+      {included && layout && !isActive && (isPageSizeOverride || isOrientationOverride || isScaleOverride) && (
+        <div className="px-3 pb-1.5 -mt-1">
+          <span className="text-[10px] text-orange-500 tabular-nums">
+            {PAGE_SIZES[effectivePageSize]?.label} · {effectiveOrientation === 'landscape' ? 'L' : 'P'} · 1:{effectivePrintScale.toLocaleString()} *
+          </span>
+        </div>
+      )}
+
+      {/* Expanded section (active course) */}
+      {isActive && layout && included && (
+        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100 bg-orange-50/30">
+          {/* Page size */}
+          <div>
+            <SectionLabel>Page size{isPageSizeOverride && <OverrideTag />}</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {PAGE_SIZE_KEYS.map(key => (
+                <button
+                  key={key}
+                  onClick={() => updateCourseLayout(courseId, { pageSize: key })}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    layout.pageSize === key
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {PAGE_SIZES[key].label}
+                </button>
+              ))}
+              {isPageSizeOverride && (
+                <button
+                  onClick={() => updateCourseLayout(courseId, { pageSize: defaults.pageSize })}
+                  className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Orientation */}
+          <div>
+            <SectionLabel>Orientation{isOrientationOverride && <OverrideTag />}</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {(['portrait', 'landscape'] as const).map(o => (
+                <button
+                  key={o}
+                  onClick={() => updateCourseLayout(courseId, { orientation: o })}
+                  className={`px-2 py-1 text-[11px] rounded capitalize transition-colors ${
+                    layout.orientation === o
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {o}
+                </button>
+              ))}
+              {isOrientationOverride && (
+                <button
+                  onClick={() => updateCourseLayout(courseId, { orientation: defaults.orientation })}
+                  className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Print scale */}
+          <div>
+            <SectionLabel>Print scale{isScaleOverride && <OverrideTag />}</SectionLabel>
+            <div className="flex items-center gap-2 mt-1">
+              <ScaleInput
+                value={layout.printScale}
+                onChange={v => updateCourseLayout(courseId, { printScale: v })}
+              />
+              {isScaleOverride && (
+                <button
+                  onClick={() => updateCourseLayout(courseId, { printScale: defaults.printScale })}
+                  className="text-[10px] text-orange-600 hover:text-orange-800"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Fit warning + tiling */}
+          {fitInfo && !fitInfo.fits && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1.5">
+              <p className="text-[11px] text-amber-700">
+                Doesn't fit on page at this scale.
+              </p>
+              {suggestedScale && (
+                <button
+                  onClick={() => updateCourseLayout(courseId, { printScale: suggestedScale })}
+                  className="text-[11px] text-orange-600 hover:text-orange-800 font-medium"
+                >
+                  Fit at 1:{suggestedScale.toLocaleString()}
+                </button>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={layout.tiling === true}
+                  onChange={e => updateCourseLayout(courseId, { tiling: e.target.checked })}
+                  className="accent-orange-600"
+                />
+                <span className="text-[11px] text-amber-700">
+                  Tile across multiple pages
+                  {tileInfo && tileInfo.totalPages > 1 && (
+                    <span className="text-amber-500"> ({tileInfo.cols}×{tileInfo.rows} pages)</span>
+                  )}
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* Clue sheet / description mode */}
+          <div>
+            <SectionLabel>Clue sheet</SectionLabel>
+            <div className="flex gap-1 mt-1 flex-wrap">
+              {DESC_OPTIONS.map(o => (
+                <button
+                  key={o.value}
+                  onClick={() => {
+                    const showOnMap = o.value === 'on-map' || o.value === 'both'
+                    updateCourseLayout(courseId, { descMode: o.value })
+                    updateLayoutElement(courseId, 'clueSheet', { visible: showOnMap })
+                  }}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    descMode === o.value
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Clue sheet breaks (when on-map or both) */}
+          {(descMode === 'on-map' || descMode === 'both') && (() => {
+            const controlMap = new Map(controls.map((c: Control) => [c.id, c]))
+            const resolved = course.controls
+              .map(cc => controlMap.get(cc.controlId))
+              .filter((c): c is Control => c != null)
+            if (resolved.length < 3) return null
+
+            const breaks = layout.clueSheetBreaks ?? []
+            const breakSet = new Set(breaks)
+            const eligible = resolved
+              .map((ctrl, i) => ({ ctrl, i }))
+              .filter(({ i }) => i > 0 && i < resolved.length - 1 && !breakSet.has(i))
+            const partCount = breaks.length + 1
+            const boundaries = [0, ...breaks, resolved.length]
+
+            return (
+              <div className="ml-3 space-y-1.5">
+                {breaks.length > 0 && (
+                  <div className="space-y-1">
+                    {Array.from({ length: partCount }, (_, p) => {
+                      const start = boundaries[p]
+                      const end = boundaries[p + 1] - 1
+                      const startLabel = defaultControlLabel(resolved[start])
+                      const endLabel = defaultControlLabel(resolved[end])
+                      return (
+                        <div key={p} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                          <span className="tabular-nums">Part {p + 1}:</span>
+                          <span className="text-gray-400">{startLabel} &rarr; {endLabel}</span>
+                          {p > 0 && (
+                            <button
+                              onClick={() => removeClueSheetBreak(courseId, p - 1)}
+                              className="ml-auto w-4 h-4 rounded-full bg-gray-200 hover:bg-red-400 text-gray-500 hover:text-white flex items-center justify-center"
+                            >
+                              <X size={8} />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {eligible.length > 0 && (
+                  <select
+                    value=""
+                    onChange={e => {
+                      const idx = parseInt(e.target.value)
+                      if (!isNaN(idx)) addClueSheetBreak(courseId, idx)
+                    }}
+                    className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:border-orange-400 w-full"
+                  >
+                    <option value="">Split after...</option>
+                    {eligible.map(({ ctrl, i }) => (
+                      <option key={i} value={i}>
+                        {defaultControlLabel(ctrl)} ({ctrl.type === 'start' ? 'start' : `#${resolved.slice(0, i + 1).filter(c => c.type === 'control').length}`})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Reset to course center */}
+          <button
+            onClick={() => {
+              const proj = useStore.getState().project
+              if (!proj) return
+              const controlMap = new Map(proj.controls.map(c => [c.id, c]))
+              const positions = course.controls
+                .map(cc => controlMap.get(cc.controlId))
+                .filter(Boolean)
+                .map(c => c!.position)
+              if (positions.length > 0) {
+                const xs = positions.map(p => p.x)
+                const ys = positions.map(p => p.y)
+                updateCourseLayout(courseId, {
+                  mapCenter: {
+                    x: (Math.min(...xs) + Math.max(...xs)) / 2,
+                    y: (Math.min(...ys) + Math.max(...ys)) / 2,
+                  },
+                })
+              }
+            }}
+            className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
+          >
+            Reset to course center
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function LayoutPanel() {
+  const project = useStore(s => s.project!)
+  const courses = project.courses
+  const loadedMap = useStore(s => s.loadedMap)
+  const ensureAllCourseLayouts = useStore(s => s.ensureAllCourseLayouts)
+  const scalable = canExportPdf(project.map)
+  const [exporting, setExporting] = useState(false)
+  const [allControls, setAllControls] = useState(false)
+
+  useEffect(() => {
+    if (courses.length > 0) ensureAllCourseLayouts()
+  }, [courses.length])
+
+  const includedCount = courses.filter(c => c.layout?.included !== false).length
+  const hasControls = project.controls.length > 0
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const currentProject = useStore.getState().project!
+      const defaults = getLayoutDefaults(useStore.getState)
+      const includedCourses = currentProject.courses.filter(c => c.layout?.included !== false)
+
+      const scaleOverrides: Record<string, number> = {}
+      const descModes: Record<string, DescMode> = {}
+      const sheetPositions: Record<string, { x: number; y: number }> = {}
+
+      for (const c of includedCourses) {
+        if (!c.layout) continue
+        if (c.layout.printScale !== defaults.printScale) {
+          scaleOverrides[c.id] = c.layout.printScale
+        }
+        descModes[c.id] = c.layout.descMode ?? 'none'
+        if (c.layout.clueSheet.visible) {
+          sheetPositions[c.id] = { x: c.layout.clueSheet.x, y: c.layout.clueSheet.y }
+          if (c.layout.clueSheetBreaks && c.layout.clueSheetParts) {
+            for (let i = 0; i < c.layout.clueSheetParts.length; i++) {
+              sheetPositions[`${c.id}:part${i + 1}`] = {
+                x: c.layout.clueSheetParts[i].x,
+                y: c.layout.clueSheetParts[i].y,
+              }
+            }
+          }
+        }
+      }
+
+      const options: PdfExportOptions = {
+        pageSize: defaults.pageSize,
+        orientation: defaults.orientation,
+        printScale: defaults.printScale,
+        scaleOverrides,
+        courseIds: includedCourses.map(c => c.id),
+        allControls,
+        descModes,
+        sheetPositions,
+        mapOpacity: defaults.mapOpacity,
+        mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
+        rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
+      }
+
+      const currentMap = useStore.getState().loadedMap
+      const blob = await exportCoursePdf(currentProject, options, currentMap)
+      downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (courses.length === 0) {
     return (
@@ -59,192 +637,50 @@ export function LayoutPanel() {
   }
 
   return (
-    <div className="p-2 space-y-1">
-      {courses.map(course => {
-        const isActive = course.id === layoutCourseId
-        const layout = course.layout
+    <div className="p-2 space-y-1.5">
+      <GeneralSection />
 
-        return (
-          <div key={course.id} className="rounded-lg border border-gray-200 overflow-hidden">
-            <button
-              onClick={() => isActive ? exitLayoutMode() : enterLayoutMode(course.id)}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${
-                isActive ? 'bg-orange-50' : 'hover:bg-gray-50'
-              }`}
-            >
-              <div
-                className="w-3 h-3 rounded-full shrink-0"
-                style={{ background: course.color }}
-              />
-              <span className="text-sm font-medium text-gray-800 flex-1 truncate">
-                {course.name}
-              </span>
-              {layout ? (
-                <span className="text-[10px] text-gray-400 tabular-nums">
-                  {PAGE_SIZES[layout.pageSize]?.label ?? 'A4'} · 1:{layout.printScale.toLocaleString()}
-                </span>
-              ) : (
-                <span className="text-[10px] text-gray-300">No layout</span>
-              )}
-            </button>
+      <div className="flex items-center justify-between px-1 pt-1">
+        <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
+          Courses
+          <span className="text-gray-400 font-normal normal-case tracking-normal"> — {includedCount}/{courses.length} included</span>
+        </span>
+      </div>
 
-            {isActive && layout && (
-              <div className="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100 bg-orange-50/50">
-                {/* Page size */}
-                <div>
-                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Page size</label>
-                  <div className="flex gap-1 mt-1">
-                    {PAGE_SIZE_KEYS.map(key => (
-                      <button
-                        key={key}
-                        onClick={() => updateCourseLayout(course.id, { pageSize: key })}
-                        className={`px-2 py-1 text-[11px] rounded transition-colors ${
-                          layout.pageSize === key
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
-                        }`}
-                      >
-                        {PAGE_SIZES[key].label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Orientation */}
-                <div>
-                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Orientation</label>
-                  <div className="flex gap-1 mt-1">
-                    {(['portrait', 'landscape'] as const).map(o => (
-                      <button
-                        key={o}
-                        onClick={() => updateCourseLayout(course.id, { orientation: o })}
-                        className={`px-2 py-1 text-[11px] rounded capitalize transition-colors ${
-                          layout.orientation === o
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
-                        }`}
-                      >
-                        {o}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Print scale */}
-                <div>
-                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Print scale</label>
-                  <ScaleInput courseId={course.id} printScale={layout.printScale} />
-                </div>
-
-                {/* Element visibility */}
-                <div>
-                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Elements</label>
-                  <div className="space-y-1.5 mt-1">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={layout.clueSheet.visible}
-                        onChange={e => updateLayoutElement(course.id, 'clueSheet', { visible: e.target.checked })}
-                        className="accent-orange-600"
-                      />
-                      <span className="text-xs text-gray-600">Clue sheet</span>
-                    </label>
-                  </div>
-                  {layout.clueSheet.visible && (() => {
-                    const controlMap = new Map(controls.map((c: Control) => [c.id, c]))
-                    const resolved = course.controls
-                      .map(cc => controlMap.get(cc.controlId))
-                      .filter((c): c is Control => c != null)
-                    if (resolved.length < 3) return null
-
-                    const breaks = layout.clueSheetBreaks ?? []
-                    const breakSet = new Set(breaks)
-
-                    const eligible = resolved
-                      .map((ctrl, i) => ({ ctrl, i }))
-                      .filter(({ i }) => i > 0 && i < resolved.length - 1 && !breakSet.has(i))
-
-                    const partCount = breaks.length + 1
-                    const boundaries = [0, ...breaks, resolved.length]
-
-                    return (
-                      <div className="mt-2 ml-5 space-y-1.5">
-                        {breaks.length > 0 && (
-                          <div className="space-y-1">
-                            {Array.from({ length: partCount }, (_, p) => {
-                              const start = boundaries[p]
-                              const end = boundaries[p + 1] - 1
-                              const startLabel = defaultControlLabel(resolved[start])
-                              const endLabel = defaultControlLabel(resolved[end])
-                              return (
-                                <div key={p} className="flex items-center gap-1.5 text-[11px] text-gray-600">
-                                  <span className="tabular-nums">Part {p + 1}:</span>
-                                  <span className="text-gray-400">{startLabel} &rarr; {endLabel}</span>
-                                  {p > 0 && (
-                                    <button
-                                      onClick={() => removeClueSheetBreak(course.id, p - 1)}
-                                      className="ml-auto w-4 h-4 rounded-full bg-gray-200 hover:bg-red-400 text-gray-500 hover:text-white flex items-center justify-center"
-                                    >
-                                      <X size={8} />
-                                    </button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {eligible.length > 0 && (
-                          <select
-                            value=""
-                            onChange={e => {
-                              const idx = parseInt(e.target.value)
-                              if (!isNaN(idx)) addClueSheetBreak(course.id, idx)
-                            }}
-                            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:border-orange-400 w-full"
-                          >
-                            <option value="">Split after...</option>
-                            {eligible.map(({ ctrl, i }) => (
-                              <option key={i} value={i}>
-                                {defaultControlLabel(ctrl)} ({ctrl.type === 'start' ? 'start' : `#${resolved.slice(0, i + 1).filter(c => c.type === 'control').length}`})
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    )
-                  })()}
-                </div>
-
-                {/* Reset */}
-                <button
-                  onClick={() => {
-                    const project = useStore.getState().project
-                    if (!project) return
-                    const controlMap = new Map(project.controls.map(c => [c.id, c]))
-                    const positions = course.controls
-                      .map(cc => controlMap.get(cc.controlId))
-                      .filter(Boolean)
-                      .map(c => c!.position)
-                    if (positions.length > 0) {
-                      const xs = positions.map(p => p.x)
-                      const ys = positions.map(p => p.y)
-                      updateCourseLayout(course.id, {
-                        mapCenter: {
-                          x: (Math.min(...xs) + Math.max(...xs)) / 2,
-                          y: (Math.min(...ys) + Math.max(...ys)) / 2,
-                        },
-                      })
-                    }
-                  }}
-                  className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
-                >
-                  Reset to course center
-                </button>
-              </div>
-            )}
+      {hasControls && (
+        <div className="rounded-lg border border-gray-200 overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <input
+              type="checkbox"
+              checked={allControls}
+              onChange={e => setAllControls(e.target.checked)}
+              className="accent-orange-600 shrink-0"
+            />
+            <div className="w-3 h-3 rounded-full shrink-0 bg-orange-600" />
+            <span className="text-sm font-medium text-gray-800 flex-1">All controls</span>
           </div>
-        )
-      })}
+        </div>
+      )}
+
+      {courses.map(course => (
+        <CourseCard key={course.id} courseId={course.id} />
+      ))}
+
+      {/* Export */}
+      <div className="pt-2 border-t border-gray-100 sticky bottom-0 bg-white pb-1">
+        {!scalable && (
+          <p className="text-[11px] text-amber-600 mb-2">
+            Map has no scale calibration. Use the Measure Scale tool first.
+          </p>
+        )}
+        <button
+          onClick={handleExport}
+          disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
+          className="w-full bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? 'Exporting…' : 'Export PDF'}
+        </button>
+      </div>
     </div>
   )
 }
