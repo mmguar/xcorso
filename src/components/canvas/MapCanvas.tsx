@@ -17,7 +17,7 @@ import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, for
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
-import { descriptionSheetSize } from '../../lib/pdfDescriptionSheet'
+import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap,
   findControlAt, findBendPointAt,
@@ -280,7 +280,7 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
 
-    let dragLayoutEl: { element: 'clueSheet'; sx: number; sy: number; ox: number; oy: number } | null = null
+    let dragLayoutEl: { element: string; sx: number; sy: number; ox: number; oy: number } | null = null
     let dragLayoutElStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
@@ -384,10 +384,19 @@ export function MapCanvas({ loadedMap }: Props) {
           const pageWMap = halfWMap * 2
           const mmToMapU = pageWMap / pageW
 
-          const sheet = descriptionSheetSize(course!, proj.controls)
-          const elements: Array<{ key: 'clueSheet'; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = [
-            { key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height },
-          ]
+          const breaks = layout.clueSheetBreaks
+          const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
+          if (breaks && breaks.length > 0) {
+            const sizes = descriptionSheetPartSizes(course!, proj.controls, breaks)
+            const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
+            for (let i = 0; i < sizes.length; i++) {
+              const el = positions[i] ?? layout.clueSheet
+              elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
+            }
+          } else {
+            const sheet = descriptionSheetSize(course!, proj.controls)
+            elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
+          }
           for (const { key, el, wMm, hMm } of elements) {
             if (!el.visible) continue
             const elMapX = pageTL.x + el.x * mmToMapU
