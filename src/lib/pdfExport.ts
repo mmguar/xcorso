@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec, MapBorder } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
@@ -402,12 +402,15 @@ export function suggestFitScaleForCourse(
   courseId: string,
   pageSize: string,
   orientation: 'portrait' | 'landscape',
+  border?: MapBorder,
 ): number | null {
   const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
   const pw = orientation === 'landscape' ? base.h : base.w
   const ph = orientation === 'landscape' ? base.w : base.h
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  const printableW = border ? Math.min(border.width, marginW) : marginW
+  const printableH = border ? Math.min(border.height, marginH) : marginH
 
   const course = project.courses.find(c => c.id === courseId)
   if (!course) return null
@@ -428,14 +431,17 @@ export function checkFitForCourse(
   pageSize: string,
   orientation: 'portrait' | 'landscape',
   printScale: number,
+  border?: MapBorder,
 ): CourseFitInfo | null {
   const course = project.courses.find(c => c.id === courseId)
   if (!course) return null
   const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
   const pw = orientation === 'landscape' ? base.h : base.w
   const ph = orientation === 'landscape' ? base.w : base.h
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  const printableW = border ? Math.min(border.width, marginW) : marginW
+  const printableH = border ? Math.min(border.height, marginH) : marginH
   const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
   return {
     courseId,
@@ -454,14 +460,17 @@ export function checkTilingForCourse(
   pageSize: string,
   orientation: 'portrait' | 'landscape',
   printScale: number,
+  border?: MapBorder,
 ): CourseTileInfo | null {
   const course = project.courses.find(c => c.id === courseId)
   if (!course) return null
   const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
   const pw = orientation === 'landscape' ? base.h : base.w
   const ph = orientation === 'landscape' ? base.w : base.h
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  const printableW = border ? Math.min(border.width, marginW) : marginW
+  const printableH = border ? Math.min(border.height, marginH) : marginH
   const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
   if (!bounds) return { courseId, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }
   const cols = tileCount(bounds.width, printableW)
@@ -1281,6 +1290,26 @@ export async function exportCoursePdf(
               const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
             }
+          }
+
+          if (layout?.mapBorder) {
+            const bx = layout.mapBorder.x
+            const by = layout.mapBorder.y
+            const bw = layout.mapBorder.width
+            const bh = layout.mapBorder.height
+            doc.setFillColor(255, 255, 255)
+            doc.rect(0, 0, cpw, by, 'F')               // top
+            doc.rect(0, by + bh, cpw, cph - by - bh, 'F') // bottom
+            doc.rect(0, by, bx, bh, 'F')                // left
+            doc.rect(bx + bw, by, cpw - bx - bw, bh, 'F') // right
+            const hex = layout.mapBorder.color
+            const r = parseInt(hex.slice(1, 3), 16)
+            const g = parseInt(hex.slice(3, 5), 16)
+            const b = parseInt(hex.slice(5, 7), 16)
+            const sw = layout.mapBorder.strokeWidth
+            doc.setDrawColor(r, g, b)
+            doc.setLineWidth(sw)
+            doc.rect(bx, by, bw, bh, 'S')
           }
 
           for (const sb of project.scaleBars) {

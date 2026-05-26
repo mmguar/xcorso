@@ -173,6 +173,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
+  const layoutSnapRequest = useStore(s => s.editor.layoutSnapRequest)
   const layoutCourse = useStore(s => {
     if (!s.editor.layoutCourseId) return null
     return s.project?.courses.find(c => c.id === s.editor.layoutCourseId) ?? null
@@ -202,16 +203,16 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [loadedMap])
 
   // ── Snap viewport to layout page ────────────────────────────────────────
-  const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string } | null>(null)
+  const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string; snap: number } | null>(null)
   useEffect(() => {
     if (!layoutMode || !layoutCourse?.layout) {
       prevLayoutRef.current = null
       return
     }
     const layout = layoutCourse.layout
-    const key = { courseId: layoutCourseId, printScale: layout.printScale, pageSize: layout.pageSize, orientation: layout.orientation }
+    const key = { courseId: layoutCourseId, printScale: layout.printScale, pageSize: layout.pageSize, orientation: layout.orientation, snap: layoutSnapRequest }
     const prev = prevLayoutRef.current
-    if (prev && prev.courseId === key.courseId && prev.printScale === key.printScale && prev.pageSize === key.pageSize && prev.orientation === key.orientation) return
+    if (prev && prev.courseId === key.courseId && prev.printScale === key.printScale && prev.pageSize === key.pageSize && prev.orientation === key.orientation && prev.snap === key.snap) return
     prevLayoutRef.current = key
 
     const el = divRef.current
@@ -229,7 +230,7 @@ export function MapCanvas({ loadedMap }: Props) {
       y: height / 2 - layout.mapCenter.y * desiredScale,
       scale: desiredScale,
     })
-  }, [layoutMode, layoutCourseId, layoutCourse, map])
+  }, [layoutMode, layoutCourseId, layoutCourse, map, layoutSnapRequest])
 
   // Keep <g> transforms in sync after any React re-render
   useLayoutEffect(syncTransform)
@@ -282,6 +283,9 @@ export function MapCanvas({ loadedMap }: Props) {
 
     let dragLayoutEl: { element: string; sx: number; sy: number; ox: number; oy: number } | null = null
     let dragLayoutElStarted = false
+
+    let dragBorderResize: { sx: number; sy: number; ox: number; oy: number; ow: number; oh: number } | null = null
+    let dragBorderResizeStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -368,7 +372,6 @@ export function MapCanvas({ loadedMap }: Props) {
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
 
-        // Hit test layout elements (clue sheet, title) first
         const course = proj.courses.find(c => c.id === state.editor.layoutCourseId)
         const layout = course?.layout
         if (layout) {
@@ -376,6 +379,27 @@ export function MapCanvas({ loadedMap }: Props) {
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
           const pageH = layout.orientation === 'landscape' ? base.w : base.h
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, proj.map, layout.printScale).x
+
+          // Hit test border resize handle (bottom-right corner)
+          if (layout.mapBorder) {
+            const pageWMap = halfWMap * 2
+            const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
+            const pageTLx = layout.mapCenter.x - halfWMap
+            const pageTLy = layout.mapCenter.y - halfHMap
+            const mmToMapU = pageWMap / pageW
+            const handleMapX = pageTLx + (layout.mapBorder.x + layout.mapBorder.width) * mmToMapU
+            const handleMapY = pageTLy + (layout.mapBorder.y + layout.mapBorder.height) * mmToMapU
+            const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
+            const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
+            const HANDLE_HIT = 12
+            if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
+              dragBorderResize = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y, ow: layout.mapBorder.width, oh: layout.mapBorder.height }
+              dragBorderResizeStarted = false
+              return
+            }
+          }
+
+          // Hit test layout elements (clue sheet, title)
           const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
           const pageTL = {
             x: layout.mapCenter.x - halfWMap,
@@ -503,6 +527,40 @@ export function MapCanvas({ loadedMap }: Props) {
         if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) {
           clearLongPress()
         }
+      }
+
+      if (dragBorderResize && pos.size === 1) {
+        if (!dragBorderResizeStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginLayoutDrag()
+          dragBorderResizeStarted = true
+        }
+        const st = useStore.getState()
+        const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
+        const layout = course?.layout
+        if (layout?.mapBorder) {
+          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+          const pageW = layout.orientation === 'landscape' ? base.h : base.w
+          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
+          const pageWMap = halfWMap * 2
+          const pxToMm = pageW / (pageWMap * vpRef.current.scale)
+
+          const dw = (e.clientX - dragBorderResize.sx) * pxToMm
+          const dh = (e.clientY - dragBorderResize.sy) * pxToMm
+          const minSize = 20
+          const newW = Math.max(minSize, Math.min(pageW, dragBorderResize.ow + dw * 2))
+          const newH = Math.max(minSize, Math.min(pageH, dragBorderResize.oh + dh * 2))
+          const newX = dragBorderResize.ox - (newW - dragBorderResize.ow) / 2
+          const newY = dragBorderResize.oy - (newH - dragBorderResize.oh) / 2
+          const clampedX = Math.max(0, newX)
+          const clampedY = Math.max(0, newY)
+          st.updateCourseLayout(st.editor.layoutCourseId!, {
+            mapBorder: { ...layout.mapBorder, x: clampedX, y: clampedY, width: Math.min(newW, pageW - clampedX), height: Math.min(newH, pageH - clampedY) },
+          })
+        }
+        return
       }
 
       if (dragLayoutEl && pos.size === 1) {
@@ -685,6 +743,9 @@ export function MapCanvas({ loadedMap }: Props) {
         dragControlId = null; dragOffset = null; dragStarted = false; return
       }
       dragControlId = null; dragOffset = null; dragStarted = false
+
+      if (dragBorderResize && dragBorderResizeStarted) { dragBorderResize = null; dragBorderResizeStarted = false; return }
+      dragBorderResize = null; dragBorderResizeStarted = false
 
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
       dragOverlay = null; dragOverlayStarted = false

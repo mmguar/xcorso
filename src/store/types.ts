@@ -21,6 +21,7 @@ export interface EditorState {
   selectedSubmapIndex: number | null
   layoutMode: boolean
   layoutCourseId: string | null
+  layoutSnapRequest: number
 }
 
 export interface AppState {
@@ -134,6 +135,7 @@ export interface AppActions {
   updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => void
   addClueSheetBreak: (courseId: string, controlIndex: number) => void
   removeClueSheetBreak: (courseId: string, breakIndex: number) => void
+  requestLayoutSnap: () => void
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint) => void
 
   clearSession: () => void
@@ -177,4 +179,5 @@ export const defaultEditor: EditorState = {
   selectedSubmapIndex: null,
   layoutMode: false,
   layoutCourseId: null,
+  layoutSnapRequest: 0,
 }

@@ -166,6 +166,16 @@ export interface LayoutDefaults {
   mapOpacity: number
   mapRendering: 'vector' | 'raster'
   rasterDpi: number
+  mapBorder?: MapBorder
+}
+
+export interface MapBorder {
+  color: string
+  strokeWidth: number  // mm on paper
+  x: number            // mm from page left
+  y: number            // mm from page top
+  width: number        // mm
+  height: number       // mm
 }
 
 export interface CourseLayout {
@@ -180,6 +190,7 @@ export interface CourseLayout {
   included?: boolean
   descMode?: DescMode
   tiling?: boolean
+  mapBorder?: MapBorder
 }
 
 // ─── Overlays ───────────────────────────────────────────────────────────────
