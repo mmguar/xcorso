@@ -1,6 +1,6 @@
 import type { MapPoint, CourseLayout, LayoutElementPosition } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
-import { MARGIN } from '../lib/pdfExport'
+import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
 
 function defaultLayout(courseId: string, get: GetState): CourseLayout {
   const state = get()
@@ -103,6 +103,22 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           if (course.layout.clueSheetParts?.[idx]) {
             Object.assign(course.layout.clueSheetParts[idx], pos)
           }
+        } else if (element.startsWith('overlay:') && pos.x != null && pos.y != null) {
+          const overlayId = element.slice('overlay:'.length)
+          const layout = course.layout
+          const map = p.map
+          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+          const pw = layout.orientation === 'landscape' ? base.h : base.w
+          const ph = layout.orientation === 'landscape' ? base.w : base.h
+          const hwMap = mmToMap({ x: pw / 2, y: 0 }, map, layout.printScale).x
+          const hhMap = mmToMap({ x: 0, y: ph / 2 }, map, layout.printScale).y
+          const mapPerMm = (hwMap * 2) / pw
+          const mapPos: MapPoint = {
+            x: (layout.mapCenter.x - hwMap) + pos.x * mapPerMm,
+            y: (layout.mapCenter.y - hhMap) + pos.y * mapPerMm,
+          }
+          if (!layout.overlayPositions) layout.overlayPositions = {}
+          layout.overlayPositions[overlayId] = mapPos
         }
       })
     },
