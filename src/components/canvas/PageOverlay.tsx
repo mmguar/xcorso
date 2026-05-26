@@ -50,6 +50,16 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
   const printableW = rw - 2 * marginPx
   const printableH = rh - 2 * marginPx
 
+  const border = layout.mapBorder
+
+  // Border rect in screen pixels (uses stored rect or falls back to printable area)
+  const bx = border ? rx + border.x * mmToPx : printableX
+  const by = border ? ry + border.y * mmToPx : printableY
+  const bw = border ? border.width * mmToPx : printableW
+  const bh = border ? border.height * mmToPx : printableH
+
+  const HANDLE_R = 6
+
   return (
     <svg
       width={canvasW}
@@ -68,11 +78,35 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
         fill="none" stroke="#d1d5db" strokeWidth={1}
       />
 
-      {/* Printable area (inside margins) */}
-      <rect
-        x={printableX} y={printableY} width={printableW} height={printableH}
-        fill="none" stroke="#ea580c" strokeWidth={1} strokeDasharray="6 3" opacity={0.5}
-      />
+      {border ? (
+        <>
+          {/* Grey mask between page edge and border rect — four strips */}
+          {/* Top strip */}
+          <rect x={rx} y={ry} width={rw} height={by - ry} fill="white" opacity={0.7} />
+          {/* Bottom strip */}
+          <rect x={rx} y={by + bh} width={rw} height={(ry + rh) - (by + bh)} fill="white" opacity={0.7} />
+          {/* Left strip */}
+          <rect x={rx} y={by} width={bx - rx} height={bh} fill="white" opacity={0.7} />
+          {/* Right strip */}
+          <rect x={bx + bw} y={by} width={(rx + rw) - (bx + bw)} height={bh} fill="white" opacity={0.7} />
+          {/* Border line */}
+          <rect
+            x={bx} y={by} width={bw} height={bh}
+            fill="none" stroke={border.color} strokeWidth={Math.max(1, border.strokeWidth * mmToPx)}
+          />
+          {/* Drag handle — bottom-right corner */}
+          <circle
+            cx={bx + bw} cy={by + bh} r={HANDLE_R}
+            fill="white" stroke={border.color} strokeWidth={2}
+            style={{ cursor: 'nwse-resize' }}
+          />
+        </>
+      ) : (
+        <rect
+          x={printableX} y={printableY} width={printableW} height={printableH}
+          fill="none" stroke="#ea580c" strokeWidth={1} strokeDasharray="6 3" opacity={0.5}
+        />
+      )}
 
       {/* Clue sheet indicators */}
       {layout.clueSheet.visible && (() => {

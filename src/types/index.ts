@@ -151,10 +151,31 @@ export interface Annotation {
 
 export type PageSizeKey = 'a4' | 'a3' | 'letter' | 'legal'
 
+export type DescMode = 'none' | 'separate' | 'on-map' | 'both'
+
 export interface LayoutElementPosition {
   x: number              // mm from page top-left
   y: number
   visible: boolean
+}
+
+export interface LayoutDefaults {
+  pageSize: PageSizeKey
+  orientation: 'portrait' | 'landscape'
+  printScale: number
+  mapOpacity: number
+  mapRendering: 'vector' | 'raster'
+  rasterDpi: number
+  mapBorder?: MapBorder
+}
+
+export interface MapBorder {
+  color: string
+  strokeWidth: number  // mm on paper
+  x: number            // mm from page left
+  y: number            // mm from page top
+  width: number        // mm
+  height: number       // mm
 }
 
 export interface CourseLayout {
@@ -166,6 +187,10 @@ export interface CourseLayout {
   clueSheetBreaks?: number[]
   clueSheetParts?: LayoutElementPosition[]
   overlayPositions?: Record<string, MapPoint>
+  included?: boolean
+  descMode?: DescMode
+  tiling?: boolean
+  mapBorder?: MapBorder
 }
 
 // ─── Overlays ───────────────────────────────────────────────────────────────
@@ -207,6 +232,7 @@ export interface Project {
   annotations: Annotation[]
   scaleBars: ScaleBar[]
   textLabels: TextLabel[]
+  layoutDefaults?: LayoutDefaults
 }
 
 // ─── Appearance ──────────���──────────────────────���───────────────────────────

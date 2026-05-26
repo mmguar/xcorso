@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec, MapBorder } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
@@ -63,7 +63,8 @@ export const PAGE_SIZES: Record<string, { w: number; h: number; label: string }>
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type DescMode = 'none' | 'separate' | 'on-map'
+export type { DescMode } from '../types'
+import type { DescMode } from '../types'
 
 export interface PdfExportOptions {
   pageSize: string
@@ -394,6 +395,87 @@ export function suggestFitScale(
   }
 
   return null
+}
+
+export function suggestFitScaleForCourse(
+  project: Project,
+  courseId: string,
+  pageSize: string,
+  orientation: 'portrait' | 'landscape',
+  border?: MapBorder,
+): number | null {
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  const printableW = border ? Math.min(border.width, marginW) : marginW
+  const printableH = border ? Math.min(border.height, marginH) : marginH
+
+  const course = project.courses.find(c => c.id === courseId)
+  if (!course) return null
+
+  const sorted = [...COMMON_SCALES].sort((a, b) => a - b)
+  for (const scale of sorted) {
+    const bounds = courseBoundsMm(course, project.controls, project.map, scale)
+    if (!bounds) return scale
+    if (bounds.width <= printableW && bounds.height <= printableH) return scale
+  }
+
+  return null
+}
+
+export function checkFitForCourse(
+  project: Project,
+  courseId: string,
+  pageSize: string,
+  orientation: 'portrait' | 'landscape',
+  printScale: number,
+  border?: MapBorder,
+): CourseFitInfo | null {
+  const course = project.courses.find(c => c.id === courseId)
+  if (!course) return null
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  const printableW = border ? Math.min(border.width, marginW) : marginW
+  const printableH = border ? Math.min(border.height, marginH) : marginH
+  const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
+  return {
+    courseId,
+    courseName: course.name,
+    fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
+    widthMm: bounds?.width ?? 0,
+    heightMm: bounds?.height ?? 0,
+    printableW,
+    printableH,
+  }
+}
+
+export function checkTilingForCourse(
+  project: Project,
+  courseId: string,
+  pageSize: string,
+  orientation: 'portrait' | 'landscape',
+  printScale: number,
+  border?: MapBorder,
+): CourseTileInfo | null {
+  const course = project.courses.find(c => c.id === courseId)
+  if (!course) return null
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  const pw = orientation === 'landscape' ? base.h : base.w
+  const ph = orientation === 'landscape' ? base.w : base.h
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  const printableW = border ? Math.min(border.width, marginW) : marginW
+  const printableH = border ? Math.min(border.height, marginH) : marginH
+  const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
+  if (!bounds) return { courseId, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }
+  const cols = tileCount(bounds.width, printableW)
+  const rows = tileCount(bounds.height, printableH)
+  return { courseId, courseName: course.name, cols, rows, totalPages: cols * rows }
 }
 
 // ── Tiling ─────────────────────────────────────────────────────────────────
@@ -1088,7 +1170,7 @@ export async function exportCoursePdf(
     const layout = origCourse?.layout
 
     const baseCourseScale = layout?.printScale ?? options.scaleOverrides?.[oKey] ?? options.printScale
-    const descMode = layout?.clueSheet.visible ? 'on-map' as DescMode : options.descModes?.[oKey] ?? 'none'
+    const descMode: DescMode = layout?.descMode ?? (layout?.clueSheet.visible ? 'on-map' : options.descModes?.[oKey] ?? 'none')
 
     const cPageBase = layout ? (PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
     const cOrient = layout?.orientation ?? options.orientation
@@ -1121,7 +1203,7 @@ export async function exportCoursePdf(
       const bounds = courseBoundsMm(boundsSource, project.controls, project.map, courseScale)
       if (!bounds && !layout) continue
 
-      const useTiling = options.tiling && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH) && !layout
+      const useTiling = (layout?.tiling || (options.tiling && !layout)) && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH)
       const cols = useTiling ? tileCount(bounds!.width, cPrintableW) : 1
       const rows = useTiling ? tileCount(bounds!.height, cPrintableH) : 1
 
@@ -1210,6 +1292,26 @@ export async function exportCoursePdf(
             }
           }
 
+          if (layout?.mapBorder) {
+            const bx = layout.mapBorder.x
+            const by = layout.mapBorder.y
+            const bw = layout.mapBorder.width
+            const bh = layout.mapBorder.height
+            doc.setFillColor(255, 255, 255)
+            doc.rect(0, 0, cpw, by, 'F')               // top
+            doc.rect(0, by + bh, cpw, cph - by - bh, 'F') // bottom
+            doc.rect(0, by, bx, bh, 'F')                // left
+            doc.rect(bx + bw, by, cpw - bx - bw, bh, 'F') // right
+            const hex = layout.mapBorder.color
+            const r = parseInt(hex.slice(1, 3), 16)
+            const g = parseInt(hex.slice(3, 5), 16)
+            const b = parseInt(hex.slice(5, 7), 16)
+            const sw = layout.mapBorder.strokeWidth
+            doc.setDrawColor(r, g, b)
+            doc.setLineWidth(sw)
+            doc.rect(bx, by, bw, bh, 'S')
+          }
+
           for (const sb of project.scaleBars) {
             const overridePos = layout?.overlayPositions?.[sb.id]
             const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
@@ -1221,7 +1323,7 @@ export async function exportCoursePdf(
             drawTextLabel(doc, effectiveTl, toPage)
           }
 
-          if (descMode === 'on-map' && pageCourse.controls.length > 0) {
+          if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
             const breaks = layout?.clueSheetBreaks
             if (breaks && breaks.length > 0) {
@@ -1249,7 +1351,7 @@ export async function exportCoursePdf(
         }
       }
 
-      if (descMode === 'separate' && pageCourse.controls.length > 0) {
+      if ((descMode === 'separate' || descMode === 'both') && pageCourse.controls.length > 0) {
         doc.addPage([cpw, cph], cOrientFlag)
         pageIndex++
         const dist = computeCourseDistances(pageCourse, project.controls, project.map)

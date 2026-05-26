@@ -1,13 +1,25 @@
-import type { MapPoint, CourseLayout, LayoutElementPosition } from '../types'
+import type { MapPoint, CourseLayout, LayoutElementPosition, LayoutDefaults, MapBorder } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
+
+export function getLayoutDefaults(get: GetState): LayoutDefaults {
+  const project = get().project!
+  return project.layoutDefaults ?? {
+    pageSize: 'a4',
+    orientation: 'portrait',
+    printScale: project.map.scale,
+    mapOpacity: 1,
+    mapRendering: 'raster',
+    rasterDpi: 300,
+  }
+}
 
 function defaultLayout(courseId: string, get: GetState): CourseLayout {
   const state = get()
   const project = state.project!
   const map = project.map
   const course = project.courses.find(c => c.id === courseId)
-  const printScale = map.scale
+  const defaults = getLayoutDefaults(get)
 
   let center: MapPoint = { x: map.width / 2, y: map.height / 2 }
   if (course) {
@@ -26,13 +38,18 @@ function defaultLayout(courseId: string, get: GetState): CourseLayout {
     }
   }
 
-  return {
-    pageSize: 'a4',
-    orientation: 'portrait',
-    printScale,
+  const layout: CourseLayout = {
+    pageSize: defaults.pageSize,
+    orientation: defaults.orientation,
+    printScale: defaults.printScale,
     mapCenter: center,
     clueSheet: { x: MARGIN, y: MARGIN, visible: false },
+    included: true,
   }
+  if (defaults.mapBorder) {
+    layout.mapBorder = { ...defaults.mapBorder }
+  }
+  return layout
 }
 
 export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers) {
@@ -57,7 +74,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           ...state.editor,
           layoutMode: true,
           layoutCourseId: courseId,
-          selectedCourseId: null,
+          selectedCourseId: courseId,
           selectedControlId: null,
           selectedOverlayId: null,
           activeTool: 'select',
@@ -80,6 +97,78 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
         if (course?.layout) Object.assign(course.layout, updates)
+      })
+    },
+
+    updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => {
+      const oldDefaults = getLayoutDefaults(get)
+      h.mutateProject(p => {
+        if (!p.layoutDefaults) {
+          p.layoutDefaults = { ...oldDefaults }
+        }
+        const prev = { ...p.layoutDefaults }
+        const prevBorder: MapBorder | undefined = prev.mapBorder ? { ...prev.mapBorder } : undefined
+        Object.assign(p.layoutDefaults, updates)
+
+        if (p.layoutDefaults.mapBorder && (updates.pageSize != null || updates.orientation != null)) {
+          const base = PAGE_SIZES[p.layoutDefaults.pageSize] ?? PAGE_SIZES.a4
+          const pw = p.layoutDefaults.orientation === 'landscape' ? base.h : base.w
+          const ph = p.layoutDefaults.orientation === 'landscape' ? base.w : base.h
+          p.layoutDefaults.mapBorder.width = pw - 2 * p.layoutDefaults.mapBorder.x
+          p.layoutDefaults.mapBorder.height = ph - 2 * p.layoutDefaults.mapBorder.y
+        }
+
+        for (const course of p.courses) {
+          if (!course.layout) continue
+          const pageSizeChanged = updates.pageSize != null && course.layout.pageSize === prev.pageSize
+          const orientationChanged = updates.orientation != null && course.layout.orientation === prev.orientation
+
+          if (pageSizeChanged) course.layout.pageSize = updates.pageSize!
+          if (orientationChanged) course.layout.orientation = updates.orientation!
+          if (updates.printScale != null && course.layout.printScale === prev.printScale) {
+            course.layout.printScale = updates.printScale
+          }
+
+          if ('mapBorder' in updates) {
+            const cb = course.layout.mapBorder
+            const matchesOld = (!cb && !prevBorder) ||
+              (cb && prevBorder && cb.x === prevBorder.x && cb.y === prevBorder.y &&
+               cb.color === prevBorder.color && cb.strokeWidth === prevBorder.strokeWidth)
+            if (matchesOld) {
+              const nb = p.layoutDefaults.mapBorder
+              if (nb) {
+                const base = PAGE_SIZES[course.layout.pageSize] ?? PAGE_SIZES.a4
+                const pw = course.layout.orientation === 'landscape' ? base.h : base.w
+                const ph = course.layout.orientation === 'landscape' ? base.w : base.h
+                course.layout.mapBorder = { ...nb, width: pw - 2 * nb.x, height: ph - 2 * nb.y }
+              } else {
+                course.layout.mapBorder = undefined
+              }
+            }
+          }
+
+          if ((pageSizeChanged || orientationChanged) && course.layout.mapBorder && !('mapBorder' in updates)) {
+            const base = PAGE_SIZES[course.layout.pageSize] ?? PAGE_SIZES.a4
+            const pw = course.layout.orientation === 'landscape' ? base.h : base.w
+            const ph = course.layout.orientation === 'landscape' ? base.w : base.h
+            course.layout.mapBorder.width = pw - 2 * course.layout.mapBorder.x
+            course.layout.mapBorder.height = ph - 2 * course.layout.mapBorder.y
+          }
+        }
+      })
+    },
+
+    ensureAllCourseLayouts: () => {
+      const project = get().project
+      if (!project) return
+      const needsLayout = project.courses.some(c => !c.layout)
+      if (!needsLayout) return
+      h.mutateProject(p => {
+        for (const course of p.courses) {
+          if (!course.layout) {
+            course.layout = defaultLayout(course.id, get)
+          }
+        }
       })
     },
 
@@ -121,6 +210,10 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           layout.overlayPositions[overlayId] = mapPos
         }
       })
+    },
+
+    requestLayoutSnap: () => {
+      set(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
     },
 
     addClueSheetBreak: (courseId: string, controlIndex: number) => {
