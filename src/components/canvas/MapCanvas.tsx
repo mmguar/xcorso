@@ -17,6 +17,7 @@ import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, for
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
+import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap,
   findControlAt, findBendPointAt,
@@ -279,7 +280,7 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
 
-    let dragLayoutEl: { element: 'clueSheet'; sx: number; sy: number; ox: number; oy: number } | null = null
+    let dragLayoutEl: { element: string; sx: number; sy: number; ox: number; oy: number } | null = null
     let dragLayoutElStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
@@ -383,9 +384,19 @@ export function MapCanvas({ loadedMap }: Props) {
           const pageWMap = halfWMap * 2
           const mmToMapU = pageWMap / pageW
 
-          const elements: Array<{ key: 'clueSheet'; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = [
-            { key: 'clueSheet', el: layout.clueSheet, wMm: 50, hMm: 30 },
-          ]
+          const breaks = layout.clueSheetBreaks
+          const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
+          if (breaks && breaks.length > 0) {
+            const sizes = descriptionSheetPartSizes(course!, proj.controls, breaks)
+            const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
+            for (let i = 0; i < sizes.length; i++) {
+              const el = positions[i] ?? layout.clueSheet
+              elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
+            }
+          } else {
+            const sheet = descriptionSheetSize(course!, proj.controls)
+            elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
+          }
           for (const { key, el, wMm, hMm } of elements) {
             if (!el.visible) continue
             const elMapX = pageTL.x + el.x * mmToMapU
@@ -402,22 +413,31 @@ export function MapCanvas({ loadedMap }: Props) {
           }
         }
 
-        // Hit test overlays (scale bars, text labels) — drag stores per-course override
-        const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout?.overlayPositions)
-        if (overlayHit) {
-          const mapPt = screenToMap(sx, sy, vpRef.current)
-          let oPos: { x: number; y: number } | undefined
-          const overridePos = layout?.overlayPositions?.[overlayHit.id]
-          if (overridePos) {
-            oPos = overridePos
-          } else if (overlayHit.kind === 'scalebar') {
-            oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
-          } else {
-            oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
-          }
-          if (oPos) {
-            dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
-            dragOverlayStarted = false
+        // Hit test overlays (scale bars, text labels) — use mm-based drag like clue sheet
+        if (layout) {
+          const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions)
+          if (overlayHit) {
+            let oPos: { x: number; y: number } | undefined
+            const overridePos = layout.overlayPositions?.[overlayHit.id]
+            if (overridePos) {
+              oPos = overridePos
+            } else if (overlayHit.kind === 'scalebar') {
+              oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
+            } else {
+              oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+            }
+            if (oPos) {
+              const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+              const pw = layout.orientation === 'landscape' ? base.h : base.w
+              const ph = layout.orientation === 'landscape' ? base.w : base.h
+              const hwMap = mmToMap({ x: pw / 2, y: 0 }, proj.map, layout.printScale).x
+              const hhMap = mmToMap({ x: 0, y: ph / 2 }, proj.map, layout.printScale).y
+              const mmPerMapU = pw / (hwMap * 2)
+              const mmX = (oPos.x - (layout.mapCenter.x - hwMap)) * mmPerMapU
+              const mmY = (oPos.y - (layout.mapCenter.y - hhMap)) * mmPerMapU
+              dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY }
+              dragLayoutElStarted = false
+            }
           }
         }
         return
@@ -584,13 +604,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
-        const st = useStore.getState()
-        if (st.editor.layoutMode && st.editor.layoutCourseId) {
-          st.setLayoutOverlayPosition(st.editor.layoutCourseId, dragOverlay.id, newPos)
-        } else if (dragOverlay.kind === 'scalebar') {
-          st.moveScaleBar(dragOverlay.id, newPos)
+        if (dragOverlay.kind === 'scalebar') {
+          useStore.getState().moveScaleBar(dragOverlay.id, newPos)
         } else {
-          st.moveTextLabel(dragOverlay.id, newPos)
+          useStore.getState().moveTextLabel(dragOverlay.id, newPos)
         }
         return
       }
@@ -988,6 +1005,7 @@ export function MapCanvas({ loadedMap }: Props) {
             map={map}
             selectedOverlayId={selectedOverlayId}
             positionOverrides={layoutCourse?.layout?.overlayPositions}
+            printScaleOverride={layoutCourse?.layout?.printScale}
           />
           <ControlsLayer
             controls={controls}
@@ -1031,6 +1049,8 @@ export function MapCanvas({ loadedMap }: Props) {
           viewport={vp}
           canvasW={rectCacheRef.current?.width ?? 800}
           canvasH={rectCacheRef.current?.height ?? 600}
+          course={layoutCourse}
+          controls={controls}
         />
       )}
 

@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { useStore } from '../../store'
 import { PAGE_SIZES } from '../../lib/pdfExport'
-import type { PageSizeKey } from '../../types'
+import { defaultControlLabel } from '../../lib/courseUtils'
+import type { PageSizeKey, Control } from '../../types'
 
 const PAGE_SIZE_KEYS: PageSizeKey[] = ['a4', 'a3', 'letter', 'legal']
 
@@ -39,11 +41,14 @@ function ScaleInput({ courseId, printScale }: { courseId: string; printScale: nu
 
 export function LayoutPanel() {
   const courses = useStore(s => s.project?.courses ?? [])
+  const controls = useStore(s => s.project?.controls ?? [])
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
   const updateLayoutElement = useStore(s => s.updateLayoutElement)
+  const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
+  const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
 
   if (courses.length === 0) {
     return (
@@ -145,6 +150,69 @@ export function LayoutPanel() {
                       <span className="text-xs text-gray-600">Clue sheet</span>
                     </label>
                   </div>
+                  {layout.clueSheet.visible && (() => {
+                    const controlMap = new Map(controls.map((c: Control) => [c.id, c]))
+                    const resolved = course.controls
+                      .map(cc => controlMap.get(cc.controlId))
+                      .filter((c): c is Control => c != null)
+                    if (resolved.length < 3) return null
+
+                    const breaks = layout.clueSheetBreaks ?? []
+                    const breakSet = new Set(breaks)
+
+                    const eligible = resolved
+                      .map((ctrl, i) => ({ ctrl, i }))
+                      .filter(({ i }) => i > 0 && i < resolved.length - 1 && !breakSet.has(i))
+
+                    const partCount = breaks.length + 1
+                    const boundaries = [0, ...breaks, resolved.length]
+
+                    return (
+                      <div className="mt-2 ml-5 space-y-1.5">
+                        {breaks.length > 0 && (
+                          <div className="space-y-1">
+                            {Array.from({ length: partCount }, (_, p) => {
+                              const start = boundaries[p]
+                              const end = boundaries[p + 1] - 1
+                              const startLabel = defaultControlLabel(resolved[start])
+                              const endLabel = defaultControlLabel(resolved[end])
+                              return (
+                                <div key={p} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                                  <span className="tabular-nums">Part {p + 1}:</span>
+                                  <span className="text-gray-400">{startLabel} &rarr; {endLabel}</span>
+                                  {p > 0 && (
+                                    <button
+                                      onClick={() => removeClueSheetBreak(course.id, p - 1)}
+                                      className="ml-auto w-4 h-4 rounded-full bg-gray-200 hover:bg-red-400 text-gray-500 hover:text-white flex items-center justify-center"
+                                    >
+                                      <X size={8} />
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                        {eligible.length > 0 && (
+                          <select
+                            value=""
+                            onChange={e => {
+                              const idx = parseInt(e.target.value)
+                              if (!isNaN(idx)) addClueSheetBreak(course.id, idx)
+                            }}
+                            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:border-orange-400 w-full"
+                          >
+                            <option value="">Split after...</option>
+                            {eligible.map(({ ctrl, i }) => (
+                              <option key={i} value={i}>
+                                {defaultControlLabel(ctrl)} ({ctrl.type === 'start' ? 'start' : `#${resolved.slice(0, i + 1).filter(c => c.type === 'control').length}`})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* Reset */}

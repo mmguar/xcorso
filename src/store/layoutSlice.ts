@@ -1,6 +1,6 @@
 import type { MapPoint, CourseLayout, LayoutElementPosition } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
-import { MARGIN } from '../lib/pdfExport'
+import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
 
 function defaultLayout(courseId: string, get: GetState): CourseLayout {
   const state = get()
@@ -92,10 +92,67 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       })
     },
 
-    updateLayoutElement: (courseId: string, element: 'clueSheet', pos: Partial<LayoutElementPosition>) => {
+    updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (course?.layout) Object.assign(course.layout[element], pos)
+        if (!course?.layout) return
+        if (element === 'clueSheet') {
+          Object.assign(course.layout.clueSheet, pos)
+        } else if (element.startsWith('clueSheetPart:')) {
+          const idx = parseInt(element.split(':')[1])
+          if (course.layout.clueSheetParts?.[idx]) {
+            Object.assign(course.layout.clueSheetParts[idx], pos)
+          }
+        } else if (element.startsWith('overlay:') && pos.x != null && pos.y != null) {
+          const overlayId = element.slice('overlay:'.length)
+          const layout = course.layout
+          const map = p.map
+          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+          const pw = layout.orientation === 'landscape' ? base.h : base.w
+          const ph = layout.orientation === 'landscape' ? base.w : base.h
+          const hwMap = mmToMap({ x: pw / 2, y: 0 }, map, layout.printScale).x
+          const hhMap = mmToMap({ x: 0, y: ph / 2 }, map, layout.printScale).y
+          const mapPerMm = (hwMap * 2) / pw
+          const mapPos: MapPoint = {
+            x: (layout.mapCenter.x - hwMap) + pos.x * mapPerMm,
+            y: (layout.mapCenter.y - hhMap) + pos.y * mapPerMm,
+          }
+          if (!layout.overlayPositions) layout.overlayPositions = {}
+          layout.overlayPositions[overlayId] = mapPos
+        }
+      })
+    },
+
+    addClueSheetBreak: (courseId: string, controlIndex: number) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout) return
+        const breaks = course.layout.clueSheetBreaks ?? []
+        if (breaks.includes(controlIndex)) return
+        const newBreaks = [...breaks, controlIndex].sort((a, b) => a - b)
+        const insertPos = newBreaks.indexOf(controlIndex)
+        const parts = course.layout.clueSheetParts ?? []
+        const newParts = [...parts]
+        newParts.splice(insertPos, 0, {
+          x: course.layout.clueSheet.x + 60,
+          y: course.layout.clueSheet.y,
+          visible: true,
+        })
+        course.layout.clueSheetBreaks = newBreaks
+        course.layout.clueSheetParts = newParts
+      })
+    },
+
+    removeClueSheetBreak: (courseId: string, breakIndex: number) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout?.clueSheetBreaks) return
+        const breaks = [...course.layout.clueSheetBreaks]
+        breaks.splice(breakIndex, 1)
+        const parts = [...(course.layout.clueSheetParts ?? [])]
+        parts.splice(breakIndex, 1)
+        course.layout.clueSheetBreaks = breaks.length > 0 ? breaks : undefined
+        course.layout.clueSheetParts = parts.length > 0 ? parts : undefined
       })
     },
 

@@ -39,7 +39,7 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
 
     addTextLabel: (position: MapPoint): TextLabel => {
       const tl: TextLabel = {
-        id: uuidv4(), position, text: 'Text', fontSizeMm: 4, color: '#000000',
+        id: uuidv4(), position, text: 'Text', fontSizeMm: 4, color: '#000000', bgAlpha: 0,
       }
       h.mutateProject(p => { p.textLabels.push(tl) })
       set(state => ({ editor: { ...state.editor, selectedOverlayId: tl.id } }))

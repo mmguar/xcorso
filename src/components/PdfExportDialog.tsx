@@ -30,6 +30,10 @@ function useMapPreviewBounds(
 
 // ── Print frame preview ────────────────────────────────────────────────────
 
+interface SheetPart {
+  width: number; height: number; x: number; y: number
+}
+
 function PrintPreview({
   preview,
   pageW,
@@ -39,11 +43,8 @@ function PrintPreview({
   offsetX,
   offsetY,
   onOffsetChange,
-  sheetW,
-  sheetH,
-  sheetX,
-  sheetY,
-  onSheetChange,
+  sheetParts,
+  onSheetPartChange,
   mapImage,
   dotColor = '#7c3aed',
 }: {
@@ -55,15 +56,12 @@ function PrintPreview({
   offsetX: number
   offsetY: number
   onOffsetChange: (x: number, y: number) => void
-  sheetW?: number
-  sheetH?: number
-  sheetX?: number
-  sheetY?: number
-  onSheetChange?: (x: number, y: number) => void
+  sheetParts?: SheetPart[]
+  onSheetPartChange?: (partIndex: number, x: number, y: number) => void
   mapImage: MapImageInfo | null
   dotColor?: string
 }) {
-  const dragRef = useRef<{ target: 'map' | 'sheet'; sx: number; sy: number; ox: number; oy: number } | null>(null)
+  const dragRef = useRef<{ target: 'map' | 'sheet'; partIndex: number; sx: number; sy: number; ox: number; oy: number } | null>(null)
 
   const { positions, fadedPositions, centerX, centerY } = preview
 
@@ -93,11 +91,17 @@ function PrintPreview({
   const fullX = frameX - MARGIN * mmScale
   const fullY = frameY - MARGIN * mmScale
 
-  const hasSheet = sheetW != null && sheetH != null && sheetX != null && sheetY != null && onSheetChange != null
-  const sRectW = hasSheet ? sheetW! * mmScale : 0
-  const sRectH = hasSheet ? sheetH! * mmScale : 0
-  const sRectX = hasSheet ? fullX + sheetX! * mmScale : 0
-  const sRectY = hasSheet ? fullY + sheetY! * mmScale : 0
+  const hasSheets = sheetParts != null && sheetParts.length > 0 && onSheetPartChange != null
+  const sheetRects = hasSheets
+    ? sheetParts!.map(p => ({
+        x: fullX + p.x * mmScale,
+        y: fullY + p.y * mmScale,
+        w: p.width * mmScale,
+        h: p.height * mmScale,
+        ox: p.x,
+        oy: p.y,
+      }))
+    : []
 
   function handlePointerDown(e: React.PointerEvent) {
     const svg = e.currentTarget as SVGSVGElement
@@ -105,25 +109,25 @@ function PrintPreview({
     pt.x = e.clientX; pt.y = e.clientY
     const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse())
 
-    if (hasSheet &&
-      svgPt.x >= sRectX && svgPt.x <= sRectX + sRectW &&
-      svgPt.y >= sRectY && svgPt.y <= sRectY + sRectH
-    ) {
-      e.currentTarget.setPointerCapture(e.pointerId)
-      dragRef.current = { target: 'sheet', sx: e.clientX, sy: e.clientY, ox: sheetX!, oy: sheetY! }
-      return
+    for (let i = sheetRects.length - 1; i >= 0; i--) {
+      const r = sheetRects[i]
+      if (svgPt.x >= r.x && svgPt.x <= r.x + r.w && svgPt.y >= r.y && svgPt.y <= r.y + r.h) {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        dragRef.current = { target: 'sheet', partIndex: i, sx: e.clientX, sy: e.clientY, ox: r.ox, oy: r.oy }
+        return
+      }
     }
 
     e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = { target: 'map', sx: e.clientX, sy: e.clientY, ox: offsetX, oy: offsetY }
+    dragRef.current = { target: 'map', partIndex: 0, sx: e.clientX, sy: e.clientY, ox: offsetX, oy: offsetY }
   }
 
   function handlePointerMove(e: React.PointerEvent) {
     if (!dragRef.current) return
     const dx = (e.clientX - dragRef.current.sx) / mmScale
     const dy = (e.clientY - dragRef.current.sy) / mmScale
-    if (dragRef.current.target === 'sheet' && onSheetChange) {
-      onSheetChange(dragRef.current.ox + dx, dragRef.current.oy + dy)
+    if (dragRef.current.target === 'sheet' && onSheetPartChange) {
+      onSheetPartChange(dragRef.current.partIndex, dragRef.current.ox + dx, dragRef.current.oy + dy)
     } else {
       onOffsetChange(dragRef.current.ox + dx, dragRef.current.oy + dy)
     }
@@ -188,26 +192,26 @@ function PrintPreview({
           opacity={0.7}
         />
       ))}
-      {hasSheet && (
-        <rect
-          x={sRectX} y={sRectY}
-          width={sRectW} height={sRectH}
-          fill="white" fillOpacity={0.85}
-          stroke="#ea580c"
-          strokeWidth={1.5}
-          rx={1}
-          style={{ cursor: 'move' }}
-        />
-      )}
-      {hasSheet && (
-        <text
-          x={sRectX + sRectW / 2} y={sRectY + sRectH / 2 + 3}
-          textAnchor="middle" fontSize={8} fill="#ea580c" opacity={0.8}
-          style={{ pointerEvents: 'none' }}
-        >
-          Descriptions
-        </text>
-      )}
+      {sheetRects.map((r, i) => (
+        <g key={`sheet${i}`}>
+          <rect
+            x={r.x} y={r.y}
+            width={r.w} height={r.h}
+            fill="white" fillOpacity={0.85}
+            stroke="#ea580c"
+            strokeWidth={1.5}
+            rx={1}
+            style={{ cursor: 'move' }}
+          />
+          <text
+            x={r.x + r.w / 2} y={r.y + r.h / 2 + 3}
+            textAnchor="middle" fontSize={8} fill="#ea580c" opacity={0.8}
+            style={{ pointerEvents: 'none' }}
+          >
+            {sheetRects.length > 1 ? `Desc ${i + 1}/${sheetRects.length}` : 'Descriptions'}
+          </text>
+        </g>
+      ))}
     </svg>
   )
 }
@@ -462,12 +466,9 @@ export function PdfExportDialog({ onClose }: Props) {
               onOffsetChange={s.setActiveOffset}
               mapImage={mapImage}
               dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === (parseSubmapPreviewId(s.activePreviewId)?.courseId ?? s.activePreviewId))?.color ?? '#7B2FBE')}
-              {...(s.sheetSize ? {
-                sheetW: s.sheetSize.width,
-                sheetH: s.sheetSize.height,
-                sheetX: s.activeSheetPos.x,
-                sheetY: s.activeSheetPos.y,
-                onSheetChange: s.setActiveSheetPos,
+              {...(s.sheetParts ? {
+                sheetParts: s.sheetParts,
+                onSheetPartChange: s.setSheetPartPos,
               } : {})}
             />
           </div>

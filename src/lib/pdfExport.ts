@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
 import type { LoadedMap } from './mapLoader'
-import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
+import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
@@ -892,11 +892,28 @@ function drawTextLabel(
   toPage: (pt: MapPoint) => Pos,
 ) {
   const pos = toPage(tl.position)
+  const fontSize = tl.fontSizeMm
+  const lines = tl.text.split('\n')
+  const lineHeight = fontSize * 1.25
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(fontSize * MM_TO_PT)
+
+  if (tl.bgAlpha > 0) {
+    const pad = 0.15 * fontSize
+    const maxLineW = Math.max(...lines.map(l => doc.getStringUnitWidth(l) * fontSize))
+    const blockH = lineHeight * lines.length
+    doc.setFillColor(255, 255, 255)
+    doc.setGState(doc.GState({ opacity: tl.bgAlpha }))
+    doc.roundedRect(pos.x - pad, pos.y - fontSize - pad, maxLineW + pad * 2, blockH + pad * 2, 0.15 * fontSize, 0.15 * fontSize, 'F')
+    doc.setGState(doc.GState({ opacity: 1 }))
+  }
+
   const [r, g, b] = hexToRgb(tl.color)
   doc.setTextColor(r, g, b)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(tl.fontSizeMm * MM_TO_PT)
-  doc.text(tl.text, pos.x, pos.y)
+  for (let i = 0; i < lines.length; i++) {
+    doc.text(lines[i], pos.x, pos.y + i * lineHeight)
+  }
 }
 
 // ── Main export ─────────────────────────────────────────────────────────────
@@ -1205,9 +1222,21 @@ export async function exportCoursePdf(
           }
 
           if (descMode === 'on-map' && pageCourse.controls.length > 0) {
-            const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
-            drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+            const breaks = layout?.clueSheetBreaks
+            if (breaks && breaks.length > 0) {
+              const partPositions = [layout!.clueSheet, ...(layout!.clueSheetParts ?? [])]
+              for (let pi = 0; pi < breaks.length + 1; pi++) {
+                const partPos = options.sheetPositions?.[`${smKey}:part${pi}`]
+                  ?? options.sheetPositions?.[`${oKey}:part${pi}`]
+                  ?? partPositions[pi]
+                  ?? { x: MARGIN, y: MARGIN }
+                drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, courseScale, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+              }
+            } else {
+              const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
+              drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+            }
           }
 
           doc.setFontSize(8)

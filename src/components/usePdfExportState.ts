@@ -7,7 +7,7 @@ import {
 } from '../lib/pdfExport'
 import { computeSubmaps } from '../lib/courseUtils'
 import type { PdfExportOptions, DescMode } from '../lib/pdfExport'
-import { descriptionSheetPageCount, descriptionSheetSize } from '../lib/pdfDescriptionSheet'
+import { descriptionSheetPageCount, descriptionSheetSize, descriptionSheetPartSizes } from '../lib/pdfDescriptionSheet'
 import { downloadBlob } from '../lib/projectFile'
 
 export function usePdfExportState(onClose: () => void) {
@@ -37,7 +37,20 @@ export function usePdfExportState(onClose: () => void) {
     return overrides
   })
   const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
-  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [sheetPositions, setSheetPositions] = useState<Record<string, { x: number; y: number }>>(() => {
+    const pos: Record<string, { x: number; y: number }> = {}
+    for (const c of project.courses) {
+      if (c.layout?.clueSheet.visible) {
+        pos[c.id] = { x: c.layout.clueSheet.x, y: c.layout.clueSheet.y }
+        if (c.layout.clueSheetBreaks && c.layout.clueSheetParts) {
+          for (let i = 0; i < c.layout.clueSheetParts.length; i++) {
+            pos[`${c.id}:part${i + 1}`] = { x: c.layout.clueSheetParts[i].x, y: c.layout.clueSheetParts[i].y }
+          }
+        }
+      }
+    }
+    return pos
+  })
   const [tiling, setTiling] = useState(false)
   const [previewCourseId, setPreviewCourseId] = useState<string | null>(null)
   const [submapLocks, setSubmapLocks] = useState<Record<string, boolean>>({})
@@ -138,6 +151,23 @@ export function usePdfExportState(onClose: () => void) {
     : null
   const activeSheetPos = activePreviewId ? sheetPositions[activePreviewId] ?? { x: MARGIN, y: MARGIN } : { x: MARGIN, y: MARGIN }
 
+  const sheetParts: Array<{ width: number; height: number; x: number; y: number }> | null = (() => {
+    if (!previewCourse) return null
+    const breaks = previewCourse.layout?.clueSheetBreaks
+    if (breaks && breaks.length > 0) {
+      const sizes = descriptionSheetPartSizes(previewCourse, project.controls, breaks)
+      return sizes.map((size, i) => {
+        const key = i === 0 ? (activePreviewId ?? '') : `${activePreviewId}:part${i}`
+        const pos = sheetPositions[key] ?? previewCourse.layout?.clueSheetParts?.[i - 1] ?? previewCourse.layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
+        return { ...size, x: pos.x, y: pos.y }
+      })
+    }
+    if (sheetSize) {
+      return [{ ...sheetSize, x: activeSheetPos.x, y: activeSheetPos.y }]
+    }
+    return null
+  })()
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') { e.stopPropagation(); onClose() }
@@ -230,6 +260,12 @@ export function usePdfExportState(onClose: () => void) {
     setSheetPositions(prev => ({ ...prev, [activePreviewId]: { x, y } }))
   }
 
+  function setSheetPartPos(partIndex: number, x: number, y: number) {
+    if (!activePreviewId) return
+    const key = partIndex === 0 ? activePreviewId : `${activePreviewId}:part${partIndex}`
+    setSheetPositions(prev => ({ ...prev, [key]: { x, y } }))
+  }
+
   function setActiveScaleOverride(value: string) {
     if (!activePreviewId) return
     const parsed = parseSubmapPreviewId(activePreviewId)
@@ -318,7 +354,7 @@ export function usePdfExportState(onClose: () => void) {
     // Offsets & positioning
     offsets, activeOffset, hasOffset, resetOffset, setActiveOffset,
     sheetPositions, activeSheetPos, setActiveSheetPos,
-    sheetSize,
+    sheetSize, sheetParts, setSheetPartPos,
 
     // Map
     mapOpacity, setMapOpacity,
