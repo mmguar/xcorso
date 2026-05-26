@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Trash2, X } from 'lucide-react'
+import { Check, Trash2, X } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ScaleBar, TextLabel } from '../../types'
 
@@ -140,8 +140,19 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
         </div>
       </div>
 
-      <label className="flex flex-col gap-1 text-xs text-gray-600">
-        <span>Text</span>
+      <div className="flex flex-col gap-1 text-xs text-gray-600">
+        <div className="flex items-center justify-between">
+          <span>Text</span>
+          {text !== tl.text && (
+            <button
+              onClick={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
+              className="flex items-center gap-0.5 text-[10px] text-orange-600 hover:text-orange-700 font-medium"
+            >
+              <Check size={11} />
+              Apply
+            </button>
+          )}
+        </div>
         <textarea
           rows={3}
           value={text}
@@ -149,7 +160,7 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
           onBlur={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
           className="w-full text-xs border rounded px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-orange-400"
         />
-      </label>
+      </div>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <span className="w-16 shrink-0">Size (mm)</span>

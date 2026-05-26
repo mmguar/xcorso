@@ -122,7 +122,7 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
 
   const lines = tl.text.split('\n')
   const lineHeight = fontSize * 1.25
-  const maxLineW = Math.max(...lines.map(l => l.length)) * fontSize * 0.52
+  const maxLineW = Math.max(...lines.map(l => l.length)) * fontSize * 0.48
   const blockH = lineHeight * lines.length
   const pad = 0.15 * fontSize
   const bgX = tl.position.x - pad
