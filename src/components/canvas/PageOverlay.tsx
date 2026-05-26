@@ -1,6 +1,6 @@
 import type { CourseLayout, MapConfig, Viewport, Course, Control } from '../../types'
 import { PAGE_SIZES, MARGIN, mmToMap } from '../../lib/pdfExport'
-import { descriptionSheetSize } from '../../lib/pdfDescriptionSheet'
+import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 
 interface Props {
   layout: CourseLayout
@@ -74,8 +74,35 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
         fill="none" stroke="#ea580c" strokeWidth={1} strokeDasharray="6 3" opacity={0.5}
       />
 
-      {/* Clue sheet indicator */}
+      {/* Clue sheet indicators */}
       {layout.clueSheet.visible && (() => {
+        const breaks = layout.clueSheetBreaks
+        if (breaks && breaks.length > 0) {
+          const sizes = descriptionSheetPartSizes(course, controls, breaks)
+          const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
+          return sizes.map((size, i) => {
+            const elPos = positions[i] ?? layout.clueSheet
+            const pos = elementScreenPos(elPos)
+            const w = size.width * mmToPx
+            const h = size.height * mmToPx
+            return (
+              <g key={i}>
+                <rect
+                  x={pos.x} y={pos.y} width={w} height={h}
+                  fill="white" fillOpacity={0.85}
+                  stroke="#ea580c" strokeWidth={1.5} rx={2}
+                />
+                <text
+                  x={pos.x + w / 2} y={pos.y + h / 2 + 3}
+                  textAnchor="middle" fontSize={11} fill="#ea580c" opacity={0.8}
+                  style={{ userSelect: 'none' }}
+                >
+                  Clue Sheet {i + 1}/{sizes.length}
+                </text>
+              </g>
+            )
+          })
+        }
         const pos = elementScreenPos(layout.clueSheet)
         const sheet = descriptionSheetSize(course, controls)
         const w = sheet.width * mmToPx
