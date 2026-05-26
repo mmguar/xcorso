@@ -8,12 +8,13 @@ interface Props {
   map: MapConfig
   selectedOverlayId: string | null
   positionOverrides?: Record<string, MapPoint>
+  printScaleOverride?: number
 }
 
-function ScaleBarSvg({ sb, map, selected }: { sb: ScaleBar; map: MapConfig; selected: boolean }) {
+function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; map: MapConfig; selected: boolean; printScaleOverride?: number }) {
   const upm = unitsPerMm(map)
   /** Bar graphic is drawn for this denominator; falls back to map scale for older projects. */
-  const scaleDen = sb.scale ?? map.scale
+  const scaleDen = printScaleOverride ?? sb.scale ?? map.scale
   const scaleStr = `1:${Math.round(scaleDen)}`
 
   // Convert segment real-world metres to map units
@@ -144,7 +145,7 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
   )
 }
 
-export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId, positionOverrides }: Props) {
+export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId, positionOverrides, printScaleOverride }: Props) {
   return (
     <g style={{ pointerEvents: 'none' }}>
       {scaleBars.map(sb => {
@@ -156,6 +157,7 @@ export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels
             sb={effectiveSb}
             map={map}
             selected={sb.id === selectedOverlayId}
+            printScaleOverride={printScaleOverride}
           />
         )
       })}

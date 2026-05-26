@@ -1005,6 +1005,7 @@ export function MapCanvas({ loadedMap }: Props) {
             map={map}
             selectedOverlayId={selectedOverlayId}
             positionOverrides={layoutCourse?.layout?.overlayPositions}
+            printScaleOverride={layoutCourse?.layout?.printScale}
           />
           <ControlsLayer
             controls={controls}
