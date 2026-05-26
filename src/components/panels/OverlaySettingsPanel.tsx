@@ -140,15 +140,14 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Text</span>
-        <input
-          type="text"
+      <label className="flex flex-col gap-1 text-xs text-gray-600">
+        <span>Text</span>
+        <textarea
+          rows={3}
           value={text}
           onChange={e => setText(e.target.value)}
           onBlur={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+          className="w-full text-xs border rounded px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-orange-400"
         />
       </label>
 

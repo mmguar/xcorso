@@ -120,13 +120,15 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
   const fontSize = tl.fontSizeMm * upm
   const strokeW = 0.2 * upm
 
-  const pad = 0.3 * fontSize
-  const textW = tl.text.length * fontSize * 0.65
-  const textH = fontSize * 1.3
+  const lines = tl.text.split('\n')
+  const lineHeight = fontSize * 1.25
+  const maxLineW = Math.max(...lines.map(l => l.length)) * fontSize * 0.52
+  const blockH = lineHeight * lines.length
+  const pad = 0.15 * fontSize
   const bgX = tl.position.x - pad
   const bgY = tl.position.y - fontSize - pad
-  const bgW = textW + pad * 2
-  const bgH = textH + pad * 2
+  const bgW = maxLineW + pad * 2
+  const bgH = blockH + pad * 2
 
   return (
     <g>
@@ -134,7 +136,7 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
         <rect
           x={bgX} y={bgY} width={bgW} height={bgH}
           fill="white" opacity={tl.bgAlpha}
-          rx={0.2 * fontSize}
+          rx={0.15 * fontSize}
         />
       )}
       {selected && (
@@ -153,7 +155,11 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
         fontFamily="Arial, sans-serif"
         fill={tl.color}
       >
-        {tl.text}
+        {lines.map((line, i) => (
+          <tspan key={i} x={tl.position.x} dy={i === 0 ? 0 : lineHeight}>
+            {line}
+          </tspan>
+        ))}
       </text>
     </g>
   )
