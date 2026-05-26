@@ -163,6 +163,8 @@ export interface CourseLayout {
   printScale: number
   mapCenter: MapPoint
   clueSheet: LayoutElementPosition
+  clueSheetBreaks?: number[]
+  clueSheetParts?: LayoutElementPosition[]
   overlayPositions?: Record<string, MapPoint>
 }
 

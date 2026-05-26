@@ -129,7 +129,9 @@ export interface AppActions {
   updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
   beginLayoutDrag: () => void
   setLayoutMapCenter: (courseId: string, center: MapPoint) => void
-  updateLayoutElement: (courseId: string, element: 'clueSheet', pos: Partial<LayoutElementPosition>) => void
+  updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => void
+  addClueSheetBreak: (courseId: string, controlIndex: number) => void
+  removeClueSheetBreak: (courseId: string, breakIndex: number) => void
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint) => void
 
   clearSession: () => void
