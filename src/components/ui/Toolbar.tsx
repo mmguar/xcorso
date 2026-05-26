@@ -150,12 +150,6 @@ export function Toolbar() {
           <span className="hidden md:inline">Layout — pan to position map on page</span>
           <span className="md:hidden">Layout mode</span>
         </span>
-        <button
-          onClick={exitLayoutMode}
-          className="ml-1 md:ml-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg px-2.5 py-1 md:px-3 md:py-1.5 transition-colors"
-        >
-          Done
-        </button>
         <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
         {undoRedo}
       </div>
@@ -212,12 +206,6 @@ export function Toolbar() {
           }`}
         >
           {toolIcons['bend'](16)}
-        </button>
-        <button
-          onClick={() => setSelectedCourse(null)}
-          className="ml-1 md:ml-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg px-2.5 py-1 md:px-3 md:py-1.5 transition-colors"
-        >
-          Done
         </button>
         <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
         {undoRedo}

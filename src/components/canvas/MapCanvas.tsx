@@ -221,10 +221,16 @@ export function MapCanvas({ loadedMap }: Props) {
 
     const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
     const pageW = layout.orientation === 'landscape' ? base.h : base.w
+    const pageH = layout.orientation === 'landscape' ? base.w : base.h
     const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, map, layout.printScale).x
+    const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, map, layout.printScale).y
     const pageWidthMapUnits = halfWMap * 2
+    const pageHeightMapUnits = halfHMap * 2
 
-    const desiredScale = (width * 0.85) / pageWidthMapUnits
+    const desiredScale = Math.min(
+      (width * 0.85) / pageWidthMapUnits,
+      (height * 0.85) / pageHeightMapUnits,
+    )
     setVp({
       x: width / 2 - layout.mapCenter.x * desiredScale,
       y: height / 2 - layout.mapCenter.y * desiredScale,

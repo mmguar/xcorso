@@ -324,6 +324,7 @@ function CourseCard({ courseId }: { courseId: string }) {
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
+  const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
   const requestLayoutSnap = useStore(s => s.requestLayoutSnap)
   const updateLayoutElement = useStore(s => s.updateLayoutElement)
@@ -386,6 +387,7 @@ function CourseCard({ courseId }: { courseId: string }) {
     }
     if (isActive) {
       exitLayoutMode()
+      setSelectedCourse(null)
     } else {
       enterLayoutMode(courseId)
     }

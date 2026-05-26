@@ -19,6 +19,9 @@ export function SidePanel() {
   const [tab, setTab] = useState<Tab>('controls')
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const layoutMode = useStore(s => s.editor.layoutMode)
+  const setSelectedCourse = useStore(s => s.setSelectedCourse)
+  const enterLayoutMode = useStore(s => s.enterLayoutMode)
+  const exitLayoutMode = useStore(s => s.exitLayoutMode)
 
   const [collapsed, setCollapsed] = useState(() =>
     typeof window !== 'undefined' && SIDEBAR_W > window.innerWidth / 3
@@ -34,14 +37,25 @@ export function SidePanel() {
   }, [])
 
   useEffect(() => {
-    if (selectedCourseId) {
+    if (selectedCourseId && !layoutMode) {
       setTab('courses')
     }
-  }, [selectedCourseId])
+  }, [selectedCourseId, layoutMode])
 
   useEffect(() => {
     if (layoutMode) setTab('layout')
   }, [layoutMode])
+
+  function switchMode(t: Tab) {
+    if (t === 'controls') {
+      if (layoutMode) exitLayoutMode()
+      if (selectedCourseId) setSelectedCourse(null)
+    } else if (t === 'courses') {
+      if (layoutMode) exitLayoutMode()
+    } else if (t === 'layout') {
+      if (selectedCourseId && !layoutMode) enterLayoutMode(selectedCourseId)
+    }
+  }
 
   return (
     <>
@@ -60,7 +74,7 @@ export function SidePanel() {
               {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
                 <button
                   key={t}
-                  onClick={() => setTab(t)}
+                  onClick={() => { switchMode(t); setTab(t) }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors capitalize ${
                     tab === t
                       ? 'border-b-2 border-orange-600 text-orange-700 bg-orange-50/50'
@@ -87,7 +101,7 @@ export function SidePanel() {
       </aside>
 
       {/* Mobile/tablet: top bar */}
-      <MobileTopBar tab={tab} setTab={setTab} />
+      <MobileTopBar tab={tab} setTab={setTab} switchMode={switchMode} />
     </>
   )
 }
@@ -171,7 +185,7 @@ function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onS
   )
 }
 
-function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) => void; switchMode: (t: Tab) => void }) {
   const [expanded, setExpanded] = useState(false)
   const [showNewMenu, setShowNewMenu] = useState(false)
   const courses = useStore(s => s.project?.courses ?? [])
@@ -191,7 +205,7 @@ function MobileTopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
           <button
             key={t}
-            onClick={() => { setTab(t); setExpanded(e => t === tab ? !e : true) }}
+            onClick={() => { if (t !== tab) switchMode(t); setTab(t); setExpanded(e => t === tab ? !e : true) }}
             title={t}
             className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
               tab === t && expanded

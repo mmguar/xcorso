@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances } from '../../lib/distance'
@@ -342,6 +342,15 @@ export function CoursesPanel() {
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const isAllControls = selectedCourseId === null
+
+  useEffect(() => {
+    if (selectedCourseId) {
+      setExpanded(prev => {
+        if (prev.has(selectedCourseId)) return prev
+        return new Set([...prev, selectedCourseId])
+      })
+    }
+  }, [selectedCourseId])
 
   return (
     <div className="flex flex-col h-full">
