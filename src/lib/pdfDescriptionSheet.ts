@@ -444,6 +444,36 @@ export function descriptionSheetSize(
   return { width, height }
 }
 
+export function descriptionSheetPartSizes(
+  course: Course,
+  controls: Control[],
+  breaks: number[],
+  trailingFlip?: boolean,
+): Array<{ width: number; height: number }> {
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const resolved = course.controls.filter(cc => controlMap.has(cc.controlId))
+  if (resolved.length === 0) return [{ width: 0, height: 0 }]
+
+  const width = course.textDescriptions
+    ? 2 * CELL + estimateDescColumnWidth(course, controls)
+    : GRID_W
+
+  const sortedBreaks = [...breaks].sort((a, b) => a - b)
+  const boundaries = [0, ...sortedBreaks, resolved.length]
+  const sizes: Array<{ width: number; height: number }> = []
+
+  for (let p = 0; p < boundaries.length - 1; p++) {
+    const start = boundaries[p]
+    const end = boundaries[p + 1]
+    let rowCount = end - start
+    if (p === boundaries.length - 2 && trailingFlip) rowCount++
+    const headerH = p === 0 ? CELL + COL_HEADER_H : COL_HEADER_H
+    sizes.push({ width, height: headerH + rowCount * CELL })
+  }
+
+  return sizes
+}
+
 // ── Draw overlay on existing page ───────────────────────────────────────────
 
 export function drawDescriptionSheetOverlay(
@@ -584,6 +614,167 @@ export function drawDescriptionSheetOverlay(
 
   if (trailingFlip) {
     drawFlipRow(doc, gridX, y, width)
+  }
+}
+
+export function drawDescriptionSheetOverlayPart(
+  doc: jsPDF,
+  course: Course,
+  controls: Control[],
+  mapScale: number,
+  originX: number,
+  originY: number,
+  partIndex: number,
+  breaks: number[],
+  distanceM?: number,
+  textDescriptions?: boolean,
+  legDistances?: number[],
+  trailingFlip?: boolean,
+) {
+  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const resolved = course.controls
+    .map(cc => controlMap.get(cc.controlId))
+    .filter((c): c is Control => c != null)
+
+  if (resolved.length === 0) return
+
+  const sortedBreaks = [...breaks].sort((a, b) => a - b)
+  const boundaries = [0, ...sortedBreaks, resolved.length]
+  const start = boundaries[partIndex] ?? 0
+  const end = boundaries[partIndex + 1] ?? resolved.length
+  const partControls = resolved.slice(start, end)
+  if (partControls.length === 0) return
+
+  const isFirstPart = partIndex === 0
+  const isLastPart = partIndex === boundaries.length - 2
+
+  const fullWidth = course.textDescriptions
+    ? 2 * CELL + estimateDescColumnWidth(course, controls)
+    : GRID_W
+  const descW = fullWidth - 2 * CELL
+
+  const nonFinish = partControls.filter(c => c.type !== 'finish')
+  const finish = partControls.find(c => c.type === 'finish')
+
+  const rowCount = partControls.length + (isLastPart && trailingFlip ? 1 : 0)
+  const headerH = isFirstPart ? CELL + COL_HEADER_H : COL_HEADER_H
+  const height = headerH + rowCount * CELL
+
+  doc.setFillColor(255, 255, 255)
+  doc.rect(originX, originY, fullWidth, height, 'F')
+
+  const gridX = originX
+  let y = originY
+
+  if (isFirstPart) {
+    doc.setDrawColor(0, 0, 0)
+    doc.setLineWidth(LINE_W)
+    doc.rect(gridX, y, fullWidth, CELL, 'S')
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(0, 0, 0)
+    let label = course.name
+    if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
+    if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
+    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
+    doc.text(label, gridX + fullWidth / 2, y + CELL / 2 + 1, { align: 'center' })
+    y += CELL
+  }
+
+  // Column headers
+  doc.setFontSize(5.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(120, 120, 120)
+  doc.setDrawColor(0, 0, 0)
+  doc.setLineWidth(LINE_W)
+  if (textDescriptions) {
+    doc.rect(gridX, y, CELL, COL_HEADER_H, 'S')
+    doc.text('#', gridX + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    doc.rect(gridX + CELL, y, CELL, COL_HEADER_H, 'S')
+    doc.text('Code', gridX + CELL + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    doc.rect(gridX + 2 * CELL, y, descW, COL_HEADER_H, 'S')
+    doc.text('Description', gridX + 2 * CELL + descW / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+  } else {
+    const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
+    for (let c = 0; c < COLS; c++) {
+      const cx = gridX + c * CELL
+      doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
+      doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
+    }
+  }
+  y += COL_HEADER_H
+
+  // Compute sequence offset: count 'control' type entries before this part
+  let seq = 0
+  for (let i = 0; i < start; i++) {
+    if (resolved[i].type === 'control') seq++
+  }
+
+  // Compute finish index for leg distance lookup
+  const globalFinishIdx = resolved.findIndex(c => c.type === 'finish')
+
+  for (const ctrl of nonFinish) {
+    if (ctrl.type === 'control') seq++
+    const desc = ctrl.description ?? {}
+
+    doc.setDrawColor(0, 0, 0)
+    doc.setLineWidth(LINE_W)
+    doc.rect(gridX, y, CELL, CELL, 'S')
+    doc.rect(gridX + CELL, y, CELL, CELL, 'S')
+
+    const aCx = gridX + CELL / 2
+    const aCy = y + CELL / 2
+    if (ctrl.type === 'start') {
+      drawStartSymbol(doc, aCx, aCy)
+    } else {
+      doc.setFontSize(7)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0, 0, 0)
+      doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
+    }
+
+    const bCx = gridX + CELL + CELL / 2
+    const bCy = y + CELL / 2
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 0, 0)
+    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
+    doc.text(code, bCx, bCy + 1, { align: 'center' })
+
+    if (textDescriptions) {
+      doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
+      const text = buildDescriptionText(desc)
+      if (text) drawMergedDescriptionText(doc, text, gridX + 2 * CELL, y, descW, CELL)
+    } else {
+      for (let ci = 0; ci < COL_IDS.length; ci++) {
+        doc.setLineWidth(LINE_W)
+        doc.rect(gridX + (ci + 2) * CELL, y, CELL, CELL, 'S')
+        const colId = COL_IDS[ci]
+        const field = columnFields[colId]
+        const symCode = (desc as any)[field]
+        if (!symCode) continue
+        const cellCx = gridX + (ci + 2) * CELL + CELL / 2
+        const cellCy = y + CELL / 2
+        const sym = getSymbol(symCode)
+        if (sym) {
+          drawIofSymbol(doc, sym, cellCx, cellCy)
+        } else {
+          drawDimensionText(doc, symCode, cellCx, cellCy)
+        }
+      }
+    }
+
+    y += CELL
+  }
+
+  if (finish) {
+    const finishLegDist = globalFinishIdx > 0 && legDistances ? legDistances[globalFinishIdx - 1] : undefined
+    drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDist)
+    y += CELL
+  }
+
+  if (isLastPart && trailingFlip) {
+    drawFlipRow(doc, gridX, y, fullWidth)
   }
 }
 

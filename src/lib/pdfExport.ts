@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec } from '../types'
 import type { LoadedMap } from './mapLoader'
-import { drawDescriptionSheet, drawDescriptionSheetOverlay } from './pdfDescriptionSheet'
+import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
@@ -1205,9 +1205,21 @@ export async function exportCoursePdf(
           }
 
           if (descMode === 'on-map' && pageCourse.controls.length > 0) {
-            const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
             const dist = computeCourseDistances(pageCourse, project.controls, project.map)
-            drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+            const breaks = layout?.clueSheetBreaks
+            if (breaks && breaks.length > 0) {
+              const partPositions = [layout!.clueSheet, ...(layout!.clueSheetParts ?? [])]
+              for (let pi = 0; pi < breaks.length + 1; pi++) {
+                const partPos = options.sheetPositions?.[`${smKey}:part${pi}`]
+                  ?? options.sheetPositions?.[`${oKey}:part${pi}`]
+                  ?? partPositions[pi]
+                  ?? { x: MARGIN, y: MARGIN }
+                drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, courseScale, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+              }
+            } else {
+              const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
+              drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+            }
           }
 
           doc.setFontSize(8)

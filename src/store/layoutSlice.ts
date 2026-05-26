@@ -92,10 +92,51 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       })
     },
 
-    updateLayoutElement: (courseId: string, element: 'clueSheet', pos: Partial<LayoutElementPosition>) => {
+    updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (course?.layout) Object.assign(course.layout[element], pos)
+        if (!course?.layout) return
+        if (element === 'clueSheet') {
+          Object.assign(course.layout.clueSheet, pos)
+        } else if (element.startsWith('clueSheetPart:')) {
+          const idx = parseInt(element.split(':')[1])
+          if (course.layout.clueSheetParts?.[idx]) {
+            Object.assign(course.layout.clueSheetParts[idx], pos)
+          }
+        }
+      })
+    },
+
+    addClueSheetBreak: (courseId: string, controlIndex: number) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout) return
+        const breaks = course.layout.clueSheetBreaks ?? []
+        if (breaks.includes(controlIndex)) return
+        const newBreaks = [...breaks, controlIndex].sort((a, b) => a - b)
+        const insertPos = newBreaks.indexOf(controlIndex)
+        const parts = course.layout.clueSheetParts ?? []
+        const newParts = [...parts]
+        newParts.splice(insertPos, 0, {
+          x: course.layout.clueSheet.x + 60,
+          y: course.layout.clueSheet.y,
+          visible: true,
+        })
+        course.layout.clueSheetBreaks = newBreaks
+        course.layout.clueSheetParts = newParts
+      })
+    },
+
+    removeClueSheetBreak: (courseId: string, breakIndex: number) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout?.clueSheetBreaks) return
+        const breaks = [...course.layout.clueSheetBreaks]
+        breaks.splice(breakIndex, 1)
+        const parts = [...(course.layout.clueSheetParts ?? [])]
+        parts.splice(breakIndex, 1)
+        course.layout.clueSheetBreaks = breaks.length > 0 ? breaks : undefined
+        course.layout.clueSheetParts = parts.length > 0 ? parts : undefined
       })
     },
 
