@@ -1,7 +1,7 @@
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
-  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, EventSpec, FinishType,
+  CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, ImageOverlay, EventSpec, FinishType,
   CourseLayout, LayoutElementPosition, LayoutDefaults,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
@@ -18,6 +18,7 @@ export interface EditorState {
   gapSize: number
   appearance: AppearanceSettings
   pendingAnnotationPoints: MapPoint[]
+  pendingImage: { dataUrl: string; filename: string; naturalWidth: number; naturalHeight: number } | null
   selectedSubmapIndex: number | null
   layoutMode: boolean
   layoutCourseId: string | null
@@ -114,6 +115,13 @@ export interface AppActions {
   deleteTextLabel: (id: string) => void
   moveTextLabel: (id: string, position: MapPoint) => void
 
+  addImageOverlay: (position: MapPoint, dataUrl: string, filename: string, naturalWidth: number, naturalHeight: number) => ImageOverlay
+  updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>) => void
+  deleteImageOverlay: (id: string) => void
+  moveImageOverlay: (id: string, position: MapPoint) => void
+  resizeImageOverlay: (id: string, widthMm: number, heightMm: number) => void
+  setPendingImage: (data: { dataUrl: string; filename: string; naturalWidth: number; naturalHeight: number } | null) => void
+
   setLoadedMap: (map: LoadedMap | null) => void
 
   setActiveTool: (tool: ActiveTool) => void
@@ -176,6 +184,7 @@ export const defaultEditor: EditorState = {
   gapSize: 35,
   appearance: defaultAppearance,
   pendingAnnotationPoints: [],
+  pendingImage: null,
   selectedSubmapIndex: null,
   layoutMode: false,
   layoutCourseId: null,

@@ -138,7 +138,7 @@ export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport,
   return null
 }
 
-export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' } | null {
+export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' | 'image' } | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
   const hitSlop = HIT_PX / vp.scale
@@ -169,6 +169,16 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
     if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
         mapPt.y >= pos.y - fontSize - hitSlop && mapPt.y <= pos.y - fontSize + h + hitSlop) {
       return { id: tl.id, kind: 'text' }
+    }
+  }
+
+  for (const img of project.imageOverlays) {
+    const pos = posOverrides?.[img.id] ?? img.position
+    const w = img.widthMm * upm
+    const h = img.heightMm * upm
+    if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
+        mapPt.y >= pos.y - hitSlop && mapPt.y <= pos.y + h + hitSlop) {
+      return { id: img.id, kind: 'image' }
     }
   }
 

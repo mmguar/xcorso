@@ -213,6 +213,16 @@ export interface TextLabel {
   bgAlpha: number            // 0 = transparent, 1 = opaque white
 }
 
+export interface ImageOverlay {
+  id: string
+  position: MapPoint         // top-left corner in map coordinates
+  widthMm: number            // width in mm on paper
+  heightMm: number           // height in mm on paper
+  dataUrl: string            // base64 data URL
+  filename: string           // original filename for display
+  bgAlpha: number            // 0 = transparent, 1 = opaque white
+}
+
 // ─── Project ────────────────────────────────────────────────────────────────
 
 export interface ProjectMeta {
@@ -232,6 +242,7 @@ export interface Project {
   annotations: Annotation[]
   scaleBars: ScaleBar[]
   textLabels: TextLabel[]
+  imageOverlays: ImageOverlay[]
   layoutDefaults?: LayoutDefaults
 }
 
@@ -262,6 +273,7 @@ export type ActiveTool =
   | 'bend'
   | 'place-scalebar'
   | 'place-text'
+  | 'place-image'
 
 export interface Viewport {
   x: number       // pan offset x (screen px)

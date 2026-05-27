@@ -4,10 +4,10 @@
  * Shows course-building banner when a course is selected.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
-  RulerDimensionLine, Type,
+  RulerDimensionLine, Type, ImagePlus,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
@@ -25,6 +25,7 @@ const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
   { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
   { tool: 'place-scalebar', label: 'Place Scale Bar', shortcut: 'K' },
   { tool: 'place-text', label: 'Place Text', shortcut: 'T' },
+  { tool: 'place-image', label: 'Place Image', shortcut: 'I' },
 ]
 
 const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
@@ -41,6 +42,7 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'measure-scale': s => <Ruler size={s} />,
   'place-scalebar': s => <RulerDimensionLine size={s} />,
   'place-text': s => <Type size={s} />,
+  'place-image': s => <ImagePlus size={s} />,
 }
 
 function GapSizeSlider() {
@@ -96,6 +98,7 @@ export function Toolbar() {
           const proj = state.project
           if (proj?.scaleBars.some(s => s.id === oid)) state.deleteScaleBar(oid)
           else if (proj?.textLabels.some(t => t.id === oid)) state.deleteTextLabel(oid)
+          else if (proj?.imageOverlays.some(o => o.id === oid)) state.deleteImageOverlay(oid)
           return
         }
       }
@@ -115,6 +118,25 @@ export function Toolbar() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, exitLayoutMode, activeTool])
+
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  function handleImageFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const img = new Image()
+      img.onload = () => {
+        useStore.getState().setPendingImage({
+          dataUrl, filename: file.name,
+          naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight,
+        })
+        setActiveTool('place-image')
+      }
+      img.src = dataUrl
+    }
+    reader.readAsDataURL(file)
+  }
 
   const btnClass = "w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all"
 
@@ -233,7 +255,14 @@ export function Toolbar() {
           {tools.map(({ tool, label, shortcut }) => (
         <button
           key={tool}
-          onClick={() => setActiveTool(tool)}
+          onClick={() => {
+            if (tool === 'place-image') {
+              imageInputRef.current!.value = ''
+              imageInputRef.current!.click()
+            } else {
+              setActiveTool(tool)
+            }
+          }}
           title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
           className={`
             ${btnClass}
@@ -245,6 +274,16 @@ export function Toolbar() {
           {toolIcons[tool](16)}
         </button>
       ))}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0]
+          if (file) handleImageFile(file)
+        }}
+      />
 
       {activeTool === 'gap' && (
         <>
