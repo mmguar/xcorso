@@ -23,10 +23,12 @@ function pageDimensions(pageSize: CourseLayout['pageSize'], orientation: CourseL
 
 function resizeMapBorderToPage(border: MapBorder, pageSize: CourseLayout['pageSize'], orientation: CourseLayout['orientation']): MapBorder {
   const { w: pw, h: ph } = pageDimensions(pageSize, orientation)
+  const rightMargin = pw - border.x - border.width > 0 ? pw - border.x - border.width : border.x
+  const bottomMargin = ph - border.y - border.height > 0 ? ph - border.y - border.height : border.y
   return {
     ...border,
-    width: pw - 2 * border.x,
-    height: ph - 2 * border.y,
+    width: Math.max(20, pw - border.x - rightMargin),
+    height: Math.max(20, ph - border.y - bottomMargin),
   }
 }
 

@@ -293,6 +293,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragBorderResize: { sx: number; sy: number; ox: number; oy: number; ow: number; oh: number } | null = null
     let dragBorderResizeStarted = false
 
+    let dragBorderTranslate: { sx: number; sy: number; ox: number; oy: number } | null = null
+    let dragBorderTranslateStarted = false
+
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
     function clearLongPress() {
@@ -401,6 +404,27 @@ export function MapCanvas({ loadedMap }: Props) {
             if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
               dragBorderResize = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y, ow: layout.mapBorder.width, oh: layout.mapBorder.height }
               dragBorderResizeStarted = false
+              return
+            }
+
+            // Hit test grey margin strips (inside page, outside border) for border translate
+            const borderMapX1 = pageTLx + layout.mapBorder.x * mmToMapU
+            const borderMapY1 = pageTLy + layout.mapBorder.y * mmToMapU
+            const borderMapX2 = borderMapX1 + layout.mapBorder.width * mmToMapU
+            const borderMapY2 = borderMapY1 + layout.mapBorder.height * mmToMapU
+            const pageSx1 = pageTLx * vpRef.current.scale + vpRef.current.x
+            const pageSy1 = pageTLy * vpRef.current.scale + vpRef.current.y
+            const pageSx2 = (pageTLx + pageW * mmToMapU) * vpRef.current.scale + vpRef.current.x
+            const pageSy2 = (pageTLy + pageH * mmToMapU) * vpRef.current.scale + vpRef.current.y
+            const bSx1 = borderMapX1 * vpRef.current.scale + vpRef.current.x
+            const bSy1 = borderMapY1 * vpRef.current.scale + vpRef.current.y
+            const bSx2 = borderMapX2 * vpRef.current.scale + vpRef.current.x
+            const bSy2 = borderMapY2 * vpRef.current.scale + vpRef.current.y
+            const inPage = sx >= pageSx1 && sx <= pageSx2 && sy >= pageSy1 && sy <= pageSy2
+            const inBorder = sx >= bSx1 && sx <= bSx2 && sy >= bSy1 && sy <= bSy2
+            if (inPage && !inBorder) {
+              dragBorderTranslate = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y }
+              dragBorderTranslateStarted = false
               return
             }
           }
@@ -569,6 +593,37 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragBorderTranslate && pos.size === 1) {
+        if (!dragBorderTranslateStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginLayoutDrag()
+          dragBorderTranslateStarted = true
+        }
+        const st = useStore.getState()
+        const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
+        const layout = course?.layout
+        if (layout?.mapBorder) {
+          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
+          const pageW = layout.orientation === 'landscape' ? base.h : base.w
+          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
+          const pageWMap = halfWMap * 2
+          const pxToMm = pageW / (pageWMap * vpRef.current.scale)
+
+          const dx = (e.clientX - dragBorderTranslate.sx) * pxToMm
+          const dy = (e.clientY - dragBorderTranslate.sy) * pxToMm
+          const bw = layout.mapBorder.width
+          const bh = layout.mapBorder.height
+          const newX = Math.max(0, Math.min(pageW - bw, dragBorderTranslate.ox + dx))
+          const newY = Math.max(0, Math.min(pageH - bh, dragBorderTranslate.oy + dy))
+          st.updateCourseLayout(st.editor.layoutCourseId!, {
+            mapBorder: { ...layout.mapBorder, x: newX, y: newY, width: bw, height: bh },
+          })
+        }
+        return
+      }
+
       if (dragLayoutEl && pos.size === 1) {
         if (!dragLayoutElStarted) {
           const start = down.get(e.pointerId)
@@ -582,15 +637,14 @@ export function MapCanvas({ loadedMap }: Props) {
         if (layout) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
-          const pageH = layout.orientation === 'landscape' ? base.w : base.h
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
           const pageWMap = halfWMap * 2
           const mmToPx = (pageWMap * vpRef.current.scale) / pageW
 
           const dx = (e.clientX - dragLayoutEl.sx) / mmToPx
           const dy = (e.clientY - dragLayoutEl.sy) / mmToPx
-          const newX = Math.max(0, Math.min(pageW - 10, dragLayoutEl.ox + dx))
-          const newY = Math.max(0, Math.min(pageH - 5, dragLayoutEl.oy + dy))
+          const newX = dragLayoutEl.ox + dx
+          const newY = dragLayoutEl.oy + dy
           st.updateLayoutElement(st.editor.layoutCourseId!, dragLayoutEl.element, { x: newX, y: newY })
         }
         return
@@ -752,6 +806,9 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (dragBorderResize && dragBorderResizeStarted) { dragBorderResize = null; dragBorderResizeStarted = false; return }
       dragBorderResize = null; dragBorderResizeStarted = false
+
+      if (dragBorderTranslate && dragBorderTranslateStarted) { dragBorderTranslate = null; dragBorderTranslateStarted = false; return }
+      dragBorderTranslate = null; dragBorderTranslateStarted = false
 
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
       dragOverlay = null; dragOverlayStarted = false
