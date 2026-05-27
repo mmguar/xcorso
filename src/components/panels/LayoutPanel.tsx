@@ -264,38 +264,71 @@ function GeneralSection() {
                     <span className="text-xs text-gray-600">Enabled</span>
                   </label>
                   {border && (
-                    <input
-                      type="color"
-                      value={border.color}
-                      onChange={e => updateLayoutDefaults({
-                        mapBorder: { ...border, color: e.target.value },
-                      })}
-                      className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
-                    />
+                    <>
+                      <input
+                        type="color"
+                        value={border.color}
+                        onChange={e => updateLayoutDefaults({
+                          mapBorder: { ...border, color: e.target.value },
+                        })}
+                        className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
+                      />
+                      <MmInput
+                        value={border.strokeWidth}
+                        onChange={v => updateLayoutDefaults({
+                          mapBorder: { ...border, strokeWidth: v },
+                        })}
+                        max={20}
+                      />
+                    </>
                   )}
                 </div>
                 {border && (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-16">Left / Right</span>
+                      <span className="text-[10px] text-gray-500 w-10">Left</span>
                       <MmInput
                         value={border.x}
                         onChange={v => updateLayoutDefaults({
-                          mapBorder: { ...border, x: v, width: pw - 2 * v },
+                          mapBorder: { ...border, x: v, width: pw - v - (pw - border.x - border.width) },
                         })}
-                        max={(pw - 20) / 2}
+                        max={pw - 20 - (pw - border.x - border.width)}
+                      />
+                      <span className="text-[10px] text-gray-500 w-10 text-right">Right</span>
+                      <MmInput
+                        value={Math.round((pw - border.x - border.width) * 10) / 10}
+                        onChange={v => updateLayoutDefaults({
+                          mapBorder: { ...border, width: pw - border.x - v },
+                        })}
+                        max={pw - 20 - border.x}
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-16">Top / Bottom</span>
+                      <span className="text-[10px] text-gray-500 w-10">Top</span>
                       <MmInput
                         value={border.y}
                         onChange={v => updateLayoutDefaults({
-                          mapBorder: { ...border, y: v, height: ph - 2 * v },
+                          mapBorder: { ...border, y: v, height: ph - v - (ph - border.y - border.height) },
                         })}
-                        max={(ph - 20) / 2}
+                        max={ph - 20 - (ph - border.y - border.height)}
+                      />
+                      <span className="text-[10px] text-gray-500 w-10 text-right">Bottom</span>
+                      <MmInput
+                        value={Math.round((ph - border.y - border.height) * 10) / 10}
+                        onChange={v => updateLayoutDefaults({
+                          mapBorder: { ...border, height: ph - border.y - v },
+                        })}
+                        max={ph - 20 - border.y}
                       />
                     </div>
+                    <button
+                      onClick={() => updateLayoutDefaults({
+                        mapBorder: { ...border, x: (pw - border.width) / 2, y: (ph - border.height) / 2 },
+                      })}
+                      className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
+                    >
+                      Re-center
+                    </button>
                   </div>
                 )}
               </div>
@@ -324,6 +357,7 @@ function CourseCard({ courseId }: { courseId: string }) {
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
+  const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
   const requestLayoutSnap = useStore(s => s.requestLayoutSnap)
   const updateLayoutElement = useStore(s => s.updateLayoutElement)
@@ -386,6 +420,7 @@ function CourseCard({ courseId }: { courseId: string }) {
     }
     if (isActive) {
       exitLayoutMode()
+      setSelectedCourse(null)
     } else {
       enterLayoutMode(courseId)
     }
@@ -669,7 +704,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                           const db = defaults.mapBorder
                           updateCourseLayout(courseId, {
                             mapBorder: db
-                              ? { ...db, width: pw - 2 * db.x, height: ph - 2 * db.y }
+                              ? { ...db }
                               : { color: course.color, strokeWidth: 0.35, x: MARGIN, y: MARGIN, width: pw - 2 * MARGIN, height: ph - 2 * MARGIN },
                           })
                         } else {
@@ -681,21 +716,30 @@ function CourseCard({ courseId }: { courseId: string }) {
                     <span className="text-xs text-gray-600">Enabled</span>
                   </label>
                   {cb && (
-                    <input
-                      type="color"
-                      value={cb.color}
-                      onChange={e => updateCourseLayout(courseId, {
-                        mapBorder: { ...cb, color: e.target.value },
-                      })}
-                      className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
-                    />
+                    <>
+                      <input
+                        type="color"
+                        value={cb.color}
+                        onChange={e => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, color: e.target.value },
+                        })}
+                        className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
+                      />
+                      <MmInput
+                        value={cb.strokeWidth}
+                        onChange={v => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, strokeWidth: v },
+                        })}
+                        max={20}
+                      />
+                    </>
                   )}
                   {isBorderOverride && (
                     <button
                       onClick={() => {
                         if (defaults.mapBorder) {
                           updateCourseLayout(courseId, {
-                            mapBorder: { ...defaults.mapBorder, width: pw - 2 * defaults.mapBorder.x, height: ph - 2 * defaults.mapBorder.y },
+                            mapBorder: { ...defaults.mapBorder },
                           })
                         } else {
                           updateCourseLayout(courseId, { mapBorder: undefined })
@@ -710,25 +754,49 @@ function CourseCard({ courseId }: { courseId: string }) {
                 {cb && (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-16">Left / Right</span>
+                      <span className="text-[10px] text-gray-500 w-10">Left</span>
                       <MmInput
                         value={cb.x}
                         onChange={v => updateCourseLayout(courseId, {
-                          mapBorder: { ...cb, x: v, width: pw - 2 * v },
+                          mapBorder: { ...cb, x: v, width: pw - v - (pw - cb.x - cb.width) },
                         })}
-                        max={(pw - 20) / 2}
+                        max={pw - 20 - (pw - cb.x - cb.width)}
+                      />
+                      <span className="text-[10px] text-gray-500 w-10 text-right">Right</span>
+                      <MmInput
+                        value={Math.round((pw - cb.x - cb.width) * 10) / 10}
+                        onChange={v => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, width: pw - cb.x - v },
+                        })}
+                        max={pw - 20 - cb.x}
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-16">Top / Bottom</span>
+                      <span className="text-[10px] text-gray-500 w-10">Top</span>
                       <MmInput
                         value={cb.y}
                         onChange={v => updateCourseLayout(courseId, {
-                          mapBorder: { ...cb, y: v, height: ph - 2 * v },
+                          mapBorder: { ...cb, y: v, height: ph - v - (ph - cb.y - cb.height) },
                         })}
-                        max={(ph - 20) / 2}
+                        max={ph - 20 - (ph - cb.y - cb.height)}
+                      />
+                      <span className="text-[10px] text-gray-500 w-10 text-right">Bottom</span>
+                      <MmInput
+                        value={Math.round((ph - cb.y - cb.height) * 10) / 10}
+                        onChange={v => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, height: ph - cb.y - v },
+                        })}
+                        max={ph - 20 - cb.y}
                       />
                     </div>
+                    <button
+                      onClick={() => updateCourseLayout(courseId, {
+                        mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
+                      })}
+                      className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
+                    >
+                      Re-center
+                    </button>
                   </div>
                 )}
               </div>

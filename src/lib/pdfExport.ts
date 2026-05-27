@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec, MapBorder } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
@@ -797,8 +797,10 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
 
 function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: number, spec: EventSpec) {
   const d = annotationDimsMm(mapScale, spec)
-  const hw = d.crossHalf
+  const spread = d.crossHalf
   const hh = d.crossH
+  const halfGapCenter = (d.crossGap + d.crossW) / 2
+  const cx = 2 * halfGapCenter - spread
   const { x, y } = center
   const cos = Math.cos(rotation * Math.PI / 180)
   const sin = Math.sin(rotation * Math.PI / 180)
@@ -807,30 +809,28 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: 
     return { x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }
   }
 
-  // Same control points as AnnotationsLayer CrossingPoint (quadratic beziers)
-  const l0 = rot(x - 0.8 * hw, y - hh)
-  const lq = rot(x + 0.01 * hw, y)
-  const l1 = rot(x - 0.8 * hw, y + hh)
+  const r0 = rot(x + spread, y - hh)
+  const rq = rot(x + cx, y)
+  const r1 = rot(x + spread, y + hh)
 
-  const r0 = rot(x + 0.8 * hw, y - hh)
-  const rq = rot(x - 0.01 * hw, y)
-  const r1 = rot(x + 0.8 * hw, y + hh)
+  const l0 = rot(x - spread, y - hh)
+  const lq = rot(x - cx, y)
+  const l1 = rot(x - spread, y + hh)
 
   doc.setLineWidth(d.crossW)
   doc.setLineCap(1)
 
-  // Quadratic bezier → cubic: C1 = P0 + 2/3(Q-P0), C2 = P1 + 2/3(Q-P1)
-  doc.moveTo(l0.x, l0.y)
-  doc.curveTo(
-    l0.x + 2 / 3 * (lq.x - l0.x), l0.y + 2 / 3 * (lq.y - l0.y),
-    l1.x + 2 / 3 * (lq.x - l1.x), l1.y + 2 / 3 * (lq.y - l1.y),
-    l1.x, l1.y,
-  )
   doc.moveTo(r0.x, r0.y)
   doc.curveTo(
     r0.x + 2 / 3 * (rq.x - r0.x), r0.y + 2 / 3 * (rq.y - r0.y),
     r1.x + 2 / 3 * (rq.x - r1.x), r1.y + 2 / 3 * (rq.y - r1.y),
     r1.x, r1.y,
+  )
+  doc.moveTo(l0.x, l0.y)
+  doc.curveTo(
+    l0.x + 2 / 3 * (lq.x - l0.x), l0.y + 2 / 3 * (lq.y - l0.y),
+    l1.x + 2 / 3 * (lq.x - l1.x), l1.y + 2 / 3 * (lq.y - l1.y),
+    l1.x, l1.y,
   )
   doc.stroke()
 }
@@ -998,6 +998,26 @@ function drawTextLabel(
   }
 }
 
+function drawImageOverlay(
+  doc: jsPDF,
+  img: ImageOverlay,
+  toPage: (pt: MapPoint) => Pos,
+) {
+  const pos = toPage(img.position)
+  const w = img.widthMm
+  const h = img.heightMm
+
+  if (img.bgAlpha > 0) {
+    doc.setFillColor(255, 255, 255)
+    doc.setGState(doc.GState({ opacity: img.bgAlpha }))
+    doc.rect(pos.x, pos.y, w, h, 'F')
+    doc.setGState(doc.GState({ opacity: 1 }))
+  }
+
+  const format = img.dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+  doc.addImage(img.dataUrl, format, pos.x, pos.y, w, h)
+}
+
 // ── Main export ─────────────────────────────────────────────────────────────
 
 export async function exportCoursePdf(
@@ -1151,6 +1171,7 @@ export async function exportCoursePdf(
           // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
+          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage)
 
           doc.setFontSize(8)
           doc.setFont('helvetica', 'normal')
@@ -1315,12 +1336,23 @@ export async function exportCoursePdf(
           for (const sb of project.scaleBars) {
             const overridePos = layout?.overlayPositions?.[sb.id]
             const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
+            const sbPos = toPage(effectiveSb.position)
+            if (sbPos.x < 0 || sbPos.x > cpw || sbPos.y < 0 || sbPos.y > cph) continue
             drawScaleBar(doc, effectiveSb, toPage, courseScale)
           }
           for (const tl of project.textLabels) {
             const overridePos = layout?.overlayPositions?.[tl.id]
             const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
+            const tlPos = toPage(effectiveTl.position)
+            if (tlPos.x < 0 || tlPos.x > cpw || tlPos.y < 0 || tlPos.y > cph) continue
             drawTextLabel(doc, effectiveTl, toPage)
+          }
+          for (const img of project.imageOverlays) {
+            const overridePos = layout?.overlayPositions?.[img.id]
+            const effectiveImg = overridePos ? { ...img, position: overridePos } : img
+            const imgPos = toPage(effectiveImg.position)
+            if (imgPos.x < 0 || imgPos.x > cpw || imgPos.y < 0 || imgPos.y > cph) continue
+            drawImageOverlay(doc, effectiveImg, toPage)
           }
 
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
@@ -1333,11 +1365,14 @@ export async function exportCoursePdf(
                   ?? options.sheetPositions?.[`${oKey}:part${pi}`]
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
+                if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
                 drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, courseScale, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip)
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
-              drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+              if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
+                drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+              }
             }
           }
 

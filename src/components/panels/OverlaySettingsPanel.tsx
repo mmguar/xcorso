@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Check, Trash2, X } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Check, Trash2, X, RefreshCw } from 'lucide-react'
 import { useStore } from '../../store'
-import type { ScaleBar, TextLabel } from '../../types'
+import type { ScaleBar, TextLabel, ImageOverlay } from '../../types'
 
 function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   const updateScaleBar = useStore(s => s.updateScaleBar)
@@ -211,6 +211,131 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
   )
 }
 
+function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
+  const updateImageOverlay = useStore(s => s.updateImageOverlay)
+  const deleteImageOverlay = useStore(s => s.deleteImageOverlay)
+  const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
+
+  const [width, setWidth] = useState(String(Math.round(img.widthMm * 10) / 10))
+  const [height, setHeight] = useState(String(Math.round(img.heightMm * 10) / 10))
+  const aspect = img.widthMm / img.heightMm
+
+  useEffect(() => {
+    setWidth(String(Math.round(img.widthMm * 10) / 10))
+    setHeight(String(Math.round(img.heightMm * 10) / 10))
+  }, [img.id, img.widthMm, img.heightMm])
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-700">Image</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { replaceInputRef.current!.value = ''; replaceInputRef.current!.click() }}
+            className="text-gray-400 hover:text-orange-600 transition-colors"
+            title="Replace image"
+          >
+            <RefreshCw size={13} />
+          </button>
+          <button
+            onClick={() => { deleteImageOverlay(img.id) }}
+            className="text-gray-400 hover:text-red-500 transition-colors"
+            title="Delete"
+          >
+            <Trash2 size={13} />
+          </button>
+          <button
+            onClick={() => setSelectedOverlay(null)}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = () => {
+            const dataUrl = reader.result as string
+            const el = new Image()
+            el.onload = () => {
+              const newAspect = el.naturalHeight / el.naturalWidth
+              updateImageOverlay(img.id, {
+                dataUrl, filename: file.name,
+                heightMm: img.widthMm * newAspect,
+              })
+            }
+            el.src = dataUrl
+          }
+          reader.readAsDataURL(file)
+        }}
+      />
+
+      <span className="text-[10px] text-gray-400 truncate" title={img.filename}>{img.filename}</span>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Width (mm)</span>
+        <input
+          type="number"
+          min={1}
+          step={0.5}
+          value={width}
+          onChange={e => setWidth(e.target.value)}
+          onBlur={() => {
+            const n = parseFloat(width)
+            if (!isNaN(n) && n >= 1) updateImageOverlay(img.id, { widthMm: n, heightMm: n / aspect })
+            else setWidth(String(Math.round(img.widthMm * 10) / 10))
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        />
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Height (mm)</span>
+        <input
+          type="number"
+          min={1}
+          step={0.5}
+          value={height}
+          onChange={e => setHeight(e.target.value)}
+          onBlur={() => {
+            const n = parseFloat(height)
+            if (!isNaN(n) && n >= 1) updateImageOverlay(img.id, { heightMm: n, widthMm: n * aspect })
+            else setHeight(String(Math.round(img.heightMm * 10) / 10))
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        />
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Background</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={img.bgAlpha}
+          onChange={e => updateImageOverlay(img.id, { bgAlpha: parseFloat(e.target.value) })}
+          className="flex-1 min-w-0 h-1 accent-orange-600"
+        />
+        <span className="text-[10px] text-gray-400 w-8 text-right">
+          {Math.round(img.bgAlpha * 100)}%
+        </span>
+      </label>
+    </div>
+  )
+}
+
 export function OverlaySettingsPanel() {
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const project = useStore(s => s.project)
@@ -219,13 +344,15 @@ export function OverlaySettingsPanel() {
 
   const sb = project.scaleBars.find(s => s.id === selectedOverlayId)
   const tl = project.textLabels.find(t => t.id === selectedOverlayId)
+  const img = project.imageOverlays.find(o => o.id === selectedOverlayId)
 
-  if (!sb && !tl) return null
+  if (!sb && !tl && !img) return null
 
   return (
     <div className="absolute top-2 left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
       {sb && <ScaleBarSettings key={sb.id} sb={sb} />}
       {tl && <TextLabelSettings key={tl.id} tl={tl} />}
+      {img && <ImageOverlaySettings key={img.id} img={img} />}
     </div>
   )
 }

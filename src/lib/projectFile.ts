@@ -50,6 +50,7 @@ function validateProject(raw: unknown): Project {
   if (!Array.isArray(obj.annotations)) obj.annotations = []
   if (!Array.isArray(obj.scaleBars)) obj.scaleBars = []
   if (!Array.isArray(obj.textLabels)) obj.textLabels = []
+  if (!Array.isArray(obj.imageOverlays)) obj.imageOverlays = []
 
   const mapScale = typeof mc.scale === 'number' && isFinite(mc.scale) && mc.scale > 0 ? mc.scale : 10000
   for (const sb of obj.scaleBars as Record<string, unknown>[]) {

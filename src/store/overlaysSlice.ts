@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { MapPoint, ScaleBar, TextLabel } from '../types'
+import type { MapPoint, ScaleBar, TextLabel, ImageOverlay } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
 export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpers) {
@@ -66,6 +66,52 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
         if (i === -1) return
         p.textLabels = p.textLabels.map((t, j) => (j === i ? { ...t, position } : t))
       })
+    },
+
+    addImageOverlay: (position: MapPoint, dataUrl: string, filename: string, naturalWidth: number, naturalHeight: number): ImageOverlay => {
+      const defaultWidthMm = 30
+      const aspect = naturalHeight / naturalWidth
+      const img: ImageOverlay = {
+        id: uuidv4(), position, widthMm: defaultWidthMm, heightMm: defaultWidthMm * aspect,
+        dataUrl, filename, bgAlpha: 0,
+      }
+      h.mutateProject(p => { p.imageOverlays.push(img) })
+      set(state => ({ editor: { ...state.editor, selectedOverlayId: img.id, pendingImage: null } }))
+      return img
+    },
+
+    updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>) => {
+      h.mutateProject(p => {
+        const i = p.imageOverlays.findIndex(o => o.id === id)
+        if (i !== -1) p.imageOverlays[i] = { ...p.imageOverlays[i], ...updates }
+      })
+    },
+
+    deleteImageOverlay: (id: string) => {
+      h.mutateProject(p => { p.imageOverlays = p.imageOverlays.filter(o => o.id !== id) })
+      set(state => ({
+        editor: { ...state.editor, selectedOverlayId: state.editor.selectedOverlayId === id ? null : state.editor.selectedOverlayId },
+      }))
+    },
+
+    moveImageOverlay: (id: string, position: MapPoint) => {
+      h.mutateProjectSilent(p => {
+        const i = p.imageOverlays.findIndex(o => o.id === id)
+        if (i === -1) return
+        p.imageOverlays = p.imageOverlays.map((o, j) => (j === i ? { ...o, position } : o))
+      })
+    },
+
+    resizeImageOverlay: (id: string, widthMm: number, heightMm: number) => {
+      h.mutateProjectSilent(p => {
+        const i = p.imageOverlays.findIndex(o => o.id === id)
+        if (i === -1) return
+        p.imageOverlays = p.imageOverlays.map((o, j) => (j === i ? { ...o, widthMm, heightMm } : o))
+      })
+    },
+
+    setPendingImage: (data: { dataUrl: string; filename: string; naturalWidth: number; naturalHeight: number } | null) => {
+      set(state => ({ editor: { ...state.editor, pendingImage: data } }))
     },
   }
 }

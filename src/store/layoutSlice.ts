@@ -2,6 +2,48 @@ import type { MapPoint, CourseLayout, LayoutElementPosition, LayoutDefaults, Map
 import type { SetState, GetState, StoreHelpers } from './types'
 import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
 
+/** Swap border dimensions (and margins) when page orientation changes. */
+function flipMapBorder(border: MapBorder): MapBorder {
+  return {
+    ...border,
+    x: border.y,
+    y: border.x,
+    width: border.height,
+    height: border.width,
+  }
+}
+
+function pageDimensions(pageSize: CourseLayout['pageSize'], orientation: CourseLayout['orientation']) {
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  return {
+    w: orientation === 'landscape' ? base.h : base.w,
+    h: orientation === 'landscape' ? base.w : base.h,
+  }
+}
+
+function resizeMapBorderToPage(border: MapBorder, pageSize: CourseLayout['pageSize'], orientation: CourseLayout['orientation']): MapBorder {
+  const { w: pw, h: ph } = pageDimensions(pageSize, orientation)
+  const rightMargin = pw - border.x - border.width > 0 ? pw - border.x - border.width : border.x
+  const bottomMargin = ph - border.y - border.height > 0 ? ph - border.y - border.height : border.y
+  return {
+    ...border,
+    width: Math.max(20, pw - border.x - rightMargin),
+    height: Math.max(20, ph - border.y - bottomMargin),
+  }
+}
+
+function adjustMapBorderForLayoutChange(
+  border: MapBorder,
+  prev: { pageSize: CourseLayout['pageSize']; orientation: CourseLayout['orientation'] },
+  next: { pageSize: CourseLayout['pageSize']; orientation: CourseLayout['orientation'] },
+): MapBorder {
+  const orientChanged = prev.orientation !== next.orientation
+  const pageChanged = prev.pageSize !== next.pageSize
+  if (orientChanged && !pageChanged) return flipMapBorder(border)
+  if (pageChanged) return resizeMapBorderToPage(border, next.pageSize, next.orientation)
+  return border
+}
+
 export function getLayoutDefaults(get: GetState): LayoutDefaults {
   const project = get().project!
   return project.layoutDefaults ?? {
@@ -96,7 +138,19 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (course?.layout) Object.assign(course.layout, updates)
+        if (!course?.layout) return
+        const prev = {
+          pageSize: course.layout.pageSize,
+          orientation: course.layout.orientation,
+        }
+        Object.assign(course.layout, updates)
+        if (course.layout.mapBorder && (updates.pageSize != null || updates.orientation != null)) {
+          course.layout.mapBorder = adjustMapBorderForLayoutChange(
+            course.layout.mapBorder,
+            prev,
+            { pageSize: course.layout.pageSize, orientation: course.layout.orientation },
+          )
+        }
       })
     },
 
@@ -111,11 +165,11 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         Object.assign(p.layoutDefaults, updates)
 
         if (p.layoutDefaults.mapBorder && (updates.pageSize != null || updates.orientation != null)) {
-          const base = PAGE_SIZES[p.layoutDefaults.pageSize] ?? PAGE_SIZES.a4
-          const pw = p.layoutDefaults.orientation === 'landscape' ? base.h : base.w
-          const ph = p.layoutDefaults.orientation === 'landscape' ? base.w : base.h
-          p.layoutDefaults.mapBorder.width = pw - 2 * p.layoutDefaults.mapBorder.x
-          p.layoutDefaults.mapBorder.height = ph - 2 * p.layoutDefaults.mapBorder.y
+          p.layoutDefaults.mapBorder = adjustMapBorderForLayoutChange(
+            p.layoutDefaults.mapBorder,
+            { pageSize: prev.pageSize, orientation: prev.orientation },
+            { pageSize: p.layoutDefaults.pageSize, orientation: p.layoutDefaults.orientation },
+          )
         }
 
         for (const course of p.courses) {
@@ -137,10 +191,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
             if (matchesOld) {
               const nb = p.layoutDefaults.mapBorder
               if (nb) {
-                const base = PAGE_SIZES[course.layout.pageSize] ?? PAGE_SIZES.a4
-                const pw = course.layout.orientation === 'landscape' ? base.h : base.w
-                const ph = course.layout.orientation === 'landscape' ? base.w : base.h
-                course.layout.mapBorder = { ...nb, width: pw - 2 * nb.x, height: ph - 2 * nb.y }
+                course.layout.mapBorder = { ...nb }
               } else {
                 course.layout.mapBorder = undefined
               }
@@ -148,11 +199,11 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           }
 
           if ((pageSizeChanged || orientationChanged) && course.layout.mapBorder && !('mapBorder' in updates)) {
-            const base = PAGE_SIZES[course.layout.pageSize] ?? PAGE_SIZES.a4
-            const pw = course.layout.orientation === 'landscape' ? base.h : base.w
-            const ph = course.layout.orientation === 'landscape' ? base.w : base.h
-            course.layout.mapBorder.width = pw - 2 * course.layout.mapBorder.x
-            course.layout.mapBorder.height = ph - 2 * course.layout.mapBorder.y
+            course.layout.mapBorder = adjustMapBorderForLayoutChange(
+              course.layout.mapBorder,
+              { pageSize: prev.pageSize, orientation: prev.orientation },
+              { pageSize: course.layout.pageSize, orientation: course.layout.orientation },
+            )
           }
         }
       })

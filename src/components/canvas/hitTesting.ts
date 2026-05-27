@@ -1,6 +1,6 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel } from '../../lib/courseUtils'
-import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
 
 export const HIT_PX = 20
 
@@ -122,10 +122,14 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
 export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport, project: Project): Annotation | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const hitR = HIT_PX / vp.scale
+  const upm = unitsPerMm(project.map)
+  const spec = resolveSpec(project.spec)
+  const sf = symbolScaleFactor(spec, project.map.scale)
+  const d = getAnnotationDims(sf * upm)
   for (const ann of project.annotations) {
     if (ann.type === 'crossing_point') {
       const p = ann.points[0]
-      if (p && Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < hitR) return ann
+      if (p && Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < d.crossH) return ann
     } else {
       for (let i = 1; i < ann.points.length; i++) {
         if (distToSegment(mapPt, ann.points[i - 1], ann.points[i]) < hitR) return ann
@@ -138,7 +142,30 @@ export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport,
   return null
 }
 
-export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' } | null {
+export function findCrossingPointRotationHandle(screenX: number, screenY: number, vp: Viewport, project: Project, selectedAnnotationId: string | null): Annotation | null {
+  if (!selectedAnnotationId) return null
+  const ann = project.annotations.find(a => a.id === selectedAnnotationId)
+  if (!ann || ann.type !== 'crossing_point' || !ann.points[0]) return null
+
+  const upm = unitsPerMm(project.map)
+  const spec = resolveSpec(project.spec)
+  const sf = symbolScaleFactor(spec, project.map.scale)
+  const d = getAnnotationDims(sf * upm)
+  const handleR = 1 * upm
+
+  const center = ann.points[0]
+  const rotation = (ann.rotation ?? 0) * Math.PI / 180
+  const handleLocalY = -(d.crossH + handleR * 2)
+  const handleX = center.x - handleLocalY * Math.sin(rotation)
+  const handleY = center.y + handleLocalY * Math.cos(rotation)
+
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const dist = Math.hypot(mapPt.x - handleX, mapPt.y - handleY)
+  if (dist < handleR + HIT_PX / vp.scale) return ann
+  return null
+}
+
+export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' | 'image' } | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
   const hitSlop = HIT_PX / vp.scale
@@ -169,6 +196,16 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
     if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
         mapPt.y >= pos.y - fontSize - hitSlop && mapPt.y <= pos.y - fontSize + h + hitSlop) {
       return { id: tl.id, kind: 'text' }
+    }
+  }
+
+  for (const img of project.imageOverlays) {
+    const pos = posOverrides?.[img.id] ?? img.position
+    const w = img.widthMm * upm
+    const h = img.heightMm * upm
+    if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
+        mapPt.y >= pos.y - hitSlop && mapPt.y <= pos.y + h + hitSlop) {
+      return { id: img.id, kind: 'image' }
     }
   }
 

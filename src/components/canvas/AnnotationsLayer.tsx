@@ -19,6 +19,7 @@ interface Props {
   pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | null
   map: MapConfig
   spec: EventSpec
+  selectedAnnotationId: string | null
 }
 
 function dims(upm: number, scale: number, spec: EventSpec): AnnotationDims {
@@ -68,23 +69,37 @@ function ForbiddenRoute({ points, upm, scale, color, spec }: {
 // ── 710 Crossing point ───────────────────────────────────────────────────────
 // Two outward-curving arcs like )( marking a mandatory crossing.
 
-function CrossingPoint({ center, upm, scale, rotation, color, spec }: {
-  center: MapPoint; upm: number; scale: number; rotation: number; color: string; spec: EventSpec
+export function crossingPointControlX(d: AnnotationDims): number {
+  const halfGapCenter = (d.crossGap + d.crossW) / 2
+  return 2 * halfGapCenter - d.crossHalf
+}
+
+function CrossingPoint({ center, upm, scale, rotation, color, spec, selected }: {
+  center: MapPoint; upm: number; scale: number; rotation: number; color: string; spec: EventSpec; selected: boolean
 }) {
   const { x, y } = center
   const d = dims(upm, scale, spec)
-  const hw = d.crossHalf
+  const spread = d.crossHalf
   const hh = d.crossH
+  const cx = crossingPointControlX(d)
 
-  // Left arc ) — curves outward to the left
-  const leftD = `M ${x  - 0.8*hw } ${y - hh} Q ${x + 0.01*hw} ${y} ${x - 0.8*hw } ${y + hh}`
-  // Right arc ( — curves outward to the right
-  const rightD = `M ${x + 0.8*hw } ${y - hh} Q ${x - 0.01*hw} ${y} ${x + 0.8*hw } ${y + hh}`
+  const rightD = `M ${x + spread} ${y - hh} Q ${x + cx} ${y} ${x + spread} ${y + hh}`
+  const leftD = `M ${x - spread} ${y - hh} Q ${x - cx} ${y} ${x - spread} ${y + hh}`
+
+  const strokeW = 0.2 * upm
+  const handleR = 1 * upm
 
   return (
     <g transform={`rotate(${rotation}, ${x}, ${y})`}>
       <path d={rightD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
       <path d={leftD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
+      {selected && (
+        <circle
+          cx={x} cy={y - hh - handleR * 2}
+          r={handleR}
+          fill="#a626ff" stroke="white" strokeWidth={strokeW}
+        />
+      )}
     </g>
   )
 }
@@ -119,7 +134,7 @@ function OutOfBoundsArea({ points, upm, scale, color, patternId, spec }: {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, map, spec }: Props) {
+export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, map, spec, selectedAnnotationId }: Props) {
   useRenderTracker('AnnotationsLayer')
   const color = '#a626ff'
   const baseId = useId()
@@ -133,7 +148,8 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
           return (
             <g key={ann.id}>
               <CrossingPoint center={ann.points[0]} upm={upm} scale={scale}
-                rotation={ann.rotation ?? 0} color={color} spec={spec} />
+                rotation={ann.rotation ?? 0} color={color} spec={spec}
+                selected={ann.id === selectedAnnotationId} />
             </g>
           )
         }
@@ -163,7 +179,7 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
       {pendingPoints.length > 0 && pendingType === 'crossing_point' && (
         <g opacity={0.5}>
           <CrossingPoint center={pendingPoints[0]} upm={upm} scale={scale}
-            rotation={0} color={color} spec={spec} />
+            rotation={0} color={color} spec={spec} selected={false} />
         </g>
       )}
       {pendingPoints.length >= 2 && pendingType === 'out_of_bounds' && (
