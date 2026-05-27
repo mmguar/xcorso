@@ -140,7 +140,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     setSelectedControl: (id) => {
-      set(state => ({ editor: { ...state.editor, selectedControlId: id } }))
+      set(state => ({ editor: { ...state.editor, selectedControlId: id, selectedAnnotationId: id ? null : state.editor.selectedAnnotationId } }))
     },
 
     setDraggingControl: (id) => {
@@ -156,6 +156,7 @@ export const useStore = create<Store>((set, get) => {
           selectedSubmapIndex: null,
           selectedControlId: id ? null : state.editor.selectedControlId,
           selectedOverlayId: id ? null : state.editor.selectedOverlayId,
+          selectedAnnotationId: id ? null : state.editor.selectedAnnotationId,
           activeTool: id ? (state.editor.activeTool === 'gap' || state.editor.activeTool === 'bend' ? state.editor.activeTool : 'select') : state.editor.activeTool,
           pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
         },
@@ -168,7 +169,7 @@ export const useStore = create<Store>((set, get) => {
 
     setSelectedOverlay: (id) => {
       set(state => ({
-        editor: { ...state.editor, selectedOverlayId: id, selectedControlId: id ? null : state.editor.selectedControlId },
+        editor: { ...state.editor, selectedOverlayId: id, selectedControlId: id ? null : state.editor.selectedControlId, selectedAnnotationId: id ? null : state.editor.selectedAnnotationId },
       }))
     },
 

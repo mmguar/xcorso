@@ -1,6 +1,6 @@
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
-  AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
+  Annotation, AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, ImageOverlay, EventSpec, FinishType,
   CourseLayout, LayoutElementPosition, LayoutDefaults,
 } from '../types'
@@ -12,6 +12,7 @@ export interface EditorState {
   selectedCourseId: string | null
   selectedVariationId: string | null
   selectedOverlayId: string | null
+  selectedAnnotationId: string | null
   draggingControlId: string | null
   viewport: Viewport
   mapSaturation: number
@@ -103,6 +104,12 @@ export interface AppActions {
   commitAnnotation: (type: AnnotationType) => void
   cancelAnnotation: () => void
   deleteAnnotation: (id: string) => void
+  updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => void
+  beginMoveAnnotation: () => void
+  moveAnnotation: (id: string, position: MapPoint) => void
+  beginRotateAnnotation: () => void
+  rotateAnnotation: (id: string, rotation: number) => void
+  setSelectedAnnotation: (id: string | null) => void
 
   addScaleBar: (position: MapPoint, scale: number) => ScaleBar
   updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>) => void
@@ -178,6 +185,7 @@ export const defaultEditor: EditorState = {
   selectedCourseId: null,
   selectedVariationId: null,
   selectedOverlayId: null,
+  selectedAnnotationId: null,
   draggingControlId: null,
   viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,

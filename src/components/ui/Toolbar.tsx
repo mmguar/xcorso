@@ -101,6 +101,8 @@ export function Toolbar() {
           else if (proj?.imageOverlays.some(o => o.id === oid)) state.deleteImageOverlay(oid)
           return
         }
+        const aid = state.editor.selectedAnnotationId
+        if (aid) { e.preventDefault(); state.deleteAnnotation(aid); return }
       }
       if (useStore.getState().editor.layoutMode) {
         if (e.key === 'Escape') exitLayoutMode()
