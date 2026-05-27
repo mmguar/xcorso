@@ -80,15 +80,15 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
 
       {border ? (
         <>
-          {/* Grey mask between page edge and border rect — four strips */}
+          {/* Grey mask between page edge and border rect — four strips (draggable to reposition border) */}
           {/* Top strip */}
-          <rect x={rx} y={ry} width={rw} height={by - ry} fill="white" opacity={0.7} />
+          <rect x={rx} y={ry} width={rw} height={by - ry} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
           {/* Bottom strip */}
-          <rect x={rx} y={by + bh} width={rw} height={(ry + rh) - (by + bh)} fill="white" opacity={0.7} />
+          <rect x={rx} y={by + bh} width={rw} height={(ry + rh) - (by + bh)} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
           {/* Left strip */}
-          <rect x={rx} y={by} width={bx - rx} height={bh} fill="white" opacity={0.7} />
+          <rect x={rx} y={by} width={bx - rx} height={bh} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
           {/* Right strip */}
-          <rect x={bx + bw} y={by} width={(rx + rw) - (bx + bw)} height={bh} fill="white" opacity={0.7} />
+          <rect x={bx + bw} y={by} width={(rx + rw) - (bx + bw)} height={bh} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
           {/* Border line */}
           <rect
             x={bx} y={by} width={bw} height={bh}

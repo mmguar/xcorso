@@ -1315,11 +1315,15 @@ export async function exportCoursePdf(
           for (const sb of project.scaleBars) {
             const overridePos = layout?.overlayPositions?.[sb.id]
             const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
+            const sbPos = toPage(effectiveSb.position)
+            if (sbPos.x < 0 || sbPos.x > cpw || sbPos.y < 0 || sbPos.y > cph) continue
             drawScaleBar(doc, effectiveSb, toPage, courseScale)
           }
           for (const tl of project.textLabels) {
             const overridePos = layout?.overlayPositions?.[tl.id]
             const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
+            const tlPos = toPage(effectiveTl.position)
+            if (tlPos.x < 0 || tlPos.x > cpw || tlPos.y < 0 || tlPos.y > cph) continue
             drawTextLabel(doc, effectiveTl, toPage)
           }
 
@@ -1333,11 +1337,14 @@ export async function exportCoursePdf(
                   ?? options.sheetPositions?.[`${oKey}:part${pi}`]
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
+                if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
                 drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, courseScale, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip)
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
-              drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+              if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
+                drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+              }
             }
           }
 
