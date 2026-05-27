@@ -797,8 +797,10 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
 
 function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: number, spec: EventSpec) {
   const d = annotationDimsMm(mapScale, spec)
-  const hw = d.crossHalf
+  const spread = d.crossHalf
   const hh = d.crossH
+  const halfGapCenter = (d.crossGap + d.crossW) / 2
+  const cx = 2 * halfGapCenter - spread
   const { x, y } = center
   const cos = Math.cos(rotation * Math.PI / 180)
   const sin = Math.sin(rotation * Math.PI / 180)
@@ -807,30 +809,28 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: 
     return { x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }
   }
 
-  // Same control points as AnnotationsLayer CrossingPoint (quadratic beziers)
-  const l0 = rot(x - 0.8 * hw, y - hh)
-  const lq = rot(x + 0.01 * hw, y)
-  const l1 = rot(x - 0.8 * hw, y + hh)
+  const r0 = rot(x + spread, y - hh)
+  const rq = rot(x + cx, y)
+  const r1 = rot(x + spread, y + hh)
 
-  const r0 = rot(x + 0.8 * hw, y - hh)
-  const rq = rot(x - 0.01 * hw, y)
-  const r1 = rot(x + 0.8 * hw, y + hh)
+  const l0 = rot(x - spread, y - hh)
+  const lq = rot(x - cx, y)
+  const l1 = rot(x - spread, y + hh)
 
   doc.setLineWidth(d.crossW)
   doc.setLineCap(1)
 
-  // Quadratic bezier → cubic: C1 = P0 + 2/3(Q-P0), C2 = P1 + 2/3(Q-P1)
-  doc.moveTo(l0.x, l0.y)
-  doc.curveTo(
-    l0.x + 2 / 3 * (lq.x - l0.x), l0.y + 2 / 3 * (lq.y - l0.y),
-    l1.x + 2 / 3 * (lq.x - l1.x), l1.y + 2 / 3 * (lq.y - l1.y),
-    l1.x, l1.y,
-  )
   doc.moveTo(r0.x, r0.y)
   doc.curveTo(
     r0.x + 2 / 3 * (rq.x - r0.x), r0.y + 2 / 3 * (rq.y - r0.y),
     r1.x + 2 / 3 * (rq.x - r1.x), r1.y + 2 / 3 * (rq.y - r1.y),
     r1.x, r1.y,
+  )
+  doc.moveTo(l0.x, l0.y)
+  doc.curveTo(
+    l0.x + 2 / 3 * (lq.x - l0.x), l0.y + 2 / 3 * (lq.y - l0.y),
+    l1.x + 2 / 3 * (lq.x - l1.x), l1.y + 2 / 3 * (lq.y - l1.y),
+    l1.x, l1.y,
   )
   doc.stroke()
 }

@@ -28,6 +28,36 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
 
     deleteAnnotation: (id: string) => {
       h.mutateProject(p => { p.annotations = p.annotations.filter(a => a.id !== id) })
+      set(state => ({
+        editor: { ...state.editor, selectedAnnotationId: state.editor.selectedAnnotationId === id ? null : state.editor.selectedAnnotationId },
+      }))
+    },
+
+    updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => {
+      h.mutateProject(p => {
+        const i = p.annotations.findIndex(a => a.id === id)
+        if (i !== -1) p.annotations[i] = { ...p.annotations[i], ...updates }
+      })
+    },
+
+    beginMoveAnnotation: () => h.pushUndoSnapshot(),
+
+    moveAnnotation: (id: string, position: MapPoint) => {
+      h.mutateProjectSilent(p => {
+        p.annotations = p.annotations.map(a => a.id === id ? { ...a, points: [position, ...a.points.slice(1)] } : a)
+      })
+    },
+
+    beginRotateAnnotation: () => h.pushUndoSnapshot(),
+
+    rotateAnnotation: (id: string, rotation: number) => {
+      h.mutateProjectSilent(p => {
+        p.annotations = p.annotations.map(a => a.id === id ? { ...a, rotation } : a)
+      })
+    },
+
+    setSelectedAnnotation: (id: string | null) => {
+      set(state => ({ editor: { ...state.editor, selectedAnnotationId: id } }))
     },
   }
 }

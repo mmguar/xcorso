@@ -15,13 +15,14 @@ import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
-import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
+  findCrossingPointRotationHandle,
 } from './hitTesting'
 import { handleGapTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
@@ -97,6 +98,25 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
             fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={1 / vp.scale} />
         )
       })}
+      {project.annotations.filter(a => a.type === 'crossing_point').map(ann => {
+        const p = ann.points[0]
+        if (!p) return null
+        const annSf = sf * upm
+        const d = getAnnotationDims(annSf)
+        const handleR = 1 * upm
+        const rotation = (ann.rotation ?? 0) * Math.PI / 180
+        const handleLocalY = -(d.crossH + handleR * 2)
+        const handleX = p.x - handleLocalY * Math.sin(rotation)
+        const handleY = p.y + handleLocalY * Math.cos(rotation)
+        return (
+          <g key={`ann-${ann.id}`}>
+            <circle cx={p.x} cy={p.y} r={d.crossH}
+              fill="rgba(255,0,255,0.1)" stroke="rgba(255,0,255,0.5)" strokeWidth={1 / vp.scale} />
+            <circle cx={handleX} cy={handleY} r={handleR}
+              fill="rgba(255,128,0,0.1)" stroke="rgba(255,128,0,0.5)" strokeWidth={1 / vp.scale} />
+          </g>
+        )
+      })}
       {controls.map(c => {
         const cc = course?.controls.find(cc => cc.controlId === c.id)
         const offset = cc?.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
@@ -169,6 +189,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
+  const selectedAnnotationId = useStore(s => s.editor.selectedAnnotationId)
   const appearance = useStore(s => s.editor.appearance)
   const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
@@ -299,6 +320,12 @@ export function MapCanvas({ loadedMap }: Props) {
 
     let dragBorderTranslate: { sx: number; sy: number; ox: number; oy: number } | null = null
     let dragBorderTranslateStarted = false
+
+    let dragRotation: { annId: string; center: MapPoint } | null = null
+    let dragRotationStarted = false
+
+    let dragAnnotation: { annId: string; dx: number; dy: number } | null = null
+    let dragAnnotationStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -533,6 +560,22 @@ export function MapCanvas({ loadedMap }: Props) {
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
             dragStarted = false
           } else {
+            // Check for crossing point rotation handle
+            const rotHit = findCrossingPointRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+            if (rotHit && rotHit.points[0]) {
+              dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
+              dragRotationStarted = false
+              return
+            }
+
+            // Check for crossing point / annotation drag
+            const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
+            if (annHit && annHit.type === 'crossing_point' && annHit.points[0]) {
+              const mapPt2 = screenToMap(sx, sy, vpRef.current)
+              dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
+              dragAnnotationStarted = false
+            }
+
             // Check for image resize handle first
             const selectedImg = state.editor.selectedOverlayId
               ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
@@ -744,6 +787,39 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragAnnotation && pos.size === 1) {
+        if (!dragAnnotationStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          const st = useStore.getState()
+          st.beginMoveAnnotation()
+          st.setSelectedAnnotation(dragAnnotation.annId)
+          st.setSelectedControl(null)
+          st.setSelectedOverlay(null)
+          dragAnnotationStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        useStore.getState().moveAnnotation(dragAnnotation.annId, { x: mapPt.x - dragAnnotation.dx, y: mapPt.y - dragAnnotation.dy })
+        return
+      }
+
+      if (dragRotation && pos.size === 1) {
+        if (!dragRotationStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginRotateAnnotation()
+          dragRotationStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const dx = mapPt.x - dragRotation.center.x
+        const dy = mapPt.y - dragRotation.center.y
+        const angle = Math.atan2(dx, -dy) * 180 / Math.PI
+        useStore.getState().rotateAnnotation(dragRotation.annId, angle)
+        return
+      }
+
       if (dragResize && pos.size === 1) {
         if (!dragResizeStarted) {
           const start = down.get(e.pointerId)
@@ -871,6 +947,12 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragBorderTranslate && dragBorderTranslateStarted) { dragBorderTranslate = null; dragBorderTranslateStarted = false; return }
       dragBorderTranslate = null; dragBorderTranslateStarted = false
 
+      if (dragAnnotation && dragAnnotationStarted) { dragAnnotation = null; dragAnnotationStarted = false; return }
+      dragAnnotation = null; dragAnnotationStarted = false
+
+      if (dragRotation && dragRotationStarted) { dragRotation = null; dragRotationStarted = false; return }
+      dragRotation = null; dragRotationStarted = false
+
       if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
       dragResize = null; dragResizeStarted = false
 
@@ -928,6 +1010,7 @@ export function MapCanvas({ loadedMap }: Props) {
         } else {
           state.setSelectedControl(hitControl.id)
           state.setSelectedOverlay(null)
+          state.setSelectedAnnotation(null)
         }
         return
       }
@@ -937,8 +1020,17 @@ export function MapCanvas({ loadedMap }: Props) {
         if (overlayHit) {
           state.setSelectedOverlay(overlayHit.id)
           state.setSelectedControl(null)
+          state.setSelectedAnnotation(null)
           return
         }
+        const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
+        if (annHit && annHit.type === 'crossing_point') {
+          state.setSelectedAnnotation(annHit.id)
+          state.setSelectedControl(null)
+          state.setSelectedOverlay(null)
+          return
+        }
+        state.setSelectedAnnotation(null)
       }
 
       if (selectedCourseId) {
@@ -1195,6 +1287,7 @@ export function MapCanvas({ loadedMap }: Props) {
             pendingType={getAnnotationType()}
             map={map}
             spec={resolveSpec(projectSpec, selectedCourse?.spec)}
+            selectedAnnotationId={selectedAnnotationId}
           />
           <OverlaysLayer
             scaleBars={scaleBars}

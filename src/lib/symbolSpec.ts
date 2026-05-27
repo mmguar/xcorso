@@ -63,6 +63,7 @@ export interface AnnotationDims {
   crossW: number
   crossHalf: number
   crossH: number
+  crossGap: number
   hatchSpace: number
   hatchW: number
   boundaryW: number
@@ -74,9 +75,10 @@ export function getAnnotationDims(scaleFactor: number): AnnotationDims {
     routeXArm:   1.5  * scaleFactor,
     routeXW:     0.35 * scaleFactor,
     routeXSpace: 5.0  * scaleFactor,
-    crossW:      0.6  * scaleFactor,
-    crossHalf:   1.5  * scaleFactor,
+    crossW:      0.2  * scaleFactor,
+    crossHalf:   1.0  * scaleFactor,
     crossH:      1.5  * scaleFactor,
+    crossGap:    0.6  * scaleFactor,
     hatchSpace:  1.2  * scaleFactor,
     hatchW:      0.2  * scaleFactor,
     boundaryW:   0.7  * scaleFactor,
