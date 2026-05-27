@@ -134,19 +134,6 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={course.controls.map(cc => cc.id)} strategy={verticalListSortingStrategy}>
           <table className="border-collapse" style={{ fontSize: 11 }}>
-            <thead>
-              <tr>
-                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL, minWidth: CELL }}>#</th>
-                <th className={`${BORDER} bg-gray-50 px-1`} style={{ width: CELL + 8, minWidth: CELL + 8 }}>Code</th>
-                {columns.map(col => (
-                  <th key={col.id} className={`${BORDER} bg-gray-50 px-0.5 text-center`}
-                    style={{ width: CELL, minWidth: CELL }} title={col.label}>
-                    {col.id}
-                  </th>
-                ))}
-                {showExtraCol && <th className="px-1" />}
-              </tr>
-            </thead>
             <tbody>
               <tr>
                 <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>

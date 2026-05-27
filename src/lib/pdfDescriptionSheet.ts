@@ -17,7 +17,6 @@ const PATH_SW = (12.5 / 200) * CELL
 const CIRCLE_SW = (10 / 200) * CELL
 const FILL_SW = (1 / 200) * CELL
 const INSET = 0.82
-const COL_HEADER_H = CELL * 0.6
 
 function fmtDist(m: number): string {
   const rounded = Math.round(m / 10) * 10
@@ -26,8 +25,7 @@ function fmtDist(m: number): string {
 }
 
 function maxControlRows(pageH: number): number {
-  const headerH = CELL + COL_HEADER_H
-  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - headerH) / CELL)
+  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - CELL) / CELL)
 }
 
 export function descriptionSheetPageCount(
@@ -437,7 +435,7 @@ export function descriptionSheetSize(
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const rowCount = course.controls.filter(cc => controlMap.has(cc.controlId)).length + (trailingFlip ? 1 : 0)
   if (rowCount === 0) return { width: 0, height: 0 }
-  const height = CELL + COL_HEADER_H + rowCount * CELL
+  const height = CELL + rowCount * CELL
   const width = course.textDescriptions
     ? 2 * CELL + estimateDescColumnWidth(course, controls)
     : GRID_W
@@ -467,7 +465,7 @@ export function descriptionSheetPartSizes(
     const end = boundaries[p + 1]
     let rowCount = end - start
     if (p === boundaries.length - 2 && trailingFlip) rowCount++
-    const headerH = p === 0 ? CELL + COL_HEADER_H : COL_HEADER_H
+    const headerH = p === 0 ? CELL : 0
     sizes.push({ width, height: headerH + rowCount * CELL })
   }
 
@@ -519,29 +517,6 @@ export function drawDescriptionSheetOverlay(
   if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
   doc.text(label, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
   y += CELL
-
-  // Column headers
-  doc.setFontSize(5.5)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(120, 120, 120)
-  doc.setDrawColor(0, 0, 0)
-  doc.setLineWidth(LINE_W)
-  if (textDescriptions) {
-    doc.rect(gridX, y, CELL, COL_HEADER_H, 'S')
-    doc.text('#', gridX + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    doc.rect(gridX + CELL, y, CELL, COL_HEADER_H, 'S')
-    doc.text('Code', gridX + CELL + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    doc.rect(gridX + 2 * CELL, y, descW, COL_HEADER_H, 'S')
-    doc.text('Description', gridX + 2 * CELL + descW / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-  } else {
-    const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
-    for (let c = 0; c < COLS; c++) {
-      const cx = gridX + c * CELL
-      doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
-      doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    }
-  }
-  y += COL_HEADER_H
 
   // Separate finish from other controls
   const nonFinish = resolved.filter(c => c.type !== 'finish')
@@ -657,7 +632,7 @@ export function drawDescriptionSheetOverlayPart(
   const finish = partControls.find(c => c.type === 'finish')
 
   const rowCount = partControls.length + (isLastPart && trailingFlip ? 1 : 0)
-  const headerH = isFirstPart ? CELL + COL_HEADER_H : COL_HEADER_H
+  const headerH = isFirstPart ? CELL : 0
   const height = headerH + rowCount * CELL
 
   doc.setFillColor(255, 255, 255)
@@ -680,29 +655,6 @@ export function drawDescriptionSheetOverlayPart(
     doc.text(label, gridX + fullWidth / 2, y + CELL / 2 + 1, { align: 'center' })
     y += CELL
   }
-
-  // Column headers
-  doc.setFontSize(5.5)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(120, 120, 120)
-  doc.setDrawColor(0, 0, 0)
-  doc.setLineWidth(LINE_W)
-  if (textDescriptions) {
-    doc.rect(gridX, y, CELL, COL_HEADER_H, 'S')
-    doc.text('#', gridX + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    doc.rect(gridX + CELL, y, CELL, COL_HEADER_H, 'S')
-    doc.text('Code', gridX + CELL + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    doc.rect(gridX + 2 * CELL, y, descW, COL_HEADER_H, 'S')
-    doc.text('Description', gridX + 2 * CELL + descW / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-  } else {
-    const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
-    for (let c = 0; c < COLS; c++) {
-      const cx = gridX + c * CELL
-      doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
-      doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    }
-  }
-  y += COL_HEADER_H
 
   // Compute sequence offset: count 'control' type entries before this part
   let seq = 0
@@ -825,36 +777,10 @@ export function drawDescriptionSheet(
     y += CELL
   }
 
-  function drawColumnHeaders() {
-    doc.setFontSize(5.5)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(120, 120, 120)
-    doc.setDrawColor(0, 0, 0)
-    doc.setLineWidth(LINE_W)
-
-    if (textDescriptions) {
-      doc.rect(gridX, y, CELL, COL_HEADER_H, 'S')
-      doc.text('#', gridX + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-      doc.rect(gridX + CELL, y, CELL, COL_HEADER_H, 'S')
-      doc.text('Code', gridX + CELL + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-      doc.rect(gridX + 2 * CELL, y, descW, COL_HEADER_H, 'S')
-      doc.text('Description', gridX + 2 * CELL + descW / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-    } else {
-      const headers = ['#', 'Code', 'C', 'D', 'E', 'F', 'G', 'H']
-      for (let c = 0; c < COLS; c++) {
-        const cx = gridX + c * CELL
-        doc.rect(cx, y, CELL, COL_HEADER_H, 'S')
-        doc.text(headers[c], cx + CELL / 2, y + COL_HEADER_H * 0.58, { align: 'center' })
-      }
-    }
-    y += COL_HEADER_H
-  }
-
   function startPage() {
     y = MARGIN_TOP
     rowOnPage = 0
     drawHeader()
-    drawColumnHeaders()
   }
 
   const nonFinish = resolved.filter(c => c.type !== 'finish')
