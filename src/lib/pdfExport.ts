@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, EventSpec, MapBorder } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
@@ -998,6 +998,26 @@ function drawTextLabel(
   }
 }
 
+function drawImageOverlay(
+  doc: jsPDF,
+  img: ImageOverlay,
+  toPage: (pt: MapPoint) => Pos,
+) {
+  const pos = toPage(img.position)
+  const w = img.widthMm
+  const h = img.heightMm
+
+  if (img.bgAlpha > 0) {
+    doc.setFillColor(255, 255, 255)
+    doc.setGState(doc.GState({ opacity: img.bgAlpha }))
+    doc.rect(pos.x, pos.y, w, h, 'F')
+    doc.setGState(doc.GState({ opacity: 1 }))
+  }
+
+  const format = img.dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+  doc.addImage(img.dataUrl, format, pos.x, pos.y, w, h)
+}
+
 // ── Main export ─────────────────────────────────────────────────────────────
 
 export async function exportCoursePdf(
@@ -1151,6 +1171,7 @@ export async function exportCoursePdf(
           // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
+          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage)
 
           doc.setFontSize(8)
           doc.setFont('helvetica', 'normal')
@@ -1325,6 +1346,13 @@ export async function exportCoursePdf(
             const tlPos = toPage(effectiveTl.position)
             if (tlPos.x < 0 || tlPos.x > cpw || tlPos.y < 0 || tlPos.y > cph) continue
             drawTextLabel(doc, effectiveTl, toPage)
+          }
+          for (const img of project.imageOverlays) {
+            const overridePos = layout?.overlayPositions?.[img.id]
+            const effectiveImg = overridePos ? { ...img, position: overridePos } : img
+            const imgPos = toPage(effectiveImg.position)
+            if (imgPos.x < 0 || imgPos.x > cpw || imgPos.y < 0 || imgPos.y > cph) continue
+            drawImageOverlay(doc, effectiveImg, toPage)
           }
 
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {

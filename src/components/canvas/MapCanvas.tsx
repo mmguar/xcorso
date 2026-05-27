@@ -164,6 +164,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const map = useStore(s => s.project!.map)
   const scaleBars = useStore(s => s.project!.scaleBars)
   const textLabels = useStore(s => s.project!.textLabels)
+  const imageOverlays = useStore(s => s.project!.imageOverlays)
   const projectSpec = useStore(s => s.project!.spec)
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
@@ -281,8 +282,11 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
     let dragBendStarted = false
 
-    let dragOverlay: { id: string; kind: 'scalebar' | 'text'; dx: number; dy: number } | null = null
+    let dragOverlay: { id: string; kind: 'scalebar' | 'text' | 'image'; dx: number; dy: number } | null = null
     let dragOverlayStarted = false
+
+    let dragResize: { id: string; origWidthMap: number; origHeightMap: number; posX: number; posY: number } | null = null
+    let dragResizeStarted = false
 
     let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
@@ -477,8 +481,10 @@ export function MapCanvas({ loadedMap }: Props) {
               oPos = overridePos
             } else if (overlayHit.kind === 'scalebar') {
               oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
-            } else {
+            } else if (overlayHit.kind === 'text') {
               oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+            } else {
+              oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
             }
             if (oPos) {
               const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
@@ -527,14 +533,40 @@ export function MapCanvas({ loadedMap }: Props) {
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
             dragStarted = false
           } else {
+            // Check for image resize handle first
+            const selectedImg = state.editor.selectedOverlayId
+              ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
+              : null
+            if (selectedImg) {
+              const upmVal = unitsPerMm(proj.map)
+              const handleMapX = selectedImg.position.x + selectedImg.widthMm * upmVal
+              const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
+              const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
+              const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
+              const HANDLE_HIT = 12
+              if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
+                dragResize = {
+                  id: selectedImg.id,
+                  origWidthMap: selectedImg.widthMm * upmVal,
+                  origHeightMap: selectedImg.heightMm * upmVal,
+                  posX: selectedImg.position.x,
+                  posY: selectedImg.position.y,
+                }
+                dragResizeStarted = false
+                return
+              }
+            }
+
             const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
             if (overlayHit) {
               const mapPt = screenToMap(sx, sy, vpRef.current)
               let oPos: { x: number; y: number } | undefined
               if (overlayHit.kind === 'scalebar') {
                 oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
-              } else {
+              } else if (overlayHit.kind === 'text') {
                 oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+              } else {
+                oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
               }
               if (oPos) {
                 dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
@@ -712,6 +744,33 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragResize && pos.size === 1) {
+        if (!dragResizeStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveOverlay()
+          dragResizeStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const relX = mapPt.x - dragResize.posX
+        const relY = mapPt.y - dragResize.posY
+        const wOrig = dragResize.origWidthMap
+        const hOrig = dragResize.origHeightMap
+        const diagLen = Math.hypot(wOrig, hOrig)
+        const proj = (relX * wOrig + relY * hOrig) / diagLen
+        const st = useStore.getState()
+        const upmVal = unitsPerMm(st.project!.map)
+        const minMap = 5 * upmVal
+        const minProj = Math.hypot(minMap, minMap * (hOrig / wOrig))
+        const clampedProj = Math.max(minProj, proj)
+        const scale = clampedProj / diagLen
+        const newW = wOrig * scale / upmVal
+        const newH = hOrig * scale / upmVal
+        st.resizeImageOverlay(dragResize.id, newW, newH)
+        return
+      }
+
       if (dragOverlay && pos.size === 1) {
         if (!dragOverlayStarted) {
           const start = down.get(e.pointerId)
@@ -724,8 +783,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
         if (dragOverlay.kind === 'scalebar') {
           useStore.getState().moveScaleBar(dragOverlay.id, newPos)
-        } else {
+        } else if (dragOverlay.kind === 'text') {
           useStore.getState().moveTextLabel(dragOverlay.id, newPos)
+        } else {
+          useStore.getState().moveImageOverlay(dragOverlay.id, newPos)
         }
         return
       }
@@ -810,6 +871,9 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragBorderTranslate && dragBorderTranslateStarted) { dragBorderTranslate = null; dragBorderTranslateStarted = false; return }
       dragBorderTranslate = null; dragBorderTranslateStarted = false
 
+      if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
+      dragResize = null; dragResizeStarted = false
+
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
       dragOverlay = null; dragOverlayStarted = false
 
@@ -848,7 +912,8 @@ export function MapCanvas({ loadedMap }: Props) {
           const hitOverlay = findOverlayAt(sx, sy, vpRef.current, proj)
           if (hitOverlay) {
             if (hitOverlay.kind === 'scalebar') state.deleteScaleBar(hitOverlay.id)
-            else state.deleteTextLabel(hitOverlay.id)
+            else if (hitOverlay.kind === 'text') state.deleteTextLabel(hitOverlay.id)
+            else state.deleteImageOverlay(hitOverlay.id)
           } else {
             const hitAnn = findAnnotationAt(sx, sy, vpRef.current, proj)
             if (hitAnn) state.deleteAnnotation(hitAnn.id)
@@ -897,6 +962,14 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'place-text':
           state.addTextLabel(mapPt)
           break
+        case 'place-image': {
+          const pi = state.editor.pendingImage
+          if (pi) {
+            state.addImageOverlay(mapPt, pi.dataUrl, pi.filename, pi.naturalWidth, pi.naturalHeight)
+            state.setActiveTool('select')
+          }
+          break
+        }
         case 'measure-scale':
           if (!ms) {
             measureStartRef.current = mapPt
@@ -1126,6 +1199,7 @@ export function MapCanvas({ loadedMap }: Props) {
           <OverlaysLayer
             scaleBars={scaleBars}
             textLabels={textLabels}
+            imageOverlays={imageOverlays}
             map={map}
             selectedOverlayId={selectedOverlayId}
             positionOverrides={layoutCourse?.layout?.overlayPositions}

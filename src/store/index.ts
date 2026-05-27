@@ -66,6 +66,7 @@ export const useStore = create<Store>((set, get) => {
         annotations: [],
         scaleBars: [],
         textLabels: [],
+        imageOverlays: [],
       }
       set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
     },
@@ -73,6 +74,7 @@ export const useStore = create<Store>((set, get) => {
     loadProject: (project, mapData) => {
       if (!project.scaleBars) project.scaleBars = []
       if (!project.textLabels) project.textLabels = []
+      if (!project.imageOverlays) project.imageOverlays = []
       set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
     },
 

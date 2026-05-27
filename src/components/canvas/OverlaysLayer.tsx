@@ -1,10 +1,11 @@
 import { memo } from 'react'
-import type { ScaleBar, TextLabel, MapConfig, MapPoint } from '../../types'
+import type { ScaleBar, TextLabel, ImageOverlay, MapConfig, MapPoint } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 
 interface Props {
   scaleBars: ScaleBar[]
   textLabels: TextLabel[]
+  imageOverlays: ImageOverlay[]
   map: MapConfig
   selectedOverlayId: string | null
   positionOverrides?: Record<string, MapPoint>
@@ -165,7 +166,47 @@ function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; se
   )
 }
 
-export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, map, selectedOverlayId, positionOverrides, printScaleOverride }: Props) {
+function ImageOverlaySvg({ img, map, selected }: { img: ImageOverlay; map: MapConfig; selected: boolean }) {
+  const upm = unitsPerMm(map)
+  const strokeW = 0.2 * upm
+  const w = img.widthMm * upm
+  const h = img.heightMm * upm
+  const { x, y } = img.position
+  const handleSize = 3 * upm
+
+  return (
+    <g>
+      {img.bgAlpha > 0 && (
+        <rect
+          x={x} y={y} width={w} height={h}
+          fill="white" opacity={img.bgAlpha}
+        />
+      )}
+      <image
+        x={x} y={y} width={w} height={h}
+        href={img.dataUrl}
+        preserveAspectRatio="none"
+      />
+      {selected && (
+        <>
+          <rect
+            x={x - strokeW * 2} y={y - strokeW * 2}
+            width={w + strokeW * 4} height={h + strokeW * 4}
+            fill="none" stroke="#ea580c" strokeWidth={strokeW * 2}
+            strokeDasharray={`${upm * 1} ${upm * 0.5}`}
+          />
+          <rect
+            x={x + w - handleSize / 2} y={y + h - handleSize / 2}
+            width={handleSize} height={handleSize}
+            fill="#ea580c" stroke="white" strokeWidth={strokeW}
+          />
+        </>
+      )}
+    </g>
+  )
+}
+
+export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels, imageOverlays, map, selectedOverlayId, positionOverrides, printScaleOverride }: Props) {
   return (
     <g style={{ pointerEvents: 'none' }}>
       {scaleBars.map(sb => {
@@ -190,6 +231,18 @@ export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels
             tl={effectiveTl}
             map={map}
             selected={tl.id === selectedOverlayId}
+          />
+        )
+      })}
+      {imageOverlays.map(img => {
+        const override = positionOverrides?.[img.id]
+        const effectiveImg = override ? { ...img, position: override } : img
+        return (
+          <ImageOverlaySvg
+            key={img.id}
+            img={effectiveImg}
+            map={map}
+            selected={img.id === selectedOverlayId}
           />
         )
       })}
