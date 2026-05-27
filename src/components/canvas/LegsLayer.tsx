@@ -4,7 +4,7 @@
  * Lines are clipped at the edge of each control symbol so they don't overlap.
  */
 
-import { memo, useRef, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings, EventSpec } from '../../types'
 import { unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
 import { useStore } from '../../store'
@@ -58,6 +58,7 @@ function renderLegs(
   showBendHandles: boolean,
   appearance: AppearanceSettings,
   spec: EventSpec,
+  excludeControlId?: string | null,
 ): React.ReactNode[] {
   if (course.controls.length < 2 || course.type === 'score') return []
   const dims = getSymbolDims(spec)
@@ -71,6 +72,7 @@ function renderLegs(
     const fromControl = controlMap.get(course.controls[i].controlId)
     const toControl = controlMap.get(course.controls[i + 1].controlId)
     if (!fromControl || !toControl) continue
+    if (excludeControlId && (fromControl.id === excludeControlId || toControl.id === excludeControlId)) continue
 
     const cc = course.controls[i + 1]
     const bendPoints = cc.legBendPoints
@@ -202,13 +204,10 @@ function renderLegs(
 
 export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec, selectedSubmapIndex }: Props) {
   useRenderTracker('LegsLayer')
-  const isDragging = useStore(s => !!s.editor.draggingControlId)
+  const draggingControlId = useStore(s => s.editor.draggingControlId)
   const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
-  const cachedRef = useRef<React.ReactNode>(null)
 
   if (!course) return null
-
-  if (isDragging) return cachedRef.current as React.ReactElement | null
 
   let effectiveCourse = course
   if (selectedSubmapIndex != null) {
@@ -220,9 +219,7 @@ export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBe
 
   const spec = resolveSpec(projectSpec, course.spec)
   const upm = unitsPerMm(map)
-  const elements = renderLegs(effectiveCourse, controlMap, map.scale, upm, showBendHandles, appearance, spec)
-  if (elements.length === 0) { cachedRef.current = null; return null }
-  const result = <g style={{ pointerEvents: 'none' }}>{elements}</g>
-  cachedRef.current = result
-  return result
+  const elements = renderLegs(effectiveCourse, controlMap, map.scale, upm, showBendHandles, appearance, spec, draggingControlId)
+  if (elements.length === 0) return null
+  return <g style={{ pointerEvents: 'none' }}>{elements}</g>
 })
