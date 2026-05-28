@@ -1202,7 +1202,6 @@ export async function exportCoursePdf(
       const smKey = hasSubmaps ? submapPreviewId(oKey, submap.index) : oKey
       const courseScale = options.scaleOverrides?.[smKey] ?? baseCourseScale
       const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
-      const pageTitle = hasSubmaps ? `${course.name} — ${submap.label}` : course.name
 
       let trailingFlip = false
       if (hasSubmaps && submap.index < submaps.length - 1) {
