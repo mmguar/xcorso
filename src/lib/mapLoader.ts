@@ -18,6 +18,14 @@ export interface MapBounds {
   height: number
 }
 
+export interface MapGeorefInfo {
+  easting: number
+  northing: number
+  utmZone: number
+  hemisphere: 'N' | 'S'
+  angleDeg: number
+}
+
 export interface LoadedMap {
   type: 'svg' | 'image' | 'pdf-canvas'
   /** SVG element (OCAD) or object URL (bitmap) */
@@ -25,6 +33,8 @@ export interface LoadedMap {
   bounds: MapBounds
   /** For OCAD: scale extracted from file header (denominator, e.g. 10000) */
   detectedScale?: number
+  /** For OCAD: georeferencing info extracted from ScalePar */
+  detectedGeoref?: MapGeorefInfo
   /** For PDF: render upscale factor (coordinates are in upscaled pixels, not PDF points) */
   renderScale?: number
   /** For OCAD: pre-rasterized image URL for fast pan/zoom */
@@ -66,6 +76,20 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     if (scalePar?.[0]?.m) detectedScale = scalePar[0].m
   }
 
+  let detectedGeoref: MapGeorefInfo | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const crs = (ocadFile as any).getCrs?.()
+  if (crs?.easting && crs?.northing && crs?.code) {
+    const epsg = Number(crs.code)
+    const angleDeg = params?.[1039]?.[0]?.a ? Number(params[1039][0].a) : 0
+    // EPSG 326xx = UTM North, 327xx = UTM South
+    if (epsg >= 32601 && epsg <= 32660) {
+      detectedGeoref = { easting: crs.easting, northing: crs.northing, utmZone: epsg - 32600, hemisphere: 'N', angleDeg }
+    } else if (epsg >= 32701 && epsg <= 32760) {
+      detectedGeoref = { easting: crs.easting, northing: crs.northing, utmZone: epsg - 32700, hemisphere: 'S', angleDeg }
+    }
+  }
+
   // The patched ocad2geojson (see patches/) removes debug red circles that
   // corrupted the library's z-order sort and adds data-order attributes.
   // This is a defensive cleanup in case any stray debug circles remain.
@@ -73,7 +97,7 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
 
   const rasterUrl = await rasterizeSvg(svgEl, bounds)
 
-  return { type: 'svg', content: svgEl, bounds, detectedScale, rasterUrl }
+  return { type: 'svg', content: svgEl, bounds, detectedScale, detectedGeoref, rasterUrl }
 }
 
 function cleanupSvg(svgEl: SVGElement) {

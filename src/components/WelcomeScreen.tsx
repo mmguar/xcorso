@@ -74,6 +74,9 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
         scale: loadedMap.detectedScale ?? 10000,
         width: loadedMap.bounds.width,
         height: loadedMap.bounds.height,
+        originX: loadedMap.bounds.minX,
+        originY: loadedMap.bounds.minY,
+        georef: loadedMap.detectedGeoref ?? undefined,
         scaleSource: loadedMap.detectedScale ? 'ocad' : 'manual',
       }
 

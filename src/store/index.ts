@@ -103,9 +103,15 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
-    setMapDimensions: (width, height) => {
+    setMapDimensions: (width, height, originX, originY) => {
       mutateProjectSilent(p => {
-        p.map = { ...p.map, width, height }
+        p.map = { ...p.map, width, height, originX, originY }
+      })
+    },
+
+    setMapGeoref: (georef) => {
+      mutateProjectSilent(p => {
+        p.map = { ...p.map, georef }
       })
     },
 
