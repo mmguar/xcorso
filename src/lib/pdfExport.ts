@@ -1354,8 +1354,9 @@ export async function exportCoursePdf(
             if (breaks && breaks.length > 0) {
               const partPositions = [layout!.clueSheet, ...(layout!.clueSheetParts ?? [])]
               for (let pi = 0; pi < breaks.length + 1; pi++) {
-                const partPos = options.sheetPositions?.[`${smKey}:part${pi}`]
-                  ?? options.sheetPositions?.[`${oKey}:part${pi}`]
+                const partKey = pi === 0 ? '' : `:part${pi}`
+              const partPos = options.sheetPositions?.[`${smKey}${partKey}`]
+                  ?? options.sheetPositions?.[`${oKey}${partKey}`]
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue

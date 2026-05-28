@@ -143,7 +143,7 @@ export function usePdfExportState(onClose: () => void) {
   const hasOffset = activeOffset.x !== 0 || activeOffset.y !== 0
 
   const activeDescKey = activeRealCourseId ?? activePreviewId
-  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && activeDescKey && descModes[activeDescKey] === 'on-map'
+  const previewCourse = activePreviewId && activePreviewId !== ALL_CONTROLS_ID && activeDescKey && (descModes[activeDescKey] === 'on-map' || descModes[activeDescKey] === 'both')
     ? project.courses.find(c => c.id === activeRealCourseId)
     : null
   const sheetSize = previewCourse
