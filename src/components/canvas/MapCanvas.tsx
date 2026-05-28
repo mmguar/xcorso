@@ -574,6 +574,7 @@ export function MapCanvas({ loadedMap }: Props) {
               const mapPt2 = screenToMap(sx, sy, vpRef.current)
               dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
               dragAnnotationStarted = false
+              return
             }
 
             // Check for image resize handle first

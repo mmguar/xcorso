@@ -1173,13 +1173,6 @@ export async function exportCoursePdf(
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
           for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage)
 
-          doc.setFontSize(8)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(130, 130, 130)
-          const tileLabel = cols * rows > 1
-            ? `All controls  —  1:${acScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : ``
-          doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
     }
@@ -1209,7 +1202,6 @@ export async function exportCoursePdf(
       const smKey = hasSubmaps ? submapPreviewId(oKey, submap.index) : oKey
       const courseScale = options.scaleOverrides?.[smKey] ?? baseCourseScale
       const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
-      const pageTitle = hasSubmaps ? `${course.name} — ${submap.label}` : course.name
 
       let trailingFlip = false
       if (hasSubmaps && submap.index < submaps.length - 1) {
@@ -1361,8 +1353,9 @@ export async function exportCoursePdf(
             if (breaks && breaks.length > 0) {
               const partPositions = [layout!.clueSheet, ...(layout!.clueSheetParts ?? [])]
               for (let pi = 0; pi < breaks.length + 1; pi++) {
-                const partPos = options.sheetPositions?.[`${smKey}:part${pi}`]
-                  ?? options.sheetPositions?.[`${oKey}:part${pi}`]
+                const partKey = pi === 0 ? '' : `:part${pi}`
+              const partPos = options.sheetPositions?.[`${smKey}${partKey}`]
+                  ?? options.sheetPositions?.[`${oKey}${partKey}`]
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
@@ -1376,13 +1369,6 @@ export async function exportCoursePdf(
             }
           }
 
-          doc.setFontSize(8)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(130, 130, 130)
-          const tileLabel = cols * rows > 1
-            ? `${pageTitle}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : (hasSubmaps ? `${pageTitle}  —  1:${courseScale.toLocaleString()}` : ``)
-          doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
 

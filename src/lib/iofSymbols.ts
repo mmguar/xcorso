@@ -565,7 +565,7 @@ const colG: SymbolDef[] = [
   { code: '11.11', name: 'Top', column: 'G',
     paths: ['M -40 50 L -40 -30 L 40 -30 L 40 50'], filledCircles: [[0, -55, 12]] },
   { code: '11.12', name: 'Beneath', column: 'G',
-    paths: ['M -40 -50 L -40 30 L 40 30 L 40 -50'], filledCircles: [[0, 55, 12]] },
+    paths: ['m -65, 42 v -78 h 128 l 0, 76'], filledCircles: [[0, 26, 15]] },
   { code: '11.13', name: 'Foot', column: 'G',
     lines: [[-35, -60, -35, 60], [-35, 60, 35, 60]], filledCircles: [[0, 30, 12]] },
   { code: '11.15', name: 'Between', column: 'G',

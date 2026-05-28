@@ -515,7 +515,7 @@ export function drawDescriptionSheetOverlay(
   let label = course.name
   if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
   if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
-  if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
+  if (course.climb != null && course.climb > 0) label += `    ${course.climb} m`
   doc.text(label, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
   y += CELL
 
@@ -541,7 +541,7 @@ export function drawDescriptionSheetOverlay(
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
     } else {
-      doc.setFontSize(7)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(0, 0, 0)
       doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -549,11 +549,13 @@ export function drawDescriptionSheetOverlay(
 
     const bCx = gridX + CELL + CELL / 2
     const bCy = y + CELL / 2
-    doc.setFontSize(6.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     const code = defaultControlLabel(ctrl)
-    doc.text(code, bCx, bCy + 1, { align: 'center' })
+    if (ctrl.type != 'start'){
+      doc.text(code, bCx, bCy + 1, { align: 'center' })
+    }
 
     if (textDescriptions) {
       doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
@@ -652,7 +654,7 @@ export function drawDescriptionSheetOverlayPart(
     let label = course.name
     if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
     if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
-    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
+    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m`
     doc.text(label, gridX + fullWidth / 2, y + CELL / 2 + 1, { align: 'center' })
     y += CELL
   }
@@ -680,7 +682,7 @@ export function drawDescriptionSheetOverlayPart(
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
     } else {
-      doc.setFontSize(7)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(0, 0, 0)
       doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -688,11 +690,13 @@ export function drawDescriptionSheetOverlayPart(
 
     const bCx = gridX + CELL + CELL / 2
     const bCy = y + CELL / 2
-    doc.setFontSize(6.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     const code = defaultControlLabel(ctrl)
-    doc.text(code, bCx, bCy + 1, { align: 'center' })
+    if (ctrl.type != 'start'){
+      doc.text(code, bCx, bCy + 1, { align: 'center' })
+    }
 
     if (textDescriptions) {
       doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
@@ -772,7 +776,7 @@ export function drawDescriptionSheet(
     let label = course.name
     if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
     if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
-    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
+    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m`
     doc.text(label, gridX + gridW / 2, y + CELL / 2 + 1, { align: 'center' })
 
     y += CELL
@@ -812,7 +816,7 @@ export function drawDescriptionSheet(
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
     } else {
-      doc.setFontSize(7)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(0, 0, 0)
       doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -821,11 +825,13 @@ export function drawDescriptionSheet(
     // Column B: control code
     const bCx = gridX + CELL + CELL / 2
     const bCy = y + CELL / 2
-    doc.setFontSize(6.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     const code = defaultControlLabel(ctrl)
-    doc.text(code, bCx, bCy + 1, { align: 'center' })
+    if (ctrl.type != 'start'){
+      doc.text(code, bCx, bCy + 1, { align: 'center' })
+    }
 
     if (textDescriptions) {
       doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')

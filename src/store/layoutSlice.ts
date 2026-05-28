@@ -40,6 +40,7 @@ function adjustMapBorderForLayoutChange(
   const orientChanged = prev.orientation !== next.orientation
   const pageChanged = prev.pageSize !== next.pageSize
   if (orientChanged && !pageChanged) return flipMapBorder(border)
+  if (orientChanged && pageChanged) return resizeMapBorderToPage(flipMapBorder(border), next.pageSize, next.orientation)
   if (pageChanged) return resizeMapBorderToPage(border, next.pageSize, next.orientation)
   return border
 }

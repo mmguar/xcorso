@@ -25,6 +25,14 @@ export interface ScaleMeasurement {
   realWorldMeters: number
 }
 
+export interface MapGeoref {
+  easting: number
+  northing: number
+  utmZone: number
+  hemisphere: 'N' | 'S'
+  angleDeg: number  // OCAD ScalePar 'a' — paper rotation from grid north, in degrees
+}
+
 export interface MapConfig {
   type: MapType
   filename: string
@@ -34,6 +42,11 @@ export interface MapConfig {
   width: number
   /** Native map height in map units (matches LoadedMap.bounds.height). */
   height: number
+  /** ViewBox origin X in map units (matches LoadedMap.bounds.minX). 0 for bitmap/PDF. */
+  originX?: number
+  /** ViewBox origin Y in map units (matches LoadedMap.bounds.minY). 0 for bitmap/PDF. */
+  originY?: number
+  georef?: MapGeoref
   scaleSource: 'ocad' | 'manual'
   scaleMeasurement?: ScaleMeasurement  // present when scaleSource === 'manual'
 }
