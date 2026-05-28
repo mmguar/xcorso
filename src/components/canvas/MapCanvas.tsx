@@ -547,6 +547,57 @@ export function MapCanvas({ loadedMap }: Props) {
           dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
           dragLabelStarted = false
         } else {
+          // Annotation/overlay handles take priority over controls
+          const rotHit = findCrossingPointRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (rotHit && rotHit.points[0]) {
+            dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
+            dragRotationStarted = false
+            return
+          }
+
+          const naRotHit = findNorthArrowRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (naRotHit && naRotHit.points[0]) {
+            dragRotation = { annId: naRotHit.id, center: naRotHit.points[0] }
+            dragRotationStarted = false
+            return
+          }
+
+          const naResizeHit = findNorthArrowResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (naResizeHit && naResizeHit.points[0]) {
+            const naUpm = unitsPerMm(proj.map)
+            const naSpec = resolveSpec(proj.spec)
+            const naH = northArrowHeight(naUpm, proj.map.scale, naSpec, naResizeHit.scale ?? 1)
+            const geo = northArrowGeometry(naH, naUpm)
+            const origHandleDist = Math.hypot(geo.resizeHandleLocalX, geo.resizeHandleLocalY)
+            dragAnnResize = { annId: naResizeHit.id, centerX: naResizeHit.points[0].x, centerY: naResizeHit.points[0].y, origScale: naResizeHit.scale ?? 1, origHandleDist }
+            dragAnnResizeStarted = false
+            return
+          }
+
+          const selectedImg = state.editor.selectedOverlayId
+            ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
+            : null
+          if (selectedImg) {
+            const upmVal = unitsPerMm(proj.map)
+            const handleMapX = selectedImg.position.x + selectedImg.widthMm * upmVal
+            const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
+            const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
+            const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
+            const HANDLE_HIT = 1.5 * upmVal * vpRef.current.scale
+            if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
+              dragResize = {
+                id: selectedImg.id,
+                origWidthMap: selectedImg.widthMm * upmVal,
+                origHeightMap: selectedImg.heightMm * upmVal,
+                posX: selectedImg.position.x,
+                posY: selectedImg.position.y,
+              }
+              dragResizeStarted = false
+              return
+            }
+          }
+
+          // Controls
           const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale)
           if (hit) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
@@ -554,66 +605,12 @@ export function MapCanvas({ loadedMap }: Props) {
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
             dragStarted = false
           } else {
-            // Check for crossing point rotation handle
-            const rotHit = findCrossingPointRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
-            if (rotHit && rotHit.points[0]) {
-              dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
-              dragRotationStarted = false
-              return
-            }
-
-            // Check for north arrow rotation handle
-            const naRotHit = findNorthArrowRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
-            if (naRotHit && naRotHit.points[0]) {
-              dragRotation = { annId: naRotHit.id, center: naRotHit.points[0] }
-              dragRotationStarted = false
-              return
-            }
-
-            // Check for north arrow resize handle
-            const naResizeHit = findNorthArrowResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
-            if (naResizeHit && naResizeHit.points[0]) {
-              const naUpm = unitsPerMm(proj.map)
-              const naSpec = resolveSpec(proj.spec)
-              const naH = northArrowHeight(naUpm, proj.map.scale, naSpec, naResizeHit.scale ?? 1)
-              const geo = northArrowGeometry(naH, naUpm)
-              const origHandleDist = Math.hypot(geo.resizeHandleLocalX, geo.resizeHandleLocalY)
-              dragAnnResize = { annId: naResizeHit.id, centerX: naResizeHit.points[0].x, centerY: naResizeHit.points[0].y, origScale: naResizeHit.scale ?? 1, origHandleDist }
-              dragAnnResizeStarted = false
-              return
-            }
-
-            // Check for crossing point / north arrow / annotation drag
             const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
             if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow') && annHit.points[0]) {
               const mapPt2 = screenToMap(sx, sy, vpRef.current)
               dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
               dragAnnotationStarted = false
               return
-            }
-
-            // Check for image resize handle first
-            const selectedImg = state.editor.selectedOverlayId
-              ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
-              : null
-            if (selectedImg) {
-              const upmVal = unitsPerMm(proj.map)
-              const handleMapX = selectedImg.position.x + selectedImg.widthMm * upmVal
-              const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
-              const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
-              const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
-              const HANDLE_HIT = 1.5 * upmVal * vpRef.current.scale
-              if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
-                dragResize = {
-                  id: selectedImg.id,
-                  origWidthMap: selectedImg.widthMm * upmVal,
-                  origHeightMap: selectedImg.heightMm * upmVal,
-                  posX: selectedImg.position.x,
-                  posY: selectedImg.position.y,
-                }
-                dragResizeStarted = false
-                return
-              }
             }
 
             const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
@@ -1342,6 +1339,75 @@ export function MapCanvas({ loadedMap }: Props) {
             controls={controls}
             course={selectedCourse}
           />
+          {/* Handles layer — renders above controls so they're always clickable */}
+          {(() => {
+            const upm = unitsPerMm(map)
+            const spec = resolveSpec(projectSpec, selectedCourse?.spec)
+            const strokeW = 0.2 * upm
+            const elements: React.ReactNode[] = []
+
+            if (selectedAnnotationId) {
+              const ann = annotations.find(a => a.id === selectedAnnotationId)
+              if (ann?.type === 'crossing_point' && ann.points[0]) {
+                const d = getAnnotationDims(symbolScaleFactor(spec, map.scale) * upm)
+                const { x, y } = ann.points[0]
+                const hh = d.crossH
+                const handleR = 1 * upm
+                const rotation = ann.rotation ?? 0
+                elements.push(
+                  <circle key="cp-rot"
+                    cx={x} cy={y - hh - handleR * 2}
+                    r={handleR}
+                    fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                    transform={`rotate(${rotation}, ${x}, ${y})`}
+                  />
+                )
+              }
+              if (ann?.type === 'north_arrow' && ann.points[0]) {
+                const h = northArrowHeight(upm, map.scale, spec, ann.scale ?? 1)
+                const geo = northArrowGeometry(h, upm)
+                const { x, y } = ann.points[0]
+                const rotation = ann.rotation ?? 0
+                const color = ann.color ?? '#38bdf8'
+                const rightX = x + geo.halfBase
+                const baseY = y + geo.baseLocalY
+                elements.push(
+                  <g key="na-handles" transform={`rotate(${rotation}, ${x}, ${y})`}>
+                    <circle
+                      cx={x + geo.rotHandleLocalX} cy={y + geo.rotHandleLocalY}
+                      r={geo.handleR}
+                      fill={color} stroke="white" strokeWidth={strokeW}
+                    />
+                    <rect
+                      x={rightX - geo.handleR} y={baseY - geo.handleR}
+                      width={geo.handleR * 2} height={geo.handleR * 2}
+                      rx={strokeW * 2}
+                      fill={color} stroke="white" strokeWidth={strokeW}
+                    />
+                  </g>
+                )
+              }
+            }
+
+            if (selectedOverlayId) {
+              const selImg = imageOverlays.find(o => o.id === selectedOverlayId)
+              if (selImg) {
+                const w = selImg.widthMm * upm
+                const h = selImg.heightMm * upm
+                const handleSize = 3 * upm
+                elements.push(
+                  <rect key="img-resize"
+                    x={selImg.position.x + w - handleSize / 2}
+                    y={selImg.position.y + h - handleSize / 2}
+                    width={handleSize} height={handleSize}
+                    fill="#ea580c" stroke="white" strokeWidth={strokeW}
+                  />
+                )
+              }
+            }
+
+            return elements.length > 0 ? <g style={{ pointerEvents: 'none' }}>{elements}</g> : null
+          })()}
           {import.meta.env.DEV && (
             <DebugHitboxes controls={controls} map={map} vp={vp} selectedCourseId={selectedCourseId} appearance={appearance} projectSpec={projectSpec} />
           )}

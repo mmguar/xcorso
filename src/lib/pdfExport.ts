@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
 import { walkPath, clipPolyline } from './geometry'
@@ -1108,10 +1108,18 @@ function drawImageOverlay(
   doc: jsPDF,
   img: ImageOverlay,
   toPage: (pt: MapPoint) => Pos,
+  map: MapConfig,
 ) {
+  const upm = unitsPerMm(map)
   const pos = toPage(img.position)
-  const w = img.widthMm
-  const h = img.heightMm
+  const farCorner = toPage({
+    x: img.position.x + img.widthMm * upm,
+    y: img.position.y + img.heightMm * upm,
+  })
+  const w = farCorner.x - pos.x
+  const h = farCorner.y - pos.y
+
+  if (w <= 0 || h <= 0) return
 
   if (img.bgAlpha > 0) {
     doc.setFillColor(255, 255, 255)
@@ -1277,7 +1285,7 @@ export async function exportCoursePdf(
           // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
-          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage)
+          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage, project.map)
 
         }
       }
@@ -1451,7 +1459,7 @@ export async function exportCoursePdf(
             const effectiveImg = overridePos ? { ...img, position: overridePos } : img
             const imgPos = toPage(effectiveImg.position)
             if (imgPos.x < 0 || imgPos.x > cpw || imgPos.y < 0 || imgPos.y > cph) continue
-            drawImageOverlay(doc, effectiveImg, toPage)
+            drawImageOverlay(doc, effectiveImg, toPage, project.map)
           }
 
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
