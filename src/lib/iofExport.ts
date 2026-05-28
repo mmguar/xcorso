@@ -33,6 +33,9 @@ function iofControlType(type: ControlType): string {
 }
 
 function controlCode(c: Control): string {
+  if (c.label) return c.label
+  if (c.type === 'start') return `S${c.code}`
+  if (c.type === 'finish') return `F${c.code}`
   return String(c.code)
 }
 
