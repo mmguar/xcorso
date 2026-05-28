@@ -82,13 +82,13 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
         <>
           {/* Grey mask between page edge and border rect — four strips (draggable to reposition border) */}
           {/* Top strip */}
-          <rect x={rx} y={ry} width={rw} height={by - ry} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
+          <rect x={rx} y={ry} width={rw} height={by - ry} fill="white" opacity={0.7} />
           {/* Bottom strip */}
-          <rect x={rx} y={by + bh} width={rw} height={(ry + rh) - (by + bh)} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
+          <rect x={rx} y={by + bh} width={rw} height={(ry + rh) - (by + bh)} fill="white" opacity={0.7} />
           {/* Left strip */}
-          <rect x={rx} y={by} width={bx - rx} height={bh} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
+          <rect x={rx} y={by} width={bx - rx} height={bh} fill="white" opacity={0.7} />
           {/* Right strip */}
-          <rect x={bx + bw} y={by} width={(rx + rw) - (bx + bw)} height={bh} fill="white" opacity={0.7} style={{ pointerEvents: 'auto', cursor: 'move' }} />
+          <rect x={bx + bw} y={by} width={(rx + rw) - (bx + bw)} height={bh} fill="white" opacity={0.7} />
           {/* Border line */}
           <rect
             x={bx} y={by} width={bw} height={bh}
