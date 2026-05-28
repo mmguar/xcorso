@@ -880,23 +880,23 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
   doc.setLineCap(1)
   doc.setLineJoin(1)
   doc.setLineWidth(d.routeLineW)
-  for (let i = 0; i < points.length - 1; i++) {
-    doc.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+  doc.moveTo(points[0].x, points[0].y)
+  for (let i = 1; i < points.length; i++) {
+    doc.lineTo(points[i].x, points[i].y)
   }
+  doc.stroke()
 
   doc.setLineWidth(d.routeXW)
-  for (const m of walkPath(points, d.routeXSpace)) {
+  const marks = walkPath(points, d.routeXSpace)
+  for (const m of marks) {
     const a1 = m.angle + Math.PI / 4
     const a2 = m.angle - Math.PI / 4
-    doc.line(
-      m.x - Math.cos(a1) * d.routeXArm, m.y - Math.sin(a1) * d.routeXArm,
-      m.x + Math.cos(a1) * d.routeXArm, m.y + Math.sin(a1) * d.routeXArm,
-    )
-    doc.line(
-      m.x - Math.cos(a2) * d.routeXArm, m.y - Math.sin(a2) * d.routeXArm,
-      m.x + Math.cos(a2) * d.routeXArm, m.y + Math.sin(a2) * d.routeXArm,
-    )
+    doc.moveTo(m.x - Math.cos(a1) * d.routeXArm, m.y - Math.sin(a1) * d.routeXArm)
+    doc.lineTo(m.x + Math.cos(a1) * d.routeXArm, m.y + Math.sin(a1) * d.routeXArm)
+    doc.moveTo(m.x - Math.cos(a2) * d.routeXArm, m.y - Math.sin(a2) * d.routeXArm)
+    doc.lineTo(m.x + Math.cos(a2) * d.routeXArm, m.y + Math.sin(a2) * d.routeXArm)
   }
+  if (marks.length > 0) doc.stroke()
 }
 
 // ── Crossing point ──────────────────────────────────────────────────────────
@@ -974,11 +974,14 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
   const cMax1 = maxY - minX
   const cStep = d.hatchSpace * Math.SQRT2
 
+  let hatchStarted = false
   for (let c = cMin1; c <= cMax1; c += cStep) {
     const xStart = Math.max(minX, minY - c)
     const xEnd = Math.min(maxX, maxY - c)
     if (xStart >= xEnd) continue
-    doc.line(xStart, xStart + c, xEnd, xEnd + c)
+    doc.moveTo(xStart, xStart + c)
+    doc.lineTo(xEnd, xEnd + c)
+    hatchStarted = true
   }
 
   const cMin2 = minX + minY
@@ -988,11 +991,69 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
     const xStart = Math.max(minX, c - maxY)
     const xEnd = Math.min(maxX, c - minY)
     if (xStart <= xEnd) {
-      doc.line(xStart, c - xStart, xEnd, c - xEnd)
+      doc.moveTo(xStart, c - xStart)
+      doc.lineTo(xEnd, c - xEnd)
+      hatchStarted = true
     }
   }
+  if (hatchStarted) doc.stroke()
 
   internal.write('Q')
+}
+
+// ── North arrow ────────────────────────────────────────────────────────────
+
+const TAN_22_5 = Math.tan(Math.PI / 8)
+
+function drawNorthArrow(
+  doc: jsPDF,
+  center: Pos,
+  rotation: number,
+  annScale: number,
+  mapScale: number,
+  spec: EventSpec,
+  color: string,
+  textColor: string,
+) {
+  const d = annotationDimsMm(mapScale, spec)
+  const h = d.northArrowH * annScale
+  const halfBase = h * TAN_22_5
+  const apexLocalY = -(2 / 3) * h
+  const baseLocalY = (1 / 3) * h
+  const strokeW = 0.15
+
+  const { x: cx, y: cy } = center
+  const rad = rotation * Math.PI / 180
+  const cos = Math.cos(rad), sin = Math.sin(rad)
+  function rot(lx: number, ly: number): Pos {
+    return { x: cx + lx * cos - ly * sin, y: cy + lx * sin + ly * cos }
+  }
+
+  const apex = rot(0, apexLocalY)
+  const br = rot(halfBase, baseLocalY)
+  const bl = rot(-halfBase, baseLocalY)
+
+  // Filled triangle
+  const [r, g, b] = hexToRgb(color)
+  doc.setFillColor(r, g, b)
+  const f = 1 - 0.2
+  doc.setDrawColor(Math.round(r * f), Math.round(g * f), Math.round(b * f))
+  doc.setLineWidth(strokeW)
+  doc.setLineJoin(1)
+  doc.moveTo(apex.x, apex.y)
+  doc.lineTo(br.x, br.y)
+  doc.lineTo(bl.x, bl.y)
+  ;(doc as any).internal.write('h')
+  doc.fillStroke()
+
+  // "N" text
+  const fontSize = h * 0.45
+  const textPos = rot(0, h * 0.12)
+  const [tr, tg, tb] = hexToRgb(textColor)
+  doc.setTextColor(tr, tg, tb)
+  doc.setFontSize(fontSize * MM_TO_PT)
+  doc.setFont('helvetica', 'bold')
+  doc.text('N', textPos.x, textPos.y, { align: 'center', angle: -rotation })
 }
 
 // ── Labelling ───────────────────────────────────────────────────────────────
@@ -1030,7 +1091,9 @@ function drawScaleBar(
   // Background
   if (sb.bgAlpha > 0) {
     doc.setFillColor(255, 255, 255)
+    doc.setGState(doc.GState({ opacity: sb.bgAlpha }))
     doc.roundedRect(origin.x, origin.y, boxW, boxH, 0.5, 0.5, 'F')
+    doc.setGState(doc.GState({ opacity: 1 }))
   }
 
   const barX = origin.x + pad
@@ -1272,6 +1335,8 @@ export async function exportCoursePdf(
               drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, allCtrlSpec)
             } else if (ann.type === 'out_of_bounds') {
               drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
+            } else if (ann.type === 'north_arrow' && ann.points[0]) {
+              drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, allCtrlSpec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
             }
           }
 
@@ -1379,6 +1444,8 @@ export async function exportCoursePdf(
               drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, courseSpec)
             } else if (ann.type === 'out_of_bounds') {
               drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
+            } else if (ann.type === 'north_arrow' && ann.points[0]) {
+              drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, courseSpec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
             }
           }
 
@@ -1396,7 +1463,6 @@ export async function exportCoursePdf(
             }
           }
 
-          // Sequence map uses the full course for consistent numbering across submaps
           const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
           const drawn = new Set<string>()
           const lastCcId = pageCourse.controls[pageCourse.controls.length - 1]?.controlId
@@ -1443,22 +1509,16 @@ export async function exportCoursePdf(
           for (const sb of project.scaleBars) {
             const overridePos = layout?.overlayPositions?.[sb.id]
             const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
-            const sbPos = toPage(effectiveSb.position)
-            if (sbPos.x < 0 || sbPos.x > cpw || sbPos.y < 0 || sbPos.y > cph) continue
             drawScaleBar(doc, effectiveSb, toPage, courseScale)
           }
           for (const tl of project.textLabels) {
             const overridePos = layout?.overlayPositions?.[tl.id]
             const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
-            const tlPos = toPage(effectiveTl.position)
-            if (tlPos.x < 0 || tlPos.x > cpw || tlPos.y < 0 || tlPos.y > cph) continue
             drawTextLabel(doc, effectiveTl, toPage)
           }
           for (const img of project.imageOverlays) {
             const overridePos = layout?.overlayPositions?.[img.id]
             const effectiveImg = overridePos ? { ...img, position: overridePos } : img
-            const imgPos = toPage(effectiveImg.position)
-            if (imgPos.x < 0 || imgPos.x > cpw || imgPos.y < 0 || imgPos.y > cph) continue
             drawImageOverlay(doc, effectiveImg, toPage, project.map)
           }
 
