@@ -1173,13 +1173,6 @@ export async function exportCoursePdf(
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
           for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage)
 
-          doc.setFontSize(8)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(130, 130, 130)
-          const tileLabel = cols * rows > 1
-            ? `All controls  —  1:${acScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : ``
-          doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
     }
@@ -1376,13 +1369,6 @@ export async function exportCoursePdf(
             }
           }
 
-          doc.setFontSize(8)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(130, 130, 130)
-          const tileLabel = cols * rows > 1
-            ? `${pageTitle}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : (hasSubmaps ? `${pageTitle}  —  1:${courseScale.toLocaleString()}` : ``)
-          doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
 
