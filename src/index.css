@@ -18,6 +18,20 @@ html, body, #root {
   touch-action: none;
 }
 
+/* Edit icon: always visible on touch, hover-reveal on desktop */
+.edit-icon {
+  opacity: 0.4;
+  transition: opacity 150ms;
+}
+@media (hover: hover) {
+  .edit-icon {
+    opacity: 0;
+  }
+  .edit-icon-group:hover .edit-icon {
+    opacity: 0.5;
+  }
+}
+
 /* Custom scrollbar for panels */
 .panel-scroll {
   scrollbar-width: thin;

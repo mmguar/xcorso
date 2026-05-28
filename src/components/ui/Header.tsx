@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, FileDown, Map, ImageUp } from 'lucide-react'
+import { Save, FileDown, Map, ImageUp, Pencil } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
@@ -78,11 +78,12 @@ export function Header({ onGoHome }: Props) {
         />
       ) : (
         <span
-          className="text-sm font-medium cursor-pointer hover:text-orange-700 transition-colors"
-          onDoubleClick={() => { setNameVal(project.meta.name); setEditingName(true) }}
-          title="Double-click to rename"
+          className="edit-icon-group text-sm font-medium cursor-pointer hover:text-orange-700 transition-colors flex items-center gap-1"
+          onClick={() => { setNameVal(project.meta.name); setEditingName(true) }}
+          title="Click to rename"
         >
           {project.meta.name}
+          <Pencil size={12} className="edit-icon shrink-0" />
         </span>
       )}
 
