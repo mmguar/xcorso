@@ -1310,24 +1310,19 @@ export function MapCanvas({ loadedMap }: Props) {
         {activeTool === 'gap' && (() => {
           const upm = unitsPerMm(map)
           const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
-          const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
-          const circumference = 2 * Math.PI * r
-          const gapFraction = gapSize / 360
-          const gapLen = circumference * gapFraction
-          const arcLen = circumference - gapLen
-          const sw = Math.max(1, 0.35 * upm * appearance.lineWidth * vp.scale)
+          const sf = symbolScaleFactor(gapSpec, map.scale)
+          const controlR = getSymbolDims(gapSpec).controlR * upm * sf * appearance.controlScale * vp.scale
+          const arcLen = controlR * gapSize * Math.PI / 180
+          const cursorR = arcLen / 2
           return (
             <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
               <circle
-                r={r}
-                fill="none"
+                r={cursorR}
+                fill="#ea580c"
+                fillOpacity={0.25}
                 stroke="#ea580c"
-                strokeWidth={sw}
-                strokeDasharray={`${arcLen} ${gapLen}`}
-                strokeDashoffset={arcLen / 2 + circumference / 4}
+                strokeWidth={1}
               />
-              <line x1={-4} y1={0} x2={4} y2={0} stroke="#ea580c" strokeWidth={1} />
-              <line x1={0} y1={-4} x2={0} y2={4} stroke="#ea580c" strokeWidth={1} />
             </g>
           )
         })()}
