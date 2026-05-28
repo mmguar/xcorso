@@ -157,6 +157,8 @@ export function MapCanvas({ loadedMap }: Props) {
   const hdSvgRef = useRef<SVGSVGElement>(null)
   const hdMapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
+  const courseGRef = useRef<SVGGElement>(null)
+  const aboveBorderGRef = useRef<SVGGElement>(null)
   const dragLegsRef = useRef<DragLegsHandle>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
   const canvasPixelRef = useRef<[number, number]>([1, 1])
@@ -171,6 +173,8 @@ export function MapCanvas({ loadedMap }: Props) {
     }
     if (hdMapGRef.current) hdMapGRef.current.style.transform = t
     if (overlayGRef.current) overlayGRef.current.style.transform = t
+    if (courseGRef.current) courseGRef.current.style.transform = t
+    if (aboveBorderGRef.current) aboveBorderGRef.current.style.transform = t
   }
   function setVp(next: Viewport) {
     vpRef.current = next
@@ -777,7 +781,7 @@ export function MapCanvas({ loadedMap }: Props) {
           dragStarted = true
           const ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
           dragOrigPos = ctrl ? { ...ctrl.position } : null
-          const og = overlayGRef.current
+          const og = courseGRef.current
           dragControlEl = og?.querySelector(`[data-control-id="${dragControlId}"]`) as SVGGElement | null
           dragLegsRef.current?.begin(dragControlId)
         }
@@ -1247,6 +1251,12 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [selectedCourseRaw, selectedVariationId])
   const isCourseMode = !!selectedCourseId
 
+  const layoutControls = useMemo(() => {
+    if (!layoutMode || !selectedCourse) return controls
+    const ids = new Set(selectedCourse.controls.map(cc => cc.controlId))
+    return controls.filter(c => ids.has(c.id))
+  }, [layoutMode, selectedCourse, controls])
+
   const cursor = layoutMode ? 'grab'
     : activeTool === 'bend' ? 'crosshair'
     : activeTool === 'gap' ? 'none'
@@ -1296,9 +1306,23 @@ export function MapCanvas({ loadedMap }: Props) {
           </g>
         </svg>
       )}
-      {/* Overlay layers — controls, legs, annotations (no filter) */}
+      {/* Annotations layer — below course and border */}
       <svg key="overlay" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
         <g ref={overlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
+          <AnnotationsLayer
+            annotations={annotations}
+            pendingPoints={pendingAnnotationPoints}
+            pendingType={getAnnotationType()}
+            map={map}
+            spec={resolveSpec(projectSpec, selectedCourse?.spec)}
+            selectedAnnotationId={selectedAnnotationId}
+          />
+        </g>
+      </svg>
+
+      {/* Course layer (controls + labels + legs) — below the border mask */}
+      <svg key="course" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <g ref={courseGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           <LegsLayer
             course={selectedCourse}
             controls={controls}
@@ -1318,14 +1342,51 @@ export function MapCanvas({ loadedMap }: Props) {
             projectSpec={projectSpec}
             viewportScale={vp.scale}
           />
-          <AnnotationsLayer
-            annotations={annotations}
-            pendingPoints={pendingAnnotationPoints}
-            pendingType={getAnnotationType()}
-            map={map}
-            spec={resolveSpec(projectSpec, selectedCourse?.spec)}
-            selectedAnnotationId={selectedAnnotationId}
+          <ControlsLayer
+            controls={layoutControls}
+            course={selectedCourse}
           />
+          {import.meta.env.DEV && (
+            <DebugHitboxes controls={controls} map={map} vp={vp} selectedCourseId={selectedCourseId} appearance={appearance} projectSpec={projectSpec} />
+          )}
+        </g>
+        {activeTool === 'gap' && (() => {
+          const upm = unitsPerMm(map)
+          const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
+          const sf = symbolScaleFactor(gapSpec, map.scale)
+          const controlR = getSymbolDims(gapSpec).controlR * upm * sf * appearance.controlScale * vp.scale
+          const arcLen = controlR * gapSize * Math.PI / 180
+          const cursorR = arcLen / 2
+          return (
+            <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
+              <circle
+                r={cursorR}
+                fill="#ea580c"
+                fillOpacity={0.25}
+                stroke="#ea580c"
+                strokeWidth={1}
+              />
+            </g>
+          )
+        })()}
+      </svg>
+
+      {/* Layout mode page overlay (border mask) */}
+      {layoutMode && layoutCourse?.layout && (
+        <PageOverlay
+          layout={layoutCourse.layout}
+          map={map}
+          viewport={vp}
+          canvasW={rectCacheRef.current?.width ?? 800}
+          canvasH={rectCacheRef.current?.height ?? 600}
+          course={layoutCourse}
+          controls={controls}
+        />
+      )}
+
+      {/* Overlays — above the border mask, always visible */}
+      <svg key="above-border" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <g ref={aboveBorderGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           <OverlaysLayer
             scaleBars={scaleBars}
             textLabels={textLabels}
@@ -1335,11 +1396,7 @@ export function MapCanvas({ loadedMap }: Props) {
             positionOverrides={layoutCourse?.layout?.overlayPositions}
             printScaleOverride={layoutCourse?.layout?.printScale}
           />
-          <ControlsLayer
-            controls={controls}
-            course={selectedCourse}
-          />
-          {/* Handles layer — renders above controls so they're always clickable */}
+          {/* Handles layer — renders above everything so they're always clickable */}
           {(() => {
             const upm = unitsPerMm(map)
             const spec = resolveSpec(projectSpec, selectedCourse?.spec)
@@ -1408,43 +1465,8 @@ export function MapCanvas({ loadedMap }: Props) {
 
             return elements.length > 0 ? <g style={{ pointerEvents: 'none' }}>{elements}</g> : null
           })()}
-          {import.meta.env.DEV && (
-            <DebugHitboxes controls={controls} map={map} vp={vp} selectedCourseId={selectedCourseId} appearance={appearance} projectSpec={projectSpec} />
-          )}
         </g>
-        {activeTool === 'gap' && (() => {
-          const upm = unitsPerMm(map)
-          const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
-          const sf = symbolScaleFactor(gapSpec, map.scale)
-          const controlR = getSymbolDims(gapSpec).controlR * upm * sf * appearance.controlScale * vp.scale
-          const arcLen = controlR * gapSize * Math.PI / 180
-          const cursorR = arcLen / 2
-          return (
-            <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
-              <circle
-                r={cursorR}
-                fill="#ea580c"
-                fillOpacity={0.25}
-                stroke="#ea580c"
-                strokeWidth={1}
-              />
-            </g>
-          )
-        })()}
       </svg>
-
-      {/* Layout mode page overlay */}
-      {layoutMode && layoutCourse?.layout && (
-        <PageOverlay
-          layout={layoutCourse.layout}
-          map={map}
-          viewport={vp}
-          canvasW={rectCacheRef.current?.width ?? 800}
-          canvasH={rectCacheRef.current?.height ?? 600}
-          course={layoutCourse}
-          controls={controls}
-        />
-      )}
 
       {/* Saturation slider + HD toggle */}
       <div className="absolute top-14 left-2 md:top-2 flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200 z-10">
