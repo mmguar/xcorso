@@ -420,13 +420,14 @@ export function MapCanvas({ loadedMap }: Props) {
           const pageH = layout.orientation === 'landscape' ? base.w : base.h
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, proj.map, layout.printScale).x
 
+          const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
+          const pageTLx = layout.mapCenter.x - halfWMap
+          const pageTLy = layout.mapCenter.y - halfHMap
+          const pageWMap = halfWMap * 2
+          const mmToMapU = pageWMap / pageW
+
           // Hit test border resize handle (bottom-right corner)
           if (layout.mapBorder) {
-            const pageWMap = halfWMap * 2
-            const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
-            const pageTLx = layout.mapCenter.x - halfWMap
-            const pageTLy = layout.mapCenter.y - halfHMap
-            const mmToMapU = pageWMap / pageW
             const handleMapX = pageTLx + (layout.mapBorder.x + layout.mapBorder.width) * mmToMapU
             const handleMapY = pageTLy + (layout.mapBorder.y + layout.mapBorder.height) * mmToMapU
             const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
@@ -437,38 +438,9 @@ export function MapCanvas({ loadedMap }: Props) {
               dragBorderResizeStarted = false
               return
             }
-
-            // Hit test grey margin strips (inside page, outside border) for border translate
-            const borderMapX1 = pageTLx + layout.mapBorder.x * mmToMapU
-            const borderMapY1 = pageTLy + layout.mapBorder.y * mmToMapU
-            const borderMapX2 = borderMapX1 + layout.mapBorder.width * mmToMapU
-            const borderMapY2 = borderMapY1 + layout.mapBorder.height * mmToMapU
-            const pageSx1 = pageTLx * vpRef.current.scale + vpRef.current.x
-            const pageSy1 = pageTLy * vpRef.current.scale + vpRef.current.y
-            const pageSx2 = (pageTLx + pageW * mmToMapU) * vpRef.current.scale + vpRef.current.x
-            const pageSy2 = (pageTLy + pageH * mmToMapU) * vpRef.current.scale + vpRef.current.y
-            const bSx1 = borderMapX1 * vpRef.current.scale + vpRef.current.x
-            const bSy1 = borderMapY1 * vpRef.current.scale + vpRef.current.y
-            const bSx2 = borderMapX2 * vpRef.current.scale + vpRef.current.x
-            const bSy2 = borderMapY2 * vpRef.current.scale + vpRef.current.y
-            const inPage = sx >= pageSx1 && sx <= pageSx2 && sy >= pageSy1 && sy <= pageSy2
-            const inBorder = sx >= bSx1 && sx <= bSx2 && sy >= bSy1 && sy <= bSy2
-            if (inPage && !inBorder) {
-              dragBorderTranslate = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y }
-              dragBorderTranslateStarted = false
-              return
-            }
           }
 
-          // Hit test layout elements (clue sheet, title)
-          const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
-          const pageTL = {
-            x: layout.mapCenter.x - halfWMap,
-            y: layout.mapCenter.y - halfHMap,
-          }
-          const pageWMap = halfWMap * 2
-          const mmToMapU = pageWMap / pageW
-
+          // Hit test layout elements (clue sheet, title) — before border translate so elements on top of border margin are draggable
           const breaks = layout.clueSheetBreaks
           const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
           if (breaks && breaks.length > 0) {
@@ -484,8 +456,8 @@ export function MapCanvas({ loadedMap }: Props) {
           }
           for (const { key, el, wMm, hMm } of elements) {
             if (!el.visible) continue
-            const elMapX = pageTL.x + el.x * mmToMapU
-            const elMapY = pageTL.y + el.y * mmToMapU
+            const elMapX = pageTLx + el.x * mmToMapU
+            const elMapY = pageTLy + el.y * mmToMapU
             const elScreenX = elMapX * vpRef.current.scale + vpRef.current.x
             const elScreenY = elMapY * vpRef.current.scale + vpRef.current.y
             const elW = wMm * mmToMapU * vpRef.current.scale
@@ -496,34 +468,53 @@ export function MapCanvas({ loadedMap }: Props) {
               return
             }
           }
-        }
 
-        // Hit test overlays (scale bars, text labels) — use mm-based drag like clue sheet
-        if (layout) {
-          const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions)
-          if (overlayHit) {
-            let oPos: { x: number; y: number } | undefined
-            const overridePos = layout.overlayPositions?.[overlayHit.id]
-            if (overridePos) {
-              oPos = overridePos
-            } else if (overlayHit.kind === 'scalebar') {
-              oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
-            } else if (overlayHit.kind === 'text') {
-              oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
-            } else {
-              oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
+          // Hit test overlays (scale bars, text labels) — before border translate
+          {
+            const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions)
+            if (overlayHit) {
+              let oPos: { x: number; y: number } | undefined
+              const overridePos = layout.overlayPositions?.[overlayHit.id]
+              if (overridePos) {
+                oPos = overridePos
+              } else if (overlayHit.kind === 'scalebar') {
+                oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
+              } else if (overlayHit.kind === 'text') {
+                oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+              } else {
+                oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
+              }
+              if (oPos) {
+                const mmPerMapU = pageW / pageWMap
+                const mmX = (oPos.x - pageTLx) * mmPerMapU
+                const mmY = (oPos.y - pageTLy) * mmPerMapU
+                dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY }
+                dragLayoutElStarted = false
+                return
+              }
             }
-            if (oPos) {
-              const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-              const pw = layout.orientation === 'landscape' ? base.h : base.w
-              const ph = layout.orientation === 'landscape' ? base.w : base.h
-              const hwMap = mmToMap({ x: pw / 2, y: 0 }, proj.map, layout.printScale).x
-              const hhMap = mmToMap({ x: 0, y: ph / 2 }, proj.map, layout.printScale).y
-              const mmPerMapU = pw / (hwMap * 2)
-              const mmX = (oPos.x - (layout.mapCenter.x - hwMap)) * mmPerMapU
-              const mmY = (oPos.y - (layout.mapCenter.y - hhMap)) * mmPerMapU
-              dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY }
-              dragLayoutElStarted = false
+          }
+
+          // Hit test grey margin strips (inside page, outside border) for border translate — last so elements on top take priority
+          if (layout.mapBorder) {
+            const borderMapX1 = pageTLx + layout.mapBorder.x * mmToMapU
+            const borderMapY1 = pageTLy + layout.mapBorder.y * mmToMapU
+            const borderMapX2 = borderMapX1 + layout.mapBorder.width * mmToMapU
+            const borderMapY2 = borderMapY1 + layout.mapBorder.height * mmToMapU
+            const pageSx1 = pageTLx * vpRef.current.scale + vpRef.current.x
+            const pageSy1 = pageTLy * vpRef.current.scale + vpRef.current.y
+            const pageSx2 = (pageTLx + pageWMap) * vpRef.current.scale + vpRef.current.x
+            const pageSy2 = (pageTLy + pageH * mmToMapU) * vpRef.current.scale + vpRef.current.y
+            const bSx1 = borderMapX1 * vpRef.current.scale + vpRef.current.x
+            const bSy1 = borderMapY1 * vpRef.current.scale + vpRef.current.y
+            const bSx2 = borderMapX2 * vpRef.current.scale + vpRef.current.x
+            const bSy2 = borderMapY2 * vpRef.current.scale + vpRef.current.y
+            const inPage = sx >= pageSx1 && sx <= pageSx2 && sy >= pageSy1 && sy <= pageSy2
+            const inBorder = sx >= bSx1 && sx <= bSx2 && sy >= bSy1 && sy <= bSy2
+            if (inPage && !inBorder) {
+              dragBorderTranslate = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y }
+              dragBorderTranslateStarted = false
+              return
             }
           }
         }
@@ -1310,24 +1301,19 @@ export function MapCanvas({ loadedMap }: Props) {
         {activeTool === 'gap' && (() => {
           const upm = unitsPerMm(map)
           const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
-          const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
-          const circumference = 2 * Math.PI * r
-          const gapFraction = gapSize / 360
-          const gapLen = circumference * gapFraction
-          const arcLen = circumference - gapLen
-          const sw = Math.max(1, 0.35 * upm * appearance.lineWidth * vp.scale)
+          const sf = symbolScaleFactor(gapSpec, map.scale)
+          const controlR = getSymbolDims(gapSpec).controlR * upm * sf * appearance.controlScale * vp.scale
+          const arcLen = controlR * gapSize * Math.PI / 180
+          const cursorR = arcLen / 2
           return (
             <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
               <circle
-                r={r}
-                fill="none"
+                r={cursorR}
+                fill="#ea580c"
+                fillOpacity={0.25}
                 stroke="#ea580c"
-                strokeWidth={sw}
-                strokeDasharray={`${arcLen} ${gapLen}`}
-                strokeDashoffset={arcLen / 2 + circumference / 4}
+                strokeWidth={1}
               />
-              <line x1={-4} y1={0} x2={4} y2={0} stroke="#ea580c" strokeWidth={1} />
-              <line x1={0} y1={-4} x2={0} y2={4} stroke="#ea580c" strokeWidth={1} />
             </g>
           )
         })()}

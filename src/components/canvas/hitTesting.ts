@@ -29,13 +29,13 @@ export function controlHitRadius(control: Control, vp: Viewport, project: Projec
   return symbolR * vp.scale
 }
 
-export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): Control | null {
+export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, extraPx = 0): Control | null {
   let best: Control | null = null
   let bestDist = Infinity
   for (const c of project.controls) {
     const s = controlToScreen(c, vp)
     const d = Math.hypot(screenX - s.x, screenY - s.y)
-    const hitR = controlHitRadius(c, vp, project, selectedCourseId, controlScale)
+    const hitR = controlHitRadius(c, vp, project, selectedCourseId, controlScale) + extraPx
     if (d < hitR && d < bestDist) { best = c; bestDist = d }
   }
   return best
@@ -54,6 +54,7 @@ export interface LegHit {
   courseControlId: string
   t: number
   segmentIndex: number
+  totalLen: number
 }
 
 export function findLegAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): LegHit | null {
@@ -87,7 +88,7 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
         const lenSq = dx * dx + dy * dy
         const segT = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((mapPt.x - a.x) * dx + (mapPt.y - a.y) * dy) / lenSq))
         const t = totalLen === 0 ? 0 : (cumLen + segT * segLen) / totalLen
-        return { courseId: course.id, courseControlId: cc.id, t, segmentIndex: j }
+        return { courseId: course.id, courseControlId: cc.id, t, segmentIndex: j, totalLen }
       }
       cumLen += segLen
     }
