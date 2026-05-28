@@ -36,7 +36,9 @@ function ControlLabelInput({ control }: { control: Control }) {
   const [val, setVal] = useState(control.label ?? defaultControlLabel(control))
 
   function commit() {
-    updateControlLabel(control.id, val)
+    const trimmed = val.trim()
+    updateControlLabel(control.id, trimmed)
+    if (!trimmed) setVal(defaultControlLabel(control))
   }
 
   return (
@@ -47,7 +49,7 @@ function ControlLabelInput({ control }: { control: Control }) {
       onChange={e => setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      className="w-10 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+      className="w-14 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
     />
   )
 }
