@@ -46,6 +46,7 @@ interface RowData {
 export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
   const controls = useStore(s => s.project!.controls)
+  const projectName = useStore(s => s.project!.meta.name)
   const mapConfig = useStore(s => s.project!.map)
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
@@ -137,13 +138,19 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
             <tbody>
               <tr>
                 <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
+                  {projectName}
+                </td>
+                {showExtraCol && <td />}
+              </tr>
+              <tr>
+                <td colSpan={3} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
                   {course.name}
-                  {distances.total > 0 && (
-                    <span className="font-normal text-gray-500 ml-2">{formatDistance(distances.total)}</span>
-                  )}
-                  {course.climb != null && course.climb > 0 && (
-                    <span className="font-normal text-gray-500 ml-2">{course.climb} m↑</span>
-                  )}
+                </td>
+                <td colSpan={2} className={`${BORDER} text-center py-1 bg-gray-50 text-gray-500`}>
+                  {distances.total > 0 ? formatDistance(distances.total) : ''}
+                </td>
+                <td colSpan={3} className={`${BORDER} text-center py-1 bg-gray-50 text-gray-500`}>
+                  {course.climb != null && course.climb > 0 ? `${course.climb} m↑` : ''}
                 </td>
                 {showExtraCol && (
                   <td className="pl-1.5 align-middle whitespace-nowrap">

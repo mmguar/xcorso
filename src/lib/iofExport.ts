@@ -10,9 +10,10 @@
  * - MapPosition: x, y (attributes, doubles), unit (attribute, optional)
  */
 
-import type { Project, Course, Control, ControlType, MapType } from '../types'
+import type { Project, Course, Control, ControlType, MapConfig } from '../types'
 import { computeCourseDistances } from './distance'
 import { resolveVariation } from './courseUtils'
+import { ocadToLatLng } from './utm'
 
 function xmlEscape(s: string): string {
   return s
@@ -39,34 +40,55 @@ function controlCode(c: Control): string {
   return String(c.code)
 }
 
-function mapPositionUnit(mapType: MapType): string {
-  if (mapType === 'bitmap' || mapType === 'pdf') return 'px'
-  return 'mm'
+function toIofCoords(svgX: number, svgY: number, map: MapConfig): { x: number; y: number } {
+  if (map.type === 'ocad') {
+    const oy = map.originY ?? 0
+    // OCAD SVG uses Y-down; IOF uses Y-up. Flip Y and convert from OCAD units (1/100 mm) to mm.
+    const yFlip = oy + oy + map.height
+    return { x: svgX / 100, y: (yFlip - svgY) / 100 }
+  }
+  return { x: svgX, y: svgY }
 }
 
 export function exportIofXml(project: Project): string {
   const controlMap = new Map<string, Control>(project.controls.map(c => [c.id, c]))
-  const unit = mapPositionUnit(project.map.type)
-  const unitAttr = unit === 'mm' ? '' : ` unit="${unit}"`
+  const isOcad = project.map.type === 'ocad'
+  const unitAttr = isOcad ? '' : ' unit="px"'
 
   function mapPos(x: number, y: number): string {
-    return `<MapPosition x="${x}" y="${y}"${unitAttr}/>`
+    const p = toIofCoords(x, y, project.map)
+    return `<MapPosition x="${p.x}" y="${p.y}"${unitAttr}/>`
   }
 
   // <Map> element: Scale + corners
+  const ox = project.map.originX ?? 0
+  const oy = project.map.originY ?? 0
+  const tl = toIofCoords(ox, oy, project.map)
+  const br = toIofCoords(ox + project.map.width, oy + project.map.height, project.map)
   const mapXml = [
     '    <Map>',
     `      <Scale>${project.map.scale}</Scale>`,
-    `      <MapPositionTopLeft x="0" y="0"${unitAttr}/>`,
-    `      <MapPositionBottomRight x="${project.map.width}" y="${project.map.height}"${unitAttr}/>`,
+    `      <MapPositionTopLeft x="${tl.x}" y="${tl.y}"${unitAttr}/>`,
+    `      <MapPositionBottomRight x="${br.x}" y="${br.y}"${unitAttr}/>`,
     '    </Map>',
   ].join('\n')
 
+  const georef = isOcad ? project.map.georef : undefined
+
+  function positionEl(svgX: number, svgY: number): string {
+    if (!georef) return ''
+    const iof = toIofCoords(svgX, svgY, project.map)
+    const pos = ocadToLatLng(iof.x, iof.y, project.map.scale, georef)
+    return `      <Position lng="${pos.lng.toFixed(10)}" lat="${pos.lat.toFixed(10)}"/>`
+  }
+
   // <Control> elements
   const controlsXml = project.controls.map(c => {
+    const pos = positionEl(c.position.x, c.position.y)
     const lines = [
       `    <Control type="${iofControlType(c.type)}">`,
       `      <Id>${xmlEscape(controlCode(c))}</Id>`,
+      ...(pos ? [pos] : []),
       `      ${mapPos(c.position.x, c.position.y)}`,
       '    </Control>',
     ]

@@ -2,7 +2,7 @@ import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   Annotation, AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, ImageOverlay, EventSpec, FinishType,
-  CourseLayout, LayoutElementPosition, LayoutDefaults,
+  CourseLayout, LayoutElementPosition, LayoutDefaults, MapGeoref,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -43,7 +43,8 @@ export interface AppActions {
 
   setMapScale: (scale: number, source: 'ocad' | 'manual') => void
   setMapScaleMeasurement: (p1: MapPoint, p2: MapPoint, realWorldMeters: number, renderScale?: number) => void
-  setMapDimensions: (width: number, height: number) => void
+  setMapDimensions: (width: number, height: number, originX: number, originY: number) => void
+  setMapGeoref: (georef: MapGeoref) => void
   replaceMapFile: (filename: string, type: MapType, mapData: ArrayBuffer) => void
 
   addControl: (type: ControlType, position: MapPoint, code?: number) => Control
@@ -109,6 +110,8 @@ export interface AppActions {
   moveAnnotation: (id: string, position: MapPoint) => void
   beginRotateAnnotation: () => void
   rotateAnnotation: (id: string, rotation: number) => void
+  beginResizeAnnotation: () => void
+  resizeAnnotation: (id: string, scale: number) => void
   setSelectedAnnotation: (id: string | null) => void
 
   addScaleBar: (position: MapPoint, scale: number) => ScaleBar

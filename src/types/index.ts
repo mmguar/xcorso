@@ -25,6 +25,14 @@ export interface ScaleMeasurement {
   realWorldMeters: number
 }
 
+export interface MapGeoref {
+  easting: number
+  northing: number
+  utmZone: number
+  hemisphere: 'N' | 'S'
+  angleDeg: number  // OCAD ScalePar 'a' — paper rotation from grid north, in degrees
+}
+
 export interface MapConfig {
   type: MapType
   filename: string
@@ -34,6 +42,11 @@ export interface MapConfig {
   width: number
   /** Native map height in map units (matches LoadedMap.bounds.height). */
   height: number
+  /** ViewBox origin X in map units (matches LoadedMap.bounds.minX). 0 for bitmap/PDF. */
+  originX?: number
+  /** ViewBox origin Y in map units (matches LoadedMap.bounds.minY). 0 for bitmap/PDF. */
+  originY?: number
+  georef?: MapGeoref
   scaleSource: 'ocad' | 'manual'
   scaleMeasurement?: ScaleMeasurement  // present when scaleSource === 'manual'
 }
@@ -137,14 +150,16 @@ export interface RaceClass {
 
 // ─── Annotations ────────────────────────────────────────────────────────────
 
-export type AnnotationType = 'forbidden_route' | 'crossing_point' | 'out_of_bounds'
+export type AnnotationType = 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow'
 
 export interface Annotation {
   id: string
   type: AnnotationType
-  points: MapPoint[]         // polyline for routes/bounds; single point for crossing_point
+  points: MapPoint[]         // polyline for routes/bounds; single point for crossing_point/north_arrow
   rotation?: number          // degrees, for crossing_point
-  color?: string
+  scale?: number             // size multiplier, for north_arrow (default 1)
+  color?: string             // fill color (north_arrow)
+  textColor?: string         // text color (north_arrow, default white)
 }
 
 // ─── Course Layout ─────────────────────────────────────────────────────────
@@ -271,6 +286,7 @@ export type ActiveTool =
   | 'delete'
   | 'gap'
   | 'bend'
+  | 'place-north-arrow'
   | 'place-scalebar'
   | 'place-text'
   | 'place-image'

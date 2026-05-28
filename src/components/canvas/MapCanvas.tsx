@@ -8,7 +8,7 @@ import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
 import { DragLegsLayer } from './DragLegsLayer'
 import type { DragLegsHandle } from './DragLegsLayer'
-import { AnnotationsLayer } from './AnnotationsLayer'
+import { AnnotationsLayer, northArrowHeight, northArrowGeometry } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
@@ -22,7 +22,7 @@ import {
   screenToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
-  findCrossingPointRotationHandle,
+  findCrossingPointRotationHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle,
 } from './hitTesting'
 import { handleGapTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
@@ -327,6 +327,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragAnnotation: { annId: string; dx: number; dy: number } | null = null
     let dragAnnotationStarted = false
 
+    let dragAnnResize: { annId: string; centerX: number; centerY: number; origScale: number; origHandleDist: number } | null = null
+    let dragAnnResizeStarted = false
+
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
     function clearLongPress() {
@@ -420,55 +423,27 @@ export function MapCanvas({ loadedMap }: Props) {
           const pageH = layout.orientation === 'landscape' ? base.w : base.h
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, proj.map, layout.printScale).x
 
+          const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
+          const pageTLx = layout.mapCenter.x - halfWMap
+          const pageTLy = layout.mapCenter.y - halfHMap
+          const pageWMap = halfWMap * 2
+          const mmToMapU = pageWMap / pageW
+
           // Hit test border resize handle (bottom-right corner)
           if (layout.mapBorder) {
-            const pageWMap = halfWMap * 2
-            const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
-            const pageTLx = layout.mapCenter.x - halfWMap
-            const pageTLy = layout.mapCenter.y - halfHMap
-            const mmToMapU = pageWMap / pageW
             const handleMapX = pageTLx + (layout.mapBorder.x + layout.mapBorder.width) * mmToMapU
             const handleMapY = pageTLy + (layout.mapBorder.y + layout.mapBorder.height) * mmToMapU
             const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
             const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
-            const HANDLE_HIT = 12
+            const HANDLE_HIT = 6
             if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
               dragBorderResize = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y, ow: layout.mapBorder.width, oh: layout.mapBorder.height }
               dragBorderResizeStarted = false
               return
             }
-
-            // Hit test grey margin strips (inside page, outside border) for border translate
-            const borderMapX1 = pageTLx + layout.mapBorder.x * mmToMapU
-            const borderMapY1 = pageTLy + layout.mapBorder.y * mmToMapU
-            const borderMapX2 = borderMapX1 + layout.mapBorder.width * mmToMapU
-            const borderMapY2 = borderMapY1 + layout.mapBorder.height * mmToMapU
-            const pageSx1 = pageTLx * vpRef.current.scale + vpRef.current.x
-            const pageSy1 = pageTLy * vpRef.current.scale + vpRef.current.y
-            const pageSx2 = (pageTLx + pageW * mmToMapU) * vpRef.current.scale + vpRef.current.x
-            const pageSy2 = (pageTLy + pageH * mmToMapU) * vpRef.current.scale + vpRef.current.y
-            const bSx1 = borderMapX1 * vpRef.current.scale + vpRef.current.x
-            const bSy1 = borderMapY1 * vpRef.current.scale + vpRef.current.y
-            const bSx2 = borderMapX2 * vpRef.current.scale + vpRef.current.x
-            const bSy2 = borderMapY2 * vpRef.current.scale + vpRef.current.y
-            const inPage = sx >= pageSx1 && sx <= pageSx2 && sy >= pageSy1 && sy <= pageSy2
-            const inBorder = sx >= bSx1 && sx <= bSx2 && sy >= bSy1 && sy <= bSy2
-            if (inPage && !inBorder) {
-              dragBorderTranslate = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y }
-              dragBorderTranslateStarted = false
-              return
-            }
           }
 
-          // Hit test layout elements (clue sheet, title)
-          const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
-          const pageTL = {
-            x: layout.mapCenter.x - halfWMap,
-            y: layout.mapCenter.y - halfHMap,
-          }
-          const pageWMap = halfWMap * 2
-          const mmToMapU = pageWMap / pageW
-
+          // Hit test layout elements (clue sheet, title) — before border translate so elements on top of border margin are draggable
           const breaks = layout.clueSheetBreaks
           const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
           if (breaks && breaks.length > 0) {
@@ -484,8 +459,8 @@ export function MapCanvas({ loadedMap }: Props) {
           }
           for (const { key, el, wMm, hMm } of elements) {
             if (!el.visible) continue
-            const elMapX = pageTL.x + el.x * mmToMapU
-            const elMapY = pageTL.y + el.y * mmToMapU
+            const elMapX = pageTLx + el.x * mmToMapU
+            const elMapY = pageTLy + el.y * mmToMapU
             const elScreenX = elMapX * vpRef.current.scale + vpRef.current.x
             const elScreenY = elMapY * vpRef.current.scale + vpRef.current.y
             const elW = wMm * mmToMapU * vpRef.current.scale
@@ -496,34 +471,53 @@ export function MapCanvas({ loadedMap }: Props) {
               return
             }
           }
-        }
 
-        // Hit test overlays (scale bars, text labels) — use mm-based drag like clue sheet
-        if (layout) {
-          const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions)
-          if (overlayHit) {
-            let oPos: { x: number; y: number } | undefined
-            const overridePos = layout.overlayPositions?.[overlayHit.id]
-            if (overridePos) {
-              oPos = overridePos
-            } else if (overlayHit.kind === 'scalebar') {
-              oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
-            } else if (overlayHit.kind === 'text') {
-              oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
-            } else {
-              oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
+          // Hit test overlays (scale bars, text labels) — before border translate
+          {
+            const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions)
+            if (overlayHit) {
+              let oPos: { x: number; y: number } | undefined
+              const overridePos = layout.overlayPositions?.[overlayHit.id]
+              if (overridePos) {
+                oPos = overridePos
+              } else if (overlayHit.kind === 'scalebar') {
+                oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
+              } else if (overlayHit.kind === 'text') {
+                oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+              } else {
+                oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
+              }
+              if (oPos) {
+                const mmPerMapU = pageW / pageWMap
+                const mmX = (oPos.x - pageTLx) * mmPerMapU
+                const mmY = (oPos.y - pageTLy) * mmPerMapU
+                dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY }
+                dragLayoutElStarted = false
+                return
+              }
             }
-            if (oPos) {
-              const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-              const pw = layout.orientation === 'landscape' ? base.h : base.w
-              const ph = layout.orientation === 'landscape' ? base.w : base.h
-              const hwMap = mmToMap({ x: pw / 2, y: 0 }, proj.map, layout.printScale).x
-              const hhMap = mmToMap({ x: 0, y: ph / 2 }, proj.map, layout.printScale).y
-              const mmPerMapU = pw / (hwMap * 2)
-              const mmX = (oPos.x - (layout.mapCenter.x - hwMap)) * mmPerMapU
-              const mmY = (oPos.y - (layout.mapCenter.y - hhMap)) * mmPerMapU
-              dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY }
-              dragLayoutElStarted = false
+          }
+
+          // Hit test grey margin strips (inside page, outside border) for border translate — last so elements on top take priority
+          if (layout.mapBorder) {
+            const borderMapX1 = pageTLx + layout.mapBorder.x * mmToMapU
+            const borderMapY1 = pageTLy + layout.mapBorder.y * mmToMapU
+            const borderMapX2 = borderMapX1 + layout.mapBorder.width * mmToMapU
+            const borderMapY2 = borderMapY1 + layout.mapBorder.height * mmToMapU
+            const pageSx1 = pageTLx * vpRef.current.scale + vpRef.current.x
+            const pageSy1 = pageTLy * vpRef.current.scale + vpRef.current.y
+            const pageSx2 = (pageTLx + pageWMap) * vpRef.current.scale + vpRef.current.x
+            const pageSy2 = (pageTLy + pageH * mmToMapU) * vpRef.current.scale + vpRef.current.y
+            const bSx1 = borderMapX1 * vpRef.current.scale + vpRef.current.x
+            const bSy1 = borderMapY1 * vpRef.current.scale + vpRef.current.y
+            const bSx2 = borderMapX2 * vpRef.current.scale + vpRef.current.x
+            const bSy2 = borderMapY2 * vpRef.current.scale + vpRef.current.y
+            const inPage = sx >= pageSx1 && sx <= pageSx2 && sy >= pageSy1 && sy <= pageSy2
+            const inBorder = sx >= bSx1 && sx <= bSx2 && sy >= bSy1 && sy <= bSy2
+            if (inPage && !inBorder) {
+              dragBorderTranslate = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y }
+              dragBorderTranslateStarted = false
+              return
             }
           }
         }
@@ -553,6 +547,57 @@ export function MapCanvas({ loadedMap }: Props) {
           dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
           dragLabelStarted = false
         } else {
+          // Annotation/overlay handles take priority over controls
+          const rotHit = findCrossingPointRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (rotHit && rotHit.points[0]) {
+            dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
+            dragRotationStarted = false
+            return
+          }
+
+          const naRotHit = findNorthArrowRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (naRotHit && naRotHit.points[0]) {
+            dragRotation = { annId: naRotHit.id, center: naRotHit.points[0] }
+            dragRotationStarted = false
+            return
+          }
+
+          const naResizeHit = findNorthArrowResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (naResizeHit && naResizeHit.points[0]) {
+            const naUpm = unitsPerMm(proj.map)
+            const naSpec = resolveSpec(proj.spec)
+            const naH = northArrowHeight(naUpm, proj.map.scale, naSpec, naResizeHit.scale ?? 1)
+            const geo = northArrowGeometry(naH, naUpm)
+            const origHandleDist = Math.hypot(geo.resizeHandleLocalX, geo.resizeHandleLocalY)
+            dragAnnResize = { annId: naResizeHit.id, centerX: naResizeHit.points[0].x, centerY: naResizeHit.points[0].y, origScale: naResizeHit.scale ?? 1, origHandleDist }
+            dragAnnResizeStarted = false
+            return
+          }
+
+          const selectedImg = state.editor.selectedOverlayId
+            ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
+            : null
+          if (selectedImg) {
+            const upmVal = unitsPerMm(proj.map)
+            const handleMapX = selectedImg.position.x + selectedImg.widthMm * upmVal
+            const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
+            const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
+            const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
+            const HANDLE_HIT = 1.5 * upmVal * vpRef.current.scale
+            if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
+              dragResize = {
+                id: selectedImg.id,
+                origWidthMap: selectedImg.widthMm * upmVal,
+                origHeightMap: selectedImg.heightMm * upmVal,
+                posX: selectedImg.position.x,
+                posY: selectedImg.position.y,
+              }
+              dragResizeStarted = false
+              return
+            }
+          }
+
+          // Controls
           const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale)
           if (hit) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
@@ -560,44 +605,12 @@ export function MapCanvas({ loadedMap }: Props) {
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
             dragStarted = false
           } else {
-            // Check for crossing point rotation handle
-            const rotHit = findCrossingPointRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
-            if (rotHit && rotHit.points[0]) {
-              dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
-              dragRotationStarted = false
-              return
-            }
-
-            // Check for crossing point / annotation drag
             const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-            if (annHit && annHit.type === 'crossing_point' && annHit.points[0]) {
+            if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow') && annHit.points[0]) {
               const mapPt2 = screenToMap(sx, sy, vpRef.current)
               dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
               dragAnnotationStarted = false
-            }
-
-            // Check for image resize handle first
-            const selectedImg = state.editor.selectedOverlayId
-              ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
-              : null
-            if (selectedImg) {
-              const upmVal = unitsPerMm(proj.map)
-              const handleMapX = selectedImg.position.x + selectedImg.widthMm * upmVal
-              const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
-              const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
-              const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
-              const HANDLE_HIT = 12
-              if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
-                dragResize = {
-                  id: selectedImg.id,
-                  origWidthMap: selectedImg.widthMm * upmVal,
-                  origHeightMap: selectedImg.heightMm * upmVal,
-                  posX: selectedImg.position.x,
-                  posY: selectedImg.position.y,
-                }
-                dragResizeStarted = false
-                return
-              }
+              return
             }
 
             const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
@@ -820,6 +833,21 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragAnnResize && pos.size === 1) {
+        if (!dragAnnResizeStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginResizeAnnotation()
+          dragAnnResizeStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const distFromCenter = Math.hypot(mapPt.x - dragAnnResize.centerX, mapPt.y - dragAnnResize.centerY)
+        const newScale = Math.max(0.3, dragAnnResize.origScale * distFromCenter / dragAnnResize.origHandleDist)
+        useStore.getState().resizeAnnotation(dragAnnResize.annId, newScale)
+        return
+      }
+
       if (dragResize && pos.size === 1) {
         if (!dragResizeStarted) {
           const start = down.get(e.pointerId)
@@ -953,6 +981,9 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragRotation && dragRotationStarted) { dragRotation = null; dragRotationStarted = false; return }
       dragRotation = null; dragRotationStarted = false
 
+      if (dragAnnResize && dragAnnResizeStarted) { dragAnnResize = null; dragAnnResizeStarted = false; return }
+      dragAnnResize = null; dragAnnResizeStarted = false
+
       if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
       dragResize = null; dragResizeStarted = false
 
@@ -1024,7 +1055,7 @@ export function MapCanvas({ loadedMap }: Props) {
           return
         }
         const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-        if (annHit && annHit.type === 'crossing_point') {
+        if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow')) {
           state.setSelectedAnnotation(annHit.id)
           state.setSelectedControl(null)
           state.setSelectedOverlay(null)
@@ -1047,6 +1078,10 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'crossing-point':
           state.addAnnotationPoint(mapPt)
           state.commitAnnotation('crossing_point')
+          break
+        case 'place-north-arrow':
+          state.addAnnotationPoint(mapPt)
+          state.commitAnnotation('north_arrow')
           break
         case 'place-scalebar':
           state.addScaleBar(mapPt, proj.map.scale)
@@ -1081,6 +1116,7 @@ export function MapCanvas({ loadedMap }: Props) {
       clearLongPress()
       dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
+      dragAnnResize = null; dragAnnResizeStarted = false
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
@@ -1191,9 +1227,10 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   function getAnnotationType(): AnnotationType | null {
-    if (activeTool === 'forbidden-route') return 'forbidden_route'
-    if (activeTool === 'crossing-point')  return 'crossing_point'
-    if (activeTool === 'out-of-bounds')   return 'out_of_bounds'
+    if (activeTool === 'forbidden-route')    return 'forbidden_route'
+    if (activeTool === 'crossing-point')     return 'crossing_point'
+    if (activeTool === 'out-of-bounds')      return 'out_of_bounds'
+    if (activeTool === 'place-north-arrow')  return 'north_arrow'
     return null
   }
 
@@ -1302,6 +1339,75 @@ export function MapCanvas({ loadedMap }: Props) {
             controls={controls}
             course={selectedCourse}
           />
+          {/* Handles layer — renders above controls so they're always clickable */}
+          {(() => {
+            const upm = unitsPerMm(map)
+            const spec = resolveSpec(projectSpec, selectedCourse?.spec)
+            const strokeW = 0.2 * upm
+            const elements: React.ReactNode[] = []
+
+            if (selectedAnnotationId) {
+              const ann = annotations.find(a => a.id === selectedAnnotationId)
+              if (ann?.type === 'crossing_point' && ann.points[0]) {
+                const d = getAnnotationDims(symbolScaleFactor(spec, map.scale) * upm)
+                const { x, y } = ann.points[0]
+                const hh = d.crossH
+                const handleR = 1 * upm
+                const rotation = ann.rotation ?? 0
+                elements.push(
+                  <circle key="cp-rot"
+                    cx={x} cy={y - hh - handleR * 2}
+                    r={handleR}
+                    fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                    transform={`rotate(${rotation}, ${x}, ${y})`}
+                  />
+                )
+              }
+              if (ann?.type === 'north_arrow' && ann.points[0]) {
+                const h = northArrowHeight(upm, map.scale, spec, ann.scale ?? 1)
+                const geo = northArrowGeometry(h, upm)
+                const { x, y } = ann.points[0]
+                const rotation = ann.rotation ?? 0
+                const color = ann.color ?? '#38bdf8'
+                const rightX = x + geo.halfBase
+                const baseY = y + geo.baseLocalY
+                elements.push(
+                  <g key="na-handles" transform={`rotate(${rotation}, ${x}, ${y})`}>
+                    <circle
+                      cx={x + geo.rotHandleLocalX} cy={y + geo.rotHandleLocalY}
+                      r={geo.handleR}
+                      fill={color} stroke="white" strokeWidth={strokeW}
+                    />
+                    <rect
+                      x={rightX - geo.handleR} y={baseY - geo.handleR}
+                      width={geo.handleR * 2} height={geo.handleR * 2}
+                      rx={strokeW * 2}
+                      fill={color} stroke="white" strokeWidth={strokeW}
+                    />
+                  </g>
+                )
+              }
+            }
+
+            if (selectedOverlayId) {
+              const selImg = imageOverlays.find(o => o.id === selectedOverlayId)
+              if (selImg) {
+                const w = selImg.widthMm * upm
+                const h = selImg.heightMm * upm
+                const handleSize = 3 * upm
+                elements.push(
+                  <rect key="img-resize"
+                    x={selImg.position.x + w - handleSize / 2}
+                    y={selImg.position.y + h - handleSize / 2}
+                    width={handleSize} height={handleSize}
+                    fill="#ea580c" stroke="white" strokeWidth={strokeW}
+                  />
+                )
+              }
+            }
+
+            return elements.length > 0 ? <g style={{ pointerEvents: 'none' }}>{elements}</g> : null
+          })()}
           {import.meta.env.DEV && (
             <DebugHitboxes controls={controls} map={map} vp={vp} selectedCourseId={selectedCourseId} appearance={appearance} projectSpec={projectSpec} />
           )}
@@ -1309,24 +1415,19 @@ export function MapCanvas({ loadedMap }: Props) {
         {activeTool === 'gap' && (() => {
           const upm = unitsPerMm(map)
           const gapSpec = resolveSpec(projectSpec, selectedCourse?.spec)
-          const r = getSymbolDims(gapSpec).controlR * upm * appearance.controlScale * vp.scale
-          const circumference = 2 * Math.PI * r
-          const gapFraction = gapSize / 360
-          const gapLen = circumference * gapFraction
-          const arcLen = circumference - gapLen
-          const sw = Math.max(1, 0.35 * upm * appearance.lineWidth * vp.scale)
+          const sf = symbolScaleFactor(gapSpec, map.scale)
+          const controlR = getSymbolDims(gapSpec).controlR * upm * sf * appearance.controlScale * vp.scale
+          const arcLen = controlR * gapSize * Math.PI / 180
+          const cursorR = arcLen / 2
           return (
             <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
               <circle
-                r={r}
-                fill="none"
+                r={cursorR}
+                fill="#ea580c"
+                fillOpacity={0.25}
                 stroke="#ea580c"
-                strokeWidth={sw}
-                strokeDasharray={`${arcLen} ${gapLen}`}
-                strokeDashoffset={arcLen / 2 + circumference / 4}
+                strokeWidth={1}
               />
-              <line x1={-4} y1={0} x2={4} y2={0} stroke="#ea580c" strokeWidth={1} />
-              <line x1={0} y1={-4} x2={0} y2={4} stroke="#ea580c" strokeWidth={1} />
             </g>
           )
         })()}

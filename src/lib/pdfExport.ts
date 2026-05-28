@@ -1,8 +1,8 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm } from './courseUtils'
 import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
 import { walkPath, clipPolyline } from './geometry'
@@ -647,9 +647,80 @@ function setColor(doc: jsPDF, hex: string) {
   doc.setTextColor(r, g, b)
 }
 
+// ── Gap dash patterns ──────────────────────────────────────────────────────
+
+function circleGapDash(gaps: CircleGap[], circumference: number): { dash: number[]; phase: number } | null {
+  if (gaps.length === 0) return null
+
+  const segments: { start: number; end: number }[] = []
+  for (const g of gaps) {
+    const s = ((g.startAngle % 360) + 360) % 360
+    const e = ((g.endAngle % 360) + 360) % 360
+    if (e < s) {
+      segments.push({ start: s, end: 360 })
+      if (e > 0) segments.push({ start: 0, end: e })
+    } else if (e > s) {
+      segments.push({ start: s, end: e })
+    }
+  }
+
+  segments.sort((a, b) => a.start - b.start)
+  const merged: { start: number; end: number }[] = []
+  for (const seg of segments) {
+    const last = merged[merged.length - 1]
+    if (last && seg.start <= last.end) {
+      last.end = Math.max(last.end, seg.end)
+    } else {
+      merged.push({ start: seg.start, end: seg.end })
+    }
+  }
+
+  const dashes: number[] = []
+  let pos = 0
+  for (const seg of merged) {
+    const gapStart = (seg.start / 360) * circumference
+    const gapEnd = (seg.end / 360) * circumference
+    const visible = gapStart - pos
+    if (visible > 0) dashes.push(visible)
+    else if (dashes.length === 0) dashes.push(0)
+    dashes.push(gapEnd - Math.max(pos, gapStart))
+    pos = gapEnd
+  }
+  const remaining = circumference - pos
+  if (remaining > 0) dashes.push(remaining)
+
+  return { dash: dashes, phase: 0 }
+}
+
+function legGapDash(gaps: LegGap[], lineLen: number): { dash: number[]; phase: number } | null {
+  if (gaps.length === 0) return null
+  const sorted = [...gaps].sort((a, b) => a.start - b.start)
+  const dashes: number[] = []
+  let pos = 0
+  for (const g of sorted) {
+    const gapStart = g.start * lineLen
+    const gapEnd = g.end * lineLen
+    if (gapStart > pos) {
+      dashes.push(gapStart - pos)
+      dashes.push(gapEnd - gapStart)
+    } else {
+      if (dashes.length > 0) {
+        dashes[dashes.length - 1] += gapEnd - pos
+      } else {
+        dashes.push(0)
+        dashes.push(gapEnd - pos)
+      }
+    }
+    pos = gapEnd
+  }
+  const remaining = lineLen - pos
+  if (remaining > 0) dashes.push(remaining)
+  return { dash: dashes, phase: 0 }
+}
+
 // ── Drawing primitives ──────────────────────────────────────────────────────
 
-function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec, isExchange = false) {
+function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec, isExchange = false, gaps?: CircleGap[]) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
   const startSide = dims.startSide * sf
@@ -660,22 +731,38 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   const controlR = dims.controlR * sf
   const controlSw = dims.strokeW * sf
 
+  const gapDash = gaps?.length
+    ? (circ: number) => {
+        const d = circleGapDash(gaps, circ)
+        if (d) doc.setLineDashPattern(d.dash, d.phase)
+      }
+    : () => {}
+  const resetDash = gaps?.length ? () => doc.setLineDashPattern([], 0) : () => {}
+
   if (type === 'start') {
     const h = startSide * Math.sqrt(3) / 2
     doc.setLineWidth(startSw)
+    gapDash(startSide * 3)
     doc.triangle(
       pos.x, pos.y - h * 2 / 3,
       pos.x - startSide / 2, pos.y + h / 3,
       pos.x + startSide / 2, pos.y + h / 3,
       'S',
     )
+    resetDash()
   } else if (type === 'finish') {
     doc.setLineWidth(finishSw)
+    gapDash(2 * Math.PI * finishOuter)
     doc.circle(pos.x, pos.y, finishOuter, 'S')
+    resetDash()
+    gapDash(2 * Math.PI * finishInner)
     doc.circle(pos.x, pos.y, finishInner, 'S')
+    resetDash()
   } else if (isExchange) {
     doc.setLineWidth(controlSw)
+    gapDash(2 * Math.PI * controlR)
     doc.circle(pos.x, pos.y, controlR, 'S')
+    resetDash()
     const triPoints: [number, number][] = [90, 210, 330].map(deg => {
       const rad = (deg * Math.PI) / 180
       return [pos.x + controlR * Math.cos(rad), pos.y + controlR * Math.sin(rad)]
@@ -688,7 +775,9 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     )
   } else {
     doc.setLineWidth(controlSw)
+    gapDash(2 * Math.PI * controlR)
     doc.circle(pos.x, pos.y, controlR, 'S')
+    resetDash()
   }
 }
 
@@ -700,7 +789,7 @@ function clipR(type: string, printScale: number, spec: EventSpec): number {
   return dims.controlR * sf
 }
 
-function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[]) {
+function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[], gaps?: LegGap[]) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
   doc.setLineWidth(dims.legW * sf)
@@ -708,25 +797,42 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   const fromR = clipR(fromType, printScale, spec)
   const toR = clipR(toType, printScale, spec)
 
-  if (bendPoints && bendPoints.length > 0) {
-    const pts: Pos[] = [from, ...bendPoints, to]
-    const clipped = clipPolyline(pts, fromR, toR)
-    if (clipped.length < 2) return
-    for (let i = 0; i < clipped.length - 1; i++) {
-      doc.line(clipped[i].x, clipped[i].y, clipped[i + 1].x, clipped[i + 1].y)
+  const fullPts: Pos[] = bendPoints?.length ? [from, ...bendPoints, to] : [from, to]
+  let fullLen = 0
+  for (let i = 1; i < fullPts.length; i++) fullLen += Math.hypot(fullPts[i].x - fullPts[i - 1].x, fullPts[i].y - fullPts[i - 1].y)
+
+  const clipped = clipPolyline(fullPts, fromR, toR)
+  if (clipped.length < 2) return
+
+  let clippedLen = 0
+  for (let i = 1; i < clipped.length; i++) clippedLen += Math.hypot(clipped[i].x - clipped[i - 1].x, clipped[i].y - clipped[i - 1].y)
+
+  // Remap gaps from full-leg fractions to clipped-leg fractions
+  let remapped: LegGap[] | undefined
+  if (gaps?.length && fullLen > 0) {
+    const clipStart = fromR / fullLen
+    const clipEnd = 1 - toR / fullLen
+    const clipRange = clipEnd - clipStart
+    if (clipRange > 0) {
+      remapped = gaps
+        .map(g => ({
+          start: Math.max(0, (g.start - clipStart) / clipRange),
+          end: Math.min(1, (g.end - clipStart) / clipRange),
+        }))
+        .filter(g => g.end > 0 && g.start < 1)
     }
-  } else {
-    const dx = to.x - from.x
-    const dy = to.y - from.y
-    const len = Math.sqrt(dx * dx + dy * dy)
-    if (len === 0 || fromR + toR >= len) return
-    const ux = dx / len
-    const uy = dy / len
-    doc.line(
-      from.x + ux * fromR, from.y + uy * fromR,
-      to.x - ux * toR, to.y - uy * toR,
-    )
   }
+
+  const gd = remapped?.length ? legGapDash(remapped, clippedLen) : null
+  if (gd) doc.setLineDashPattern(gd.dash, gd.phase)
+
+  doc.moveTo(clipped[0].x, clipped[0].y)
+  for (let i = 1; i < clipped.length; i++) {
+    doc.lineTo(clipped[i].x, clipped[i].y)
+  }
+  doc.stroke()
+
+  if (gd) doc.setLineDashPattern([], 0)
 }
 
 
@@ -1002,10 +1108,18 @@ function drawImageOverlay(
   doc: jsPDF,
   img: ImageOverlay,
   toPage: (pt: MapPoint) => Pos,
+  map: MapConfig,
 ) {
+  const upm = unitsPerMm(map)
   const pos = toPage(img.position)
-  const w = img.widthMm
-  const h = img.heightMm
+  const farCorner = toPage({
+    x: img.position.x + img.widthMm * upm,
+    y: img.position.y + img.heightMm * upm,
+  })
+  const w = farCorner.x - pos.x
+  const h = farCorner.y - pos.y
+
+  if (w <= 0 || h <= 0) return
 
   if (img.bgAlpha > 0) {
     doc.setFillColor(255, 255, 255)
@@ -1164,22 +1278,15 @@ export async function exportCoursePdf(
           setColor(doc, ctrlColor)
           for (const ctrl of project.controls) {
             const pos = toPage(ctrl.position)
-            drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec)
+            drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec, false, ctrl.gaps)
             drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec)
           }
 
           // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
-          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage)
+          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage, project.map)
 
-          doc.setFontSize(8)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(130, 130, 130)
-          const tileLabel = cols * rows > 1
-            ? `All controls  —  1:${acScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : ``
-          doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
     }
@@ -1209,7 +1316,6 @@ export async function exportCoursePdf(
       const smKey = hasSubmaps ? submapPreviewId(oKey, submap.index) : oKey
       const courseScale = options.scaleOverrides?.[smKey] ?? baseCourseScale
       const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
-      const pageTitle = hasSubmaps ? `${course.name} — ${submap.label}` : course.name
 
       let trailingFlip = false
       if (hasSubmaps && submap.index < submaps.length - 1) {
@@ -1284,8 +1390,9 @@ export async function exportCoursePdf(
               const to = controlMap.get(pageCourse.controls[i + 1].controlId)
               if (!from || !to) continue
               setColor(doc, course.color)
-              const bends = pageCourse.controls[i + 1].legBendPoints?.map(p => toPage(p))
-              drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends)
+              const cc = pageCourse.controls[i + 1]
+              const bends = cc.legBendPoints?.map(p => toPage(p))
+              drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends, cc.legGaps)
             }
           }
 
@@ -1305,7 +1412,7 @@ export async function exportCoursePdf(
             const pos = toPage(ctrl.position)
             setColor(doc, course.color)
             const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
-            drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange)
+            drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange, ctrl.gaps)
             const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
             if (!isSubmapStart && ctrl.type === 'control') {
               const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
@@ -1352,7 +1459,7 @@ export async function exportCoursePdf(
             const effectiveImg = overridePos ? { ...img, position: overridePos } : img
             const imgPos = toPage(effectiveImg.position)
             if (imgPos.x < 0 || imgPos.x > cpw || imgPos.y < 0 || imgPos.y > cph) continue
-            drawImageOverlay(doc, effectiveImg, toPage)
+            drawImageOverlay(doc, effectiveImg, toPage, project.map)
           }
 
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
@@ -1361,28 +1468,22 @@ export async function exportCoursePdf(
             if (breaks && breaks.length > 0) {
               const partPositions = [layout!.clueSheet, ...(layout!.clueSheetParts ?? [])]
               for (let pi = 0; pi < breaks.length + 1; pi++) {
-                const partPos = options.sheetPositions?.[`${smKey}:part${pi}`]
-                  ?? options.sheetPositions?.[`${oKey}:part${pi}`]
+                const partKey = pi === 0 ? '' : `:part${pi}`
+              const partPos = options.sheetPositions?.[`${smKey}${partKey}`]
+                  ?? options.sheetPositions?.[`${oKey}${partKey}`]
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
-                drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, courseScale, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+                drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? layout?.clueSheet ?? { x: MARGIN, y: MARGIN }
               if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
-                drawDescriptionSheetOverlay(doc, pageCourse, project.controls, courseScale, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+                drawDescriptionSheetOverlay(doc, pageCourse, project.controls, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
               }
             }
           }
 
-          doc.setFontSize(8)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(130, 130, 130)
-          const tileLabel = cols * rows > 1
-            ? `${pageTitle}  —  1:${courseScale.toLocaleString()}  —  Page ${row * cols + col + 1}/${cols * rows}`
-            : (hasSubmaps ? `${pageTitle}  —  1:${courseScale.toLocaleString()}` : ``)
-          doc.text(tileLabel, MARGIN, MARGIN + 3)
         }
       }
 
@@ -1390,7 +1491,7 @@ export async function exportCoursePdf(
         doc.addPage([cpw, cph], cOrientFlag)
         pageIndex++
         const dist = computeCourseDistances(pageCourse, project.controls, project.map)
-        drawDescriptionSheet(doc, pageCourse, project.controls, courseScale, cpw, cph, dist.total, course.textDescriptions, dist.legs, trailingFlip)
+        drawDescriptionSheet(doc, pageCourse, project.controls, cpw, cph, dist.total, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
       }
     }
   }

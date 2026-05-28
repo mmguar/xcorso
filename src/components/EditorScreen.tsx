@@ -10,7 +10,7 @@ import { MapCanvas } from './canvas/MapCanvas'
 import { Header } from './ui/Header'
 import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
-import { OverlaySettingsPanel } from './panels/OverlaySettingsPanel'
+import { OverlaySettingsPanel, AnnotationSettingsPanel } from './panels/OverlaySettingsPanel'
 
 interface Props { onGoHome: () => void }
 
@@ -34,10 +34,14 @@ export function EditorScreen({ onGoHome }: Props) {
     loadMap(mapFileData, project.map.filename)
       .then((map) => {
         setLoadedMap(map)
-        const { width, height } = map.bounds
+        const { width, height, minX, minY } = map.bounds
         const proj = useStore.getState().project
-        if (proj && (proj.map.width !== width || proj.map.height !== height)) {
-          useStore.getState().setMapDimensions(width, height)
+        if (proj && (proj.map.width !== width || proj.map.height !== height
+            || proj.map.originX !== minX || proj.map.originY !== minY)) {
+          useStore.getState().setMapDimensions(width, height, minX, minY)
+        }
+        if (proj && map.detectedGeoref && !proj.map.georef) {
+          useStore.getState().setMapGeoref(map.detectedGeoref)
         }
       })
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
@@ -71,6 +75,7 @@ export function EditorScreen({ onGoHome }: Props) {
           <MapCanvas loadedMap={loadedMap} />
           <Toolbar />
           <OverlaySettingsPanel />
+          <AnnotationSettingsPanel />
         </div>
         <SidePanel />
       </div>

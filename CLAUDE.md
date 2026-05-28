@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Rules
+
+Never test anything in browser using playwright, let the user test.
+
 ## Commands
 
 - `npm run dev` — start Vite dev server (http://localhost:5173)

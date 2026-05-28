@@ -8,37 +8,48 @@ import type { SymbolDims } from '../../lib/symbolSpec'
 
 function gapsToDashArray(gaps: CircleGap[], circumference: number): { dashArray: string; dashOffset: number } | null {
   if (gaps.length === 0) return null
-  const sorted = [...gaps].sort((a, b) => a.startAngle - b.startAngle)
+
+  // Split wrapping gaps into two non-wrapping segments
   const segments: { start: number; end: number }[] = []
-  for (const g of sorted) {
+  for (const g of gaps) {
     const s = ((g.startAngle % 360) + 360) % 360
-    let e = ((g.endAngle % 360) + 360) % 360
-    if (e <= s) e += 360
-    segments.push({ start: s, end: e })
+    const e = ((g.endAngle % 360) + 360) % 360
+    if (e < s) {
+      segments.push({ start: s, end: 360 })
+      if (e > 0) segments.push({ start: 0, end: e })
+    } else if (e > s) {
+      segments.push({ start: s, end: e })
+    }
   }
+
+  // Sort and merge overlapping segments
+  segments.sort((a, b) => a.start - b.start)
+  const merged: { start: number; end: number }[] = []
+  for (const seg of segments) {
+    const last = merged[merged.length - 1]
+    if (last && seg.start <= last.end) {
+      last.end = Math.max(last.end, seg.end)
+    } else {
+      merged.push({ start: seg.start, end: seg.end })
+    }
+  }
+
   // Build dash pattern starting from angle 0
+  // SVG circles start at 3 o'clock (0°) and go clockwise, which matches our convention
   const dashes: number[] = []
   let pos = 0
-  for (const seg of segments) {
+  for (const seg of merged) {
     const gapStart = (seg.start / 360) * circumference
     const gapEnd = (seg.end / 360) * circumference
-    if (gapStart > pos) {
-      dashes.push(gapStart - pos) // visible
-      dashes.push(gapEnd - gapStart) // gap
-    } else {
-      if (dashes.length > 0) {
-        dashes[dashes.length - 1] += gapEnd - pos // extend last gap
-      } else {
-        dashes.push(0) // no visible before first gap
-        dashes.push(gapEnd - pos)
-      }
-    }
+    const visible = gapStart - pos
+    if (visible > 0) dashes.push(visible)
+    else if (dashes.length === 0) dashes.push(0)
+    dashes.push(gapEnd - Math.max(pos, gapStart))
     pos = gapEnd
   }
   const remaining = circumference - pos
   if (remaining > 0) dashes.push(remaining)
-  // SVG stroke-dasharray starts with "dash" (visible), offset rotates to start at angle 0
-  // SVG circles start at 3 o'clock (0°) and go clockwise, which matches our convention
+
   return { dashArray: dashes.join(' '), dashOffset: 0 }
 }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Check, Trash2, X, RefreshCw } from 'lucide-react'
 import { useStore } from '../../store'
-import type { ScaleBar, TextLabel, ImageOverlay } from '../../types'
+import type { Annotation, ScaleBar, TextLabel, ImageOverlay } from '../../types'
 
 function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   const updateScaleBar = useStore(s => s.updateScaleBar)
@@ -332,6 +332,123 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
           {Math.round(img.bgAlpha * 100)}%
         </span>
       </label>
+    </div>
+  )
+}
+
+function NorthArrowSettings({ ann }: { ann: Annotation }) {
+  const updateAnnotation = useStore(s => s.updateAnnotation)
+  const deleteAnnotation = useStore(s => s.deleteAnnotation)
+  const setSelectedAnnotation = useStore(s => s.setSelectedAnnotation)
+
+  const color = ann.color ?? '#38bdf8'
+  const textColor = ann.textColor ?? '#ffffff'
+  const scale = ann.scale ?? 1
+  const rotation = ann.rotation ?? 0
+
+  const [sizeVal, setSizeVal] = useState(String(Math.round(scale * 100) / 100))
+  const [angleVal, setAngleVal] = useState(String(Math.round(rotation)))
+
+  useEffect(() => {
+    setSizeVal(String(Math.round((ann.scale ?? 1) * 100) / 100))
+    setAngleVal(String(Math.round(ann.rotation ?? 0)))
+  }, [ann.id, ann.scale, ann.rotation])
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-700">North Arrow</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => deleteAnnotation(ann.id)}
+            className="text-gray-400 hover:text-red-500 transition-colors"
+            title="Delete"
+          >
+            <Trash2 size={13} />
+          </button>
+          <button
+            onClick={() => setSelectedAnnotation(null)}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Fill</span>
+        <input
+          type="color"
+          value={color}
+          onChange={e => updateAnnotation(ann.id, { color: e.target.value })}
+          className="w-8 h-6 border rounded cursor-pointer"
+        />
+        <span className="text-[10px] text-gray-400 font-mono">{color}</span>
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Text</span>
+        <input
+          type="color"
+          value={textColor}
+          onChange={e => updateAnnotation(ann.id, { textColor: e.target.value })}
+          className="w-8 h-6 border rounded cursor-pointer"
+        />
+        <span className="text-[10px] text-gray-400 font-mono">{textColor}</span>
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Size</span>
+        <input
+          type="number"
+          min={0.3}
+          max={5}
+          step={0.1}
+          value={sizeVal}
+          onChange={e => setSizeVal(e.target.value)}
+          onBlur={() => {
+            const n = parseFloat(sizeVal)
+            if (!isNaN(n) && n >= 0.3) updateAnnotation(ann.id, { scale: n })
+            else setSizeVal(String(Math.round(scale * 100) / 100))
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        />
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Angle</span>
+        <input
+          type="number"
+          step={1}
+          value={angleVal}
+          onChange={e => setAngleVal(e.target.value)}
+          onBlur={() => {
+            const n = parseFloat(angleVal)
+            if (!isNaN(n)) updateAnnotation(ann.id, { rotation: n })
+            else setAngleVal(String(Math.round(rotation)))
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        />
+        <span className="text-[10px] text-gray-400">°</span>
+      </label>
+    </div>
+  )
+}
+
+export function AnnotationSettingsPanel() {
+  const selectedAnnotationId = useStore(s => s.editor.selectedAnnotationId)
+  const project = useStore(s => s.project)
+
+  if (!selectedAnnotationId || !project) return null
+
+  const ann = project.annotations.find(a => a.id === selectedAnnotationId)
+  if (!ann || ann.type !== 'north_arrow') return null
+
+  return (
+    <div className="absolute top-2 left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
+      <NorthArrowSettings key={ann.id} ann={ann} />
     </div>
   )
 }

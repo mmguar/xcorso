@@ -16,7 +16,7 @@ import { walkPath } from '../../lib/geometry'
 interface Props {
   annotations: Annotation[]
   pendingPoints: MapPoint[]
-  pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | null
+  pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow' | null
   map: MapConfig
   spec: EventSpec
   selectedAnnotationId: string | null
@@ -132,6 +132,88 @@ function OutOfBoundsArea({ points, upm, scale, color, patternId, spec }: {
   )
 }
 
+// ── North Arrow ─────────────────────────────────────────────────────────────
+// Blue isosceles triangle (30° apex) pointing up with a white "N" inside.
+
+const TAN_22_5 = Math.tan(Math.PI / 8) // half of 45° apex
+
+export function northArrowHeight(upm: number, scale: number, spec: EventSpec, annScale: number): number {
+  const d = dims(upm, scale, spec)
+  return d.northArrowH * annScale
+}
+
+export function northArrowGeometry(h: number, upm: number) {
+  const halfBase = h * TAN_22_5
+  const handleR = 1 * upm
+  return {
+    halfBase,
+    apexLocalY: -(2 / 3) * h,
+    baseLocalY: (1 / 3) * h,
+    handleR,
+    rotHandleLocalX: 0,
+    rotHandleLocalY: (1 / 3) * h + handleR * 2,
+    resizeHandleLocalX: halfBase,
+    resizeHandleLocalY: (1 / 3) * h,
+  }
+}
+
+function darkenHex(hex: string, amount = 0.2): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const f = 1 - amount
+  return `#${Math.round(r * f).toString(16).padStart(2, '0')}${Math.round(g * f).toString(16).padStart(2, '0')}${Math.round(b * f).toString(16).padStart(2, '0')}`
+}
+
+function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, spec, selected }: {
+  center: MapPoint; upm: number; scale: number; annScale: number; rotation: number; color: string; textColor: string; spec: EventSpec; selected: boolean
+}) {
+  const h = northArrowHeight(upm, scale, spec, annScale)
+  const geo = northArrowGeometry(h, upm)
+
+  const apexY  = center.y + geo.apexLocalY
+  const baseY  = center.y + geo.baseLocalY
+  const leftX  = center.x - geo.halfBase
+  const rightX = center.x + geo.halfBase
+
+  const points = `${center.x},${apexY} ${rightX},${baseY} ${leftX},${baseY}`
+
+  const fontSize = h * 0.45
+  const strokeW = 0.2 * upm
+  const strokeColor = darkenHex(color)
+
+  return (
+    <g transform={`rotate(${rotation}, ${center.x}, ${center.y})`}>
+      <polygon points={points} fill={color} stroke={strokeColor} strokeWidth={upm * 0.15} strokeLinejoin="round" />
+      <text
+        x={center.x} y={center.y + h * 0.12}
+        textAnchor="middle" dominantBaseline="central"
+        fill={textColor} fontSize={fontSize} fontWeight="bold" fontFamily="sans-serif"
+        style={{ pointerEvents: 'none' }}
+      >
+        N
+      </text>
+      {selected && (
+        <>
+          {/* Rotation handle — bottom center */}
+          <circle
+            cx={center.x + geo.rotHandleLocalX} cy={center.y + geo.rotHandleLocalY}
+            r={geo.handleR}
+            fill={color} stroke="white" strokeWidth={strokeW}
+          />
+          {/* Resize handle — bottom-right corner */}
+          <rect
+            x={rightX - geo.handleR} y={baseY - geo.handleR}
+            width={geo.handleR * 2} height={geo.handleR * 2}
+            rx={strokeW * 2}
+            fill={color} stroke="white" strokeWidth={strokeW}
+          />
+        </>
+      )}
+    </g>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, map, spec, selectedAnnotationId }: Props) {
@@ -168,6 +250,16 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
             </g>
           )
         }
+        if (ann.type === 'north_arrow' && ann.points[0]) {
+          return (
+            <g key={ann.id}>
+              <NorthArrow center={ann.points[0]} upm={upm} scale={scale}
+                annScale={ann.scale ?? 1} rotation={ann.rotation ?? 0}
+                color={ann.color ?? '#38bdf8'} textColor={ann.textColor ?? '#ffffff'}
+                spec={spec} selected={ann.id === selectedAnnotationId} />
+            </g>
+          )
+        }
         return null
       })}
 
@@ -186,6 +278,13 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
         <g opacity={0.5}>
           <OutOfBoundsArea points={pendingPoints} upm={upm} scale={scale} color={color}
             patternId={`${baseId}-oob-pending`} spec={spec} />
+        </g>
+      )}
+      {pendingPoints.length > 0 && pendingType === 'north_arrow' && (
+        <g opacity={0.5}>
+          <NorthArrow center={pendingPoints[0]} upm={upm} scale={scale}
+            annScale={1} rotation={0} color="#38bdf8" textColor="#ffffff"
+            spec={spec} selected={false} />
         </g>
       )}
     </g>

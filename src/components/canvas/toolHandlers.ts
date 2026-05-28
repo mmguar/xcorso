@@ -1,11 +1,23 @@
 import type { Project, Viewport } from '../../types'
 import { useStore } from '../../store'
+import { unitsPerMm } from '../../lib/courseUtils'
+import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 import { screenToMap, findControlAt, findLegAt, findBendPointAt } from './hitTesting'
+
+function gapArcLenMap(project: Project, selectedCourseId: string | null, controlScale: number, gapSize: number): number {
+  const upm = unitsPerMm(project.map)
+  const course = project.courses.find(c => c.id === selectedCourseId)
+  const spec = resolveSpec(project.spec, course?.spec)
+  const sf = symbolScaleFactor(spec, project.map.scale)
+  return getSymbolDims(spec).controlR * upm * sf * controlScale * gapSize * Math.PI / 180
+}
+
+const GAP_EXTRA_PX = 12
 
 export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
   const { gapSize, appearance: { controlScale } } = useStore.getState().editor
   const mapPt = screenToMap(sx, sy, vp)
-  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale)
+  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale, GAP_EXTRA_PX)
 
   if (hitControl) {
     const dx = mapPt.x - hitControl.position.x
@@ -19,9 +31,9 @@ export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Proj
   }
 
   const legHit = findLegAt(sx, sy, vp, project, selectedCourseId)
-  if (legHit) {
-    const legFraction = gapSize / 360
-    const halfGap = legFraction / 2
+  if (legHit && legHit.totalLen > 0) {
+    const arcLen = gapArcLenMap(project, selectedCourseId, controlScale, gapSize)
+    const halfGap = (arcLen / legHit.totalLen) / 2
     const start = Math.max(0, legHit.t - halfGap)
     const end = Math.min(1, legHit.t + halfGap)
     useStore.getState().addLegGap(legHit.courseId, legHit.courseControlId, { start, end })

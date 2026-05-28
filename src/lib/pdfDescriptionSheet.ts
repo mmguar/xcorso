@@ -25,8 +25,10 @@ function fmtDist(m: number): string {
   return `${(rounded / 1000).toFixed(1)} km`
 }
 
+const HEADER_H = 2 * CELL
+
 function maxControlRows(pageH: number): number {
-  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - CELL) / CELL)
+  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - HEADER_H) / CELL)
 }
 
 export function descriptionSheetPageCount(
@@ -426,6 +428,47 @@ function drawFlipRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
   doc.fill()
 }
 
+// ── Header drawing ─────────────────────────────────────────────────────────
+
+function drawSheetHeader(
+  doc: jsPDF,
+  gridX: number,
+  y: number,
+  width: number,
+  eventName: string,
+  course: Course,
+  distanceM?: number,
+) {
+  doc.setDrawColor(0, 0, 0)
+  doc.setLineWidth(LINE_W)
+
+  // Row 1: event name
+  doc.rect(gridX, y, width, CELL, 'S')
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(0, 0, 0)
+  doc.text(eventName, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
+
+  // Row 2: course name | distance | climb — three equal columns
+  const row2Y = y + CELL
+  const colW = width / 3
+  for (let i = 0; i < 3; i++) {
+    doc.rect(gridX + i * colW, row2Y, colW, CELL, 'S')
+  }
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(0, 0, 0)
+  doc.text(course.name, gridX + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
+
+  doc.setFont('helvetica', 'normal')
+  if (distanceM && distanceM > 0) {
+    doc.text(fmtDist(distanceM), gridX + colW + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
+  }
+  if (course.climb != null && course.climb > 0) {
+    doc.text(`${course.climb} m↑`, gridX + 2 * colW + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
+  }
+}
+
 // ── Size calculation ────────────────────────────────────────────────────────
 
 export function descriptionSheetSize(
@@ -436,7 +479,7 @@ export function descriptionSheetSize(
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const rowCount = course.controls.filter(cc => controlMap.has(cc.controlId)).length + (trailingFlip ? 1 : 0)
   if (rowCount === 0) return { width: 0, height: 0 }
-  const height = CELL + rowCount * CELL
+  const height = HEADER_H + rowCount * CELL
   const width = course.textDescriptions
     ? 2 * CELL + estimateDescColumnWidth(course, controls)
     : GRID_W
@@ -466,7 +509,7 @@ export function descriptionSheetPartSizes(
     const end = boundaries[p + 1]
     let rowCount = end - start
     if (p === boundaries.length - 2 && trailingFlip) rowCount++
-    const headerH = p === 0 ? CELL : 0
+    const headerH = p === 0 ? HEADER_H : 0
     sizes.push({ width, height: headerH + rowCount * CELL })
   }
 
@@ -479,13 +522,13 @@ export function drawDescriptionSheetOverlay(
   doc: jsPDF,
   course: Course,
   controls: Control[],
-  mapScale: number,
   originX: number,
   originY: number,
   distanceM?: number,
   textDescriptions?: boolean,
   legDistances?: number[],
   trailingFlip?: boolean,
+  eventName?: string,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -505,19 +548,8 @@ export function drawDescriptionSheetOverlay(
   let y = originY
   let seq = 0
 
-  // Course header
-  doc.setDrawColor(0, 0, 0)
-  doc.setLineWidth(LINE_W)
-  doc.rect(gridX, y, width, CELL, 'S')
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(0, 0, 0)
-  let label = course.name
-  if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
-  if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
-  if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
-  doc.text(label, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
-  y += CELL
+  drawSheetHeader(doc, gridX, y, width, eventName ?? '', course, distanceM)
+  y += HEADER_H
 
   // Separate finish from other controls
   const nonFinish = resolved.filter(c => c.type !== 'finish')
@@ -541,7 +573,7 @@ export function drawDescriptionSheetOverlay(
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
     } else {
-      doc.setFontSize(7)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(0, 0, 0)
       doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -549,11 +581,13 @@ export function drawDescriptionSheetOverlay(
 
     const bCx = gridX + CELL + CELL / 2
     const bCy = y + CELL / 2
-    doc.setFontSize(6.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     const code = defaultControlLabel(ctrl)
-    doc.text(code, bCx, bCy + 1, { align: 'center' })
+    if (ctrl.type != 'start'){
+      doc.text(code, bCx, bCy + 1, { align: 'center' })
+    }
 
     if (textDescriptions) {
       doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
@@ -597,7 +631,6 @@ export function drawDescriptionSheetOverlayPart(
   doc: jsPDF,
   course: Course,
   controls: Control[],
-  mapScale: number,
   originX: number,
   originY: number,
   partIndex: number,
@@ -606,6 +639,7 @@ export function drawDescriptionSheetOverlayPart(
   textDescriptions?: boolean,
   legDistances?: number[],
   trailingFlip?: boolean,
+  eventName?: string,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -633,7 +667,7 @@ export function drawDescriptionSheetOverlayPart(
   const finish = partControls.find(c => c.type === 'finish')
 
   const rowCount = partControls.length + (isLastPart && trailingFlip ? 1 : 0)
-  const headerH = isFirstPart ? CELL : 0
+  const headerH = isFirstPart ? HEADER_H : 0
   const height = headerH + rowCount * CELL
 
   doc.setFillColor(255, 255, 255)
@@ -643,18 +677,8 @@ export function drawDescriptionSheetOverlayPart(
   let y = originY
 
   if (isFirstPart) {
-    doc.setDrawColor(0, 0, 0)
-    doc.setLineWidth(LINE_W)
-    doc.rect(gridX, y, fullWidth, CELL, 'S')
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(0, 0, 0)
-    let label = course.name
-    if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
-    if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
-    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
-    doc.text(label, gridX + fullWidth / 2, y + CELL / 2 + 1, { align: 'center' })
-    y += CELL
+    drawSheetHeader(doc, gridX, y, fullWidth, eventName ?? '', course, distanceM)
+    y += HEADER_H
   }
 
   // Compute sequence offset: count 'control' type entries before this part
@@ -680,7 +704,7 @@ export function drawDescriptionSheetOverlayPart(
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
     } else {
-      doc.setFontSize(7)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(0, 0, 0)
       doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -688,11 +712,13 @@ export function drawDescriptionSheetOverlayPart(
 
     const bCx = gridX + CELL + CELL / 2
     const bCy = y + CELL / 2
-    doc.setFontSize(6.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     const code = defaultControlLabel(ctrl)
-    doc.text(code, bCx, bCy + 1, { align: 'center' })
+    if (ctrl.type != 'start'){
+      doc.text(code, bCx, bCy + 1, { align: 'center' })
+    }
 
     if (textDescriptions) {
       doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
@@ -737,13 +763,13 @@ export function drawDescriptionSheet(
   doc: jsPDF,
   course: Course,
   controls: Control[],
-  mapScale: number,
   pageW: number,
   pageH: number,
   distanceM?: number,
   textDescriptions?: boolean,
   legDistances?: number[],
   trailingFlip?: boolean,
+  eventName?: string,
 ) {
   const controlMap = new Map(controls.map(c => [c.id, c]))
   const resolved = course.controls
@@ -762,20 +788,8 @@ export function drawDescriptionSheet(
   let rowOnPage = 0
 
   function drawHeader() {
-    doc.setDrawColor(0, 0, 0)
-    doc.setLineWidth(LINE_W)
-    doc.rect(gridX, y, gridW, CELL, 'S')
-
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(0, 0, 0)
-    let label = course.name
-    if (mapScale > 0) label += `    1:${mapScale.toLocaleString()}`
-    if (distanceM && distanceM > 0) label += `    ${fmtDist(distanceM)}`
-    if (course.climb != null && course.climb > 0) label += `    ${course.climb} m↑`
-    doc.text(label, gridX + gridW / 2, y + CELL / 2 + 1, { align: 'center' })
-
-    y += CELL
+    drawSheetHeader(doc, gridX, y, gridW, eventName ?? '', course, distanceM)
+    y += HEADER_H
   }
 
   function startPage() {
@@ -812,7 +826,7 @@ export function drawDescriptionSheet(
     if (ctrl.type === 'start') {
       drawStartSymbol(doc, aCx, aCy)
     } else {
-      doc.setFontSize(7)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(0, 0, 0)
       doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -821,11 +835,13 @@ export function drawDescriptionSheet(
     // Column B: control code
     const bCx = gridX + CELL + CELL / 2
     const bCy = y + CELL / 2
-    doc.setFontSize(6.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     const code = defaultControlLabel(ctrl)
-    doc.text(code, bCx, bCy + 1, { align: 'center' })
+    if (ctrl.type != 'start'){
+      doc.text(code, bCx, bCy + 1, { align: 'center' })
+    }
 
     if (textDescriptions) {
       doc.rect(gridX + 2 * CELL, y, descW, CELL, 'S')
