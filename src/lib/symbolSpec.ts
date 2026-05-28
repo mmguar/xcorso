@@ -67,6 +67,7 @@ export interface AnnotationDims {
   hatchSpace: number
   hatchW: number
   boundaryW: number
+  northArrowH: number
 }
 
 export function getAnnotationDims(scaleFactor: number): AnnotationDims {
@@ -82,5 +83,6 @@ export function getAnnotationDims(scaleFactor: number): AnnotationDims {
     hatchSpace:  1.2  * scaleFactor,
     hatchW:      0.2  * scaleFactor,
     boundaryW:   0.7  * scaleFactor,
+    northArrowH: 8.0  * scaleFactor,
   }
 }
