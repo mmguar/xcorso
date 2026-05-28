@@ -89,7 +89,7 @@ export function Header({ onGoHome }: Props) {
       <select
         value={project.spec ?? 'isom-2017'}
         onChange={e => updateProjectSpec(e.target.value as EventSpec)}
-        className="text-[10px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 hidden sm:block"
+        className="text-[10px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400"
         title="Event specification"
       >
         {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
