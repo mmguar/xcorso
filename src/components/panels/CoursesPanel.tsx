@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
@@ -320,10 +320,15 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
             />
           ) : (
             <span
-              className="text-sm font-medium flex-1 truncate"
+              className="edit-icon-group text-sm font-medium flex-1 truncate flex items-center gap-1"
               onDoubleClick={e => { e.stopPropagation(); setNameVal(course.name); setEditingName(true) }}
             >
               {course.name}
+              <Pencil
+                size={11}
+                className="edit-icon shrink-0 cursor-pointer"
+                onClick={e => { e.stopPropagation(); setNameVal(course.name); setEditingName(true) }}
+              />
             </span>
           )}
           <span className="text-xs text-gray-400 shrink-0">{Math.max(0, course.controls.length-2)} ctrls</span>
