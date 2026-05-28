@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf'
 import type { Course, Control, ControlDescription, FinishType } from '../types'
 import { getSymbol, columnFields } from './iofSymbols'
 import type { SymbolDef, IofColumn } from './iofSymbols'
+import { defaultControlLabel } from './courseUtils'
 
 const CELL = 7
 const COLS = 8
@@ -576,7 +577,7 @@ export function drawDescriptionSheetOverlay(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
+    const code = defaultControlLabel(ctrl)
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     if (textDescriptions) {
@@ -738,7 +739,7 @@ export function drawDescriptionSheetOverlayPart(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
+    const code = defaultControlLabel(ctrl)
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     if (textDescriptions) {
@@ -897,7 +898,7 @@ export function drawDescriptionSheet(
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
-    const code = ctrl.label ?? (ctrl.type === 'start' ? `S${ctrl.code}` : String(ctrl.code))
+    const code = defaultControlLabel(ctrl)
     doc.text(code, bCx, bCy + 1, { align: 'center' })
 
     if (textDescriptions) {
