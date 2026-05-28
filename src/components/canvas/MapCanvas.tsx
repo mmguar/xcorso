@@ -1251,6 +1251,12 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [selectedCourseRaw, selectedVariationId])
   const isCourseMode = !!selectedCourseId
 
+  const layoutControls = useMemo(() => {
+    if (!layoutMode || !selectedCourse) return controls
+    const ids = new Set(selectedCourse.controls.map(cc => cc.controlId))
+    return controls.filter(c => ids.has(c.id))
+  }, [layoutMode, selectedCourse, controls])
+
   const cursor = layoutMode ? 'grab'
     : activeTool === 'bend' ? 'crosshair'
     : activeTool === 'gap' ? 'none'
@@ -1337,7 +1343,7 @@ export function MapCanvas({ loadedMap }: Props) {
             viewportScale={vp.scale}
           />
           <ControlsLayer
-            controls={controls}
+            controls={layoutControls}
             course={selectedCourse}
           />
           {import.meta.env.DEV && (

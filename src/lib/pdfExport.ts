@@ -1091,7 +1091,9 @@ function drawScaleBar(
   // Background
   if (sb.bgAlpha > 0) {
     doc.setFillColor(255, 255, 255)
+    doc.setGState(doc.GState({ opacity: sb.bgAlpha }))
     doc.roundedRect(origin.x, origin.y, boxW, boxH, 0.5, 0.5, 'F')
+    doc.setGState(doc.GState({ opacity: 1 }))
   }
 
   const barX = origin.x + pad
