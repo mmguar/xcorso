@@ -4,30 +4,42 @@
  * Shows course-building banner when a course is selected.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
-  RulerDimensionLine, Type, ImagePlus, Navigation,
+  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
 
-const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
+type ToolEntry = { tool: ActiveTool; label: string; shortcut?: string }
+
+const tools: ToolEntry[] = [
   { tool: 'select', label: 'Select / Pan', shortcut: 'V' },
   { tool: 'place-start', label: 'Place Start', shortcut: 'S' },
   { tool: 'place-finish', label: 'Place Finish', shortcut: 'F' },
   { tool: 'place-control', label: 'Place Control', shortcut: 'C' },
-  { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
-  { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
-  { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
-  { tool: 'place-north-arrow', label: 'North Arrow', shortcut: 'N' },
   { tool: 'gap', label: 'Gap (click circle or leg to hide a section)', shortcut: 'G' },
   { tool: 'delete', label: 'Delete (click control or annotation)', shortcut: 'D' },
   { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
-  { tool: 'place-scalebar', label: 'Place Scale Bar', shortcut: 'K' },
-  { tool: 'place-text', label: 'Place Text', shortcut: 'T' },
-  { tool: 'place-image', label: 'Place Image', shortcut: 'I' },
 ]
+
+const annotationTools: ToolEntry[] = [
+  { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
+  { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
+  { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
+]
+
+const overlayTools: ToolEntry[] = [
+  { tool: 'place-scalebar', label: 'Scale Bar', shortcut: 'K' },
+  { tool: 'place-text', label: 'Text', shortcut: 'T' },
+  { tool: 'place-image', label: 'Image', shortcut: 'I' },
+  { tool: 'place-north-arrow', label: 'North Arrow', shortcut: 'N' },
+]
+
+const annotationToolSet = new Set<ActiveTool>(annotationTools.map(t => t.tool))
+const overlayToolSet = new Set<ActiveTool>(overlayTools.map(t => t.tool))
+const allTools = [...tools, ...annotationTools, ...overlayTools]
 
 const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'select': s => <MousePointer2 size={s} />,
@@ -116,7 +128,7 @@ export function Toolbar() {
         else if (e.key.toLowerCase() === 'b') setActiveTool(activeTool === 'bend' ? 'select' : 'bend')
         return
       }
-      const t = tools.find(t => t.shortcut?.toLowerCase() === e.key.toLowerCase())
+      const t = allTools.find(t => t.shortcut?.toLowerCase() === e.key.toLowerCase())
       if (t) setActiveTool(t.tool)
     }
     window.addEventListener('keydown', onKey)
@@ -124,6 +136,24 @@ export function Toolbar() {
   }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, exitLayoutMode, activeTool])
 
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const [annMenuOpen, setAnnMenuOpen] = useState(false)
+  const annMenuRef = useRef<HTMLDivElement>(null)
+  const [overlayMenuOpen, setOverlayMenuOpen] = useState(false)
+  const overlayMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!annMenuOpen && !overlayMenuOpen) return
+    function handleClick(e: MouseEvent) {
+      if (annMenuOpen && annMenuRef.current && !annMenuRef.current.contains(e.target as Node)) {
+        setAnnMenuOpen(false)
+      }
+      if (overlayMenuOpen && overlayMenuRef.current && !overlayMenuRef.current.contains(e.target as Node)) {
+        setOverlayMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [annMenuOpen, overlayMenuOpen])
 
   function handleImageFile(file: File) {
     const reader = new FileReader()
@@ -141,6 +171,9 @@ export function Toolbar() {
     }
     reader.readAsDataURL(file)
   }
+
+  const isAnnotationToolActive = annotationToolSet.has(activeTool)
+  const isOverlayToolActive = overlayToolSet.has(activeTool)
 
   const btnClass = "w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all"
 
@@ -259,14 +292,7 @@ export function Toolbar() {
           {tools.map(({ tool, label, shortcut }) => (
         <button
           key={tool}
-          onClick={() => {
-            if (tool === 'place-image') {
-              imageInputRef.current!.value = ''
-              imageInputRef.current!.click()
-            } else {
-              setActiveTool(tool)
-            }
-          }}
+          onClick={() => setActiveTool(tool)}
           title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
           className={`
             ${btnClass}
@@ -278,6 +304,87 @@ export function Toolbar() {
           {toolIcons[tool](16)}
         </button>
       ))}
+
+      {/* Annotations submenu */}
+      <div className="relative" ref={annMenuRef}>
+        <button
+          onClick={() => { setAnnMenuOpen(o => !o); setOverlayMenuOpen(false) }}
+          title="Annotations"
+          className={`
+            ${btnClass}
+            ${isAnnotationToolActive
+              ? 'bg-orange-600 text-white shadow-inner'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}
+          `}
+        >
+          {isAnnotationToolActive ? toolIcons[activeTool](16) : <Signpost size={16} />}
+          <ChevronUp size={8} className="absolute top-0.5 right-0.5 opacity-50" />
+        </button>
+        {annMenuOpen && (
+          <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl py-1 min-w-36 z-50">
+            {annotationTools.map(({ tool, label, shortcut }) => (
+              <button
+                key={tool}
+                onClick={() => { setActiveTool(tool); setAnnMenuOpen(false) }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                  activeTool === tool
+                    ? 'bg-orange-100 text-orange-700'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span className="w-5 flex justify-center shrink-0">{toolIcons[tool](14)}</span>
+                <span className="flex-1 text-left truncate">{label.replace(/ \(.*\)/, '')}</span>
+                {shortcut && <span className="text-[10px] text-gray-400 font-mono">{shortcut}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Overlays submenu */}
+      <div className="relative" ref={overlayMenuRef}>
+        <button
+          onClick={() => { setOverlayMenuOpen(o => !o); setAnnMenuOpen(false) }}
+          title="Overlays"
+          className={`
+            ${btnClass}
+            ${isOverlayToolActive
+              ? 'bg-orange-600 text-white shadow-inner'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}
+          `}
+        >
+          {isOverlayToolActive ? toolIcons[activeTool](16) : <Layers size={16} />}
+          <ChevronUp size={8} className="absolute top-0.5 right-0.5 opacity-50" />
+        </button>
+        {overlayMenuOpen && (
+          <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl py-1 min-w-36 z-50">
+            {overlayTools.map(({ tool, label, shortcut }) => (
+              <button
+                key={tool}
+                onClick={() => {
+                  if (tool === 'place-image') {
+                    imageInputRef.current!.value = ''
+                    imageInputRef.current!.click()
+                  } else {
+                    setActiveTool(tool)
+                  }
+                  setOverlayMenuOpen(false)
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                  activeTool === tool
+                    ? 'bg-orange-100 text-orange-700'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span className="w-5 flex justify-center shrink-0">{toolIcons[tool](14)}</span>
+                <span className="flex-1 text-left truncate">{label}</span>
+                {shortcut && <span className="text-[10px] text-gray-400 font-mono">{shortcut}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <input
         ref={imageInputRef}
         type="file"
