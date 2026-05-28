@@ -150,14 +150,16 @@ export interface RaceClass {
 
 // ─── Annotations ────────────────────────────────────────────────────────────
 
-export type AnnotationType = 'forbidden_route' | 'crossing_point' | 'out_of_bounds'
+export type AnnotationType = 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow'
 
 export interface Annotation {
   id: string
   type: AnnotationType
-  points: MapPoint[]         // polyline for routes/bounds; single point for crossing_point
+  points: MapPoint[]         // polyline for routes/bounds; single point for crossing_point/north_arrow
   rotation?: number          // degrees, for crossing_point
-  color?: string
+  scale?: number             // size multiplier, for north_arrow (default 1)
+  color?: string             // fill color (north_arrow)
+  textColor?: string         // text color (north_arrow, default white)
 }
 
 // ─── Course Layout ─────────────────────────────────────────────────────────
@@ -284,6 +286,7 @@ export type ActiveTool =
   | 'delete'
   | 'gap'
   | 'bend'
+  | 'place-north-arrow'
   | 'place-scalebar'
   | 'place-text'
   | 'place-image'

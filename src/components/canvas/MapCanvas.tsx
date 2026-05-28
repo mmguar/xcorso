@@ -8,7 +8,7 @@ import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
 import { DragLegsLayer } from './DragLegsLayer'
 import type { DragLegsHandle } from './DragLegsLayer'
-import { AnnotationsLayer } from './AnnotationsLayer'
+import { AnnotationsLayer, northArrowHeight, northArrowGeometry } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
@@ -22,7 +22,7 @@ import {
   screenToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
-  findCrossingPointRotationHandle,
+  findCrossingPointRotationHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle,
 } from './hitTesting'
 import { handleGapTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
@@ -327,6 +327,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragAnnotation: { annId: string; dx: number; dy: number } | null = null
     let dragAnnotationStarted = false
 
+    let dragAnnResize: { annId: string; centerX: number; centerY: number; origScale: number; origHandleDist: number } | null = null
+    let dragAnnResizeStarted = false
+
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
     function clearLongPress() {
@@ -432,7 +435,7 @@ export function MapCanvas({ loadedMap }: Props) {
             const handleMapY = pageTLy + (layout.mapBorder.y + layout.mapBorder.height) * mmToMapU
             const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
             const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
-            const HANDLE_HIT = 12
+            const HANDLE_HIT = 6
             if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
               dragBorderResize = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y, ow: layout.mapBorder.width, oh: layout.mapBorder.height }
               dragBorderResizeStarted = false
@@ -559,9 +562,30 @@ export function MapCanvas({ loadedMap }: Props) {
               return
             }
 
-            // Check for crossing point / annotation drag
+            // Check for north arrow rotation handle
+            const naRotHit = findNorthArrowRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+            if (naRotHit && naRotHit.points[0]) {
+              dragRotation = { annId: naRotHit.id, center: naRotHit.points[0] }
+              dragRotationStarted = false
+              return
+            }
+
+            // Check for north arrow resize handle
+            const naResizeHit = findNorthArrowResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+            if (naResizeHit && naResizeHit.points[0]) {
+              const naUpm = unitsPerMm(proj.map)
+              const naSpec = resolveSpec(proj.spec)
+              const naH = northArrowHeight(naUpm, proj.map.scale, naSpec, naResizeHit.scale ?? 1)
+              const geo = northArrowGeometry(naH, naUpm)
+              const origHandleDist = Math.hypot(geo.resizeHandleLocalX, geo.resizeHandleLocalY)
+              dragAnnResize = { annId: naResizeHit.id, centerX: naResizeHit.points[0].x, centerY: naResizeHit.points[0].y, origScale: naResizeHit.scale ?? 1, origHandleDist }
+              dragAnnResizeStarted = false
+              return
+            }
+
+            // Check for crossing point / north arrow / annotation drag
             const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-            if (annHit && annHit.type === 'crossing_point' && annHit.points[0]) {
+            if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow') && annHit.points[0]) {
               const mapPt2 = screenToMap(sx, sy, vpRef.current)
               dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
               dragAnnotationStarted = false
@@ -578,7 +602,7 @@ export function MapCanvas({ loadedMap }: Props) {
               const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
               const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
               const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
-              const HANDLE_HIT = 12
+              const HANDLE_HIT = 1.5 * upmVal * vpRef.current.scale
               if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
                 dragResize = {
                   id: selectedImg.id,
@@ -812,6 +836,21 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragAnnResize && pos.size === 1) {
+        if (!dragAnnResizeStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginResizeAnnotation()
+          dragAnnResizeStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const distFromCenter = Math.hypot(mapPt.x - dragAnnResize.centerX, mapPt.y - dragAnnResize.centerY)
+        const newScale = Math.max(0.3, dragAnnResize.origScale * distFromCenter / dragAnnResize.origHandleDist)
+        useStore.getState().resizeAnnotation(dragAnnResize.annId, newScale)
+        return
+      }
+
       if (dragResize && pos.size === 1) {
         if (!dragResizeStarted) {
           const start = down.get(e.pointerId)
@@ -945,6 +984,9 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragRotation && dragRotationStarted) { dragRotation = null; dragRotationStarted = false; return }
       dragRotation = null; dragRotationStarted = false
 
+      if (dragAnnResize && dragAnnResizeStarted) { dragAnnResize = null; dragAnnResizeStarted = false; return }
+      dragAnnResize = null; dragAnnResizeStarted = false
+
       if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
       dragResize = null; dragResizeStarted = false
 
@@ -1016,7 +1058,7 @@ export function MapCanvas({ loadedMap }: Props) {
           return
         }
         const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-        if (annHit && annHit.type === 'crossing_point') {
+        if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow')) {
           state.setSelectedAnnotation(annHit.id)
           state.setSelectedControl(null)
           state.setSelectedOverlay(null)
@@ -1039,6 +1081,10 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'crossing-point':
           state.addAnnotationPoint(mapPt)
           state.commitAnnotation('crossing_point')
+          break
+        case 'place-north-arrow':
+          state.addAnnotationPoint(mapPt)
+          state.commitAnnotation('north_arrow')
           break
         case 'place-scalebar':
           state.addScaleBar(mapPt, proj.map.scale)
@@ -1073,6 +1119,7 @@ export function MapCanvas({ loadedMap }: Props) {
       clearLongPress()
       dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
+      dragAnnResize = null; dragAnnResizeStarted = false
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
@@ -1183,9 +1230,10 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   function getAnnotationType(): AnnotationType | null {
-    if (activeTool === 'forbidden-route') return 'forbidden_route'
-    if (activeTool === 'crossing-point')  return 'crossing_point'
-    if (activeTool === 'out-of-bounds')   return 'out_of_bounds'
+    if (activeTool === 'forbidden-route')    return 'forbidden_route'
+    if (activeTool === 'crossing-point')     return 'crossing_point'
+    if (activeTool === 'out-of-bounds')      return 'out_of_bounds'
+    if (activeTool === 'place-north-arrow')  return 'north_arrow'
     return null
   }
 

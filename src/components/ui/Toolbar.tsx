@@ -7,7 +7,7 @@
 import { useEffect, useRef } from 'react'
 import {
   MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
-  RulerDimensionLine, Type, ImagePlus,
+  RulerDimensionLine, Type, ImagePlus, Navigation,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
@@ -20,6 +20,7 @@ const tools: { tool: ActiveTool; label: string; shortcut?: string }[] = [
   { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
   { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
   { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
+  { tool: 'place-north-arrow', label: 'North Arrow', shortcut: 'N' },
   { tool: 'gap', label: 'Gap (click circle or leg to hide a section)', shortcut: 'G' },
   { tool: 'delete', label: 'Delete (click control or annotation)', shortcut: 'D' },
   { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
@@ -36,6 +37,7 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'forbidden-route': s => <X size={s} />,
   'crossing-point': s => <ChevronsRightLeft size={s} />,
   'out-of-bounds': s => <Ban size={s} />,
+  'place-north-arrow': s => <Navigation size={s} />,
   'gap': s => <CircleDashed size={s} />,
   'bend': s => <Waypoints size={s} />,
   'delete': s => <Trash2 size={s} />,

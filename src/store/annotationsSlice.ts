@@ -17,7 +17,9 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       const { editor } = get()
       const points = editor.pendingAnnotationPoints
       if (points.length === 0) return
-      const annotation: Annotation = { id: uuidv4(), type, points }
+      const annotation: Annotation = { id: uuidv4(), type, points,
+        ...(type === 'north_arrow' ? { color: '#38bdf8' } : {}),
+      }
       h.mutateProject(p => { p.annotations.push(annotation) })
       set(state => ({ editor: { ...state.editor, pendingAnnotationPoints: [] } }))
     },
@@ -53,6 +55,14 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
     rotateAnnotation: (id: string, rotation: number) => {
       h.mutateProjectSilent(p => {
         p.annotations = p.annotations.map(a => a.id === id ? { ...a, rotation } : a)
+      })
+    },
+
+    beginResizeAnnotation: () => h.pushUndoSnapshot(),
+
+    resizeAnnotation: (id: string, scale: number) => {
+      h.mutateProjectSilent(p => {
+        p.annotations = p.annotations.map(a => a.id === id ? { ...a, scale } : a)
       })
     },
 

@@ -1,6 +1,7 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
+import { northArrowHeight, northArrowGeometry } from '../canvas/AnnotationsLayer'
 
 export const HIT_PX = 20
 
@@ -128,7 +129,13 @@ export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport,
   const sf = symbolScaleFactor(spec, project.map.scale)
   const d = getAnnotationDims(sf * upm)
   for (const ann of project.annotations) {
-    if (ann.type === 'crossing_point') {
+    if (ann.type === 'north_arrow') {
+      const p = ann.points[0]
+      if (p) {
+        const h = northArrowHeight(upm, project.map.scale, spec, ann.scale ?? 1)
+        if (Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < h * 0.7) return ann
+      }
+    } else if (ann.type === 'crossing_point') {
       const p = ann.points[0]
       if (p && Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < d.crossH) return ann
     } else {
@@ -162,7 +169,49 @@ export function findCrossingPointRotationHandle(screenX: number, screenY: number
 
   const mapPt = screenToMap(screenX, screenY, vp)
   const dist = Math.hypot(mapPt.x - handleX, mapPt.y - handleY)
-  if (dist < handleR + HIT_PX / vp.scale) return ann
+  if (dist < handleR) return ann
+  return null
+}
+
+function rotatePoint(localX: number, localY: number, cx: number, cy: number, angleDeg: number): { x: number; y: number } {
+  const rad = angleDeg * Math.PI / 180
+  const sin = Math.sin(rad), cos = Math.cos(rad)
+  return { x: cx + localX * cos - localY * sin, y: cy + localX * sin + localY * cos }
+}
+
+export function findNorthArrowRotationHandle(screenX: number, screenY: number, vp: Viewport, project: Project, selectedAnnotationId: string | null): Annotation | null {
+  if (!selectedAnnotationId) return null
+  const ann = project.annotations.find(a => a.id === selectedAnnotationId)
+  if (!ann || ann.type !== 'north_arrow' || !ann.points[0]) return null
+
+  const upm = unitsPerMm(project.map)
+  const spec = resolveSpec(project.spec)
+  const h = northArrowHeight(upm, project.map.scale, spec, ann.scale ?? 1)
+  const geo = northArrowGeometry(h, upm)
+  const center = ann.points[0]
+  const rotation = ann.rotation ?? 0
+
+  const handle = rotatePoint(geo.rotHandleLocalX, geo.rotHandleLocalY, center.x, center.y, rotation)
+  const mapPt = screenToMap(screenX, screenY, vp)
+  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < geo.handleR) return ann
+  return null
+}
+
+export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp: Viewport, project: Project, selectedAnnotationId: string | null): Annotation | null {
+  if (!selectedAnnotationId) return null
+  const ann = project.annotations.find(a => a.id === selectedAnnotationId)
+  if (!ann || ann.type !== 'north_arrow' || !ann.points[0]) return null
+
+  const upm = unitsPerMm(project.map)
+  const spec = resolveSpec(project.spec)
+  const h = northArrowHeight(upm, project.map.scale, spec, ann.scale ?? 1)
+  const geo = northArrowGeometry(h, upm)
+  const center = ann.points[0]
+  const rotation = ann.rotation ?? 0
+
+  const handle = rotatePoint(geo.resizeHandleLocalX, geo.resizeHandleLocalY, center.x, center.y, rotation)
+  const mapPt = screenToMap(screenX, screenY, vp)
+  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < geo.handleR) return ann
   return null
 }
 
