@@ -1,6 +1,10 @@
 import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
 import { getSymbolDims, symbolScaleFactor } from './symbolSpec'
 
+export function controlsById(controls: Control[]): Map<string, Control> {
+  return new Map(controls.map(c => [c.id, c]))
+}
+
 export function defaultControlLabel(control: { type: string; code: number; label?: string }): string {
   if (control.label) return control.label
   if (control.type === 'start') return `S${control.code}`

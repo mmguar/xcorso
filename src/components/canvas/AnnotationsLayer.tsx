@@ -74,31 +74,57 @@ export function crossingPointControlX(d: AnnotationDims): number {
   return 2 * halfGapCenter - d.crossHalf
 }
 
-function CrossingPoint({ center, upm, scale, rotation, color, spec, selected }: {
-  center: MapPoint; upm: number; scale: number; rotation: number; color: string; spec: EventSpec; selected: boolean
+export function crossingPointTotalHH(d: AnnotationDims, elongation: number, upm: number): number {
+  return d.crossH + elongation * upm
+}
+
+function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec, selected }: {
+  center: MapPoint; upm: number; scale: number; rotation: number; elongation: number; color: string; spec: EventSpec; selected: boolean
 }) {
   const { x, y } = center
   const d = dims(upm, scale, spec)
   const spread = d.crossHalf
   const hh = d.crossH
+  const ext = Math.max(0, elongation * upm)
+  const totalHH = hh + ext
   const cx = crossingPointControlX(d)
-
-  const rightD = `M ${x + spread} ${y - hh} Q ${x + cx} ${y} ${x + spread} ${y + hh}`
-  const leftD = `M ${x - spread} ${y - hh} Q ${x - cx} ${y} ${x - spread} ${y + hh}`
+  // Split the original pinch curve at its centre (de Casteljau): each half is a
+  // quadratic with control point (midX, ±hh/2) ending tangent-vertical at the
+  // pinch (midX, 0). Elongation pulls the halves apart by `ext` and joins them
+  // with a straight vertical line — the curve halves keep their exact shape.
+  const midX = (spread + cx) / 2
+  const ctrlY = hh / 2
 
   const strokeW = 0.2 * upm
   const handleR = 1 * upm
+
+  const rightD =
+    `M ${x + spread} ${y - totalHH} Q ${x + midX} ${y - ctrlY - ext} ${x + midX} ${y - ext}` +
+    ` L ${x + midX} ${y + ext}` +
+    ` Q ${x + midX} ${y + ctrlY + ext} ${x + spread} ${y + totalHH}`
+  const leftD =
+    `M ${x - spread} ${y - totalHH} Q ${x - midX} ${y - ctrlY - ext} ${x - midX} ${y - ext}` +
+    ` L ${x - midX} ${y + ext}` +
+    ` Q ${x - midX} ${y + ctrlY + ext} ${x - spread} ${y + totalHH}`
 
   return (
     <g transform={`rotate(${rotation}, ${x}, ${y})`}>
       <path d={rightD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
       <path d={leftD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
       {selected && (
-        <circle
-          cx={x} cy={y - hh - handleR * 2}
-          r={handleR}
-          fill="#a626ff" stroke="white" strokeWidth={strokeW}
-        />
+        <>
+          <circle
+            cx={x} cy={y - totalHH - handleR * 2}
+            r={handleR}
+            fill="#a626ff" stroke="white" strokeWidth={strokeW}
+          />
+          <rect
+            x={x - handleR} y={y + totalHH + handleR}
+            width={handleR * 2} height={handleR * 2}
+            rx={strokeW * 2}
+            fill="#a626ff" stroke="white" strokeWidth={strokeW}
+          />
+        </>
       )}
     </g>
   )
@@ -230,7 +256,8 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
           return (
             <g key={ann.id}>
               <CrossingPoint center={ann.points[0]} upm={upm} scale={scale}
-                rotation={ann.rotation ?? 0} color={color} spec={spec}
+                rotation={ann.rotation ?? 0} elongation={ann.elongation ?? 0}
+                color={color} spec={spec}
                 selected={ann.id === selectedAnnotationId} />
             </g>
           )
@@ -271,7 +298,7 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
       {pendingPoints.length > 0 && pendingType === 'crossing_point' && (
         <g opacity={0.5}>
           <CrossingPoint center={pendingPoints[0]} upm={upm} scale={scale}
-            rotation={0} color={color} spec={spec} selected={false} />
+            rotation={0} elongation={0} color={color} spec={spec} selected={false} />
         </g>
       )}
       {pendingPoints.length >= 2 && pendingType === 'out_of_bounds' && (

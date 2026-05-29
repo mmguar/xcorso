@@ -115,6 +115,8 @@ export interface AppActions {
   rotateAnnotation: (id: string, rotation: number) => void
   beginResizeAnnotation: () => void
   resizeAnnotation: (id: string, scale: number) => void
+  beginElongateAnnotation: () => void
+  elongateAnnotation: (id: string, elongation: number) => void
   setSelectedAnnotation: (id: string | null) => void
 
   addScaleBar: (position: MapPoint, scale: number) => ScaleBar

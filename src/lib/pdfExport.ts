@@ -1,10 +1,11 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, MM_TO_PT } from './symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, MM_TO_PT } from './symbolSpec'
+import { circleGapDashArray, legGapDashArray } from './gapDash'
 import { walkPath, clipPolyline } from './geometry'
 
 export const MARGIN = 10
@@ -271,7 +272,7 @@ function courseBoundsMm(
   map: MapConfig,
   printScale: number,
 ): Bounds | null {
-  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const controlMap = controlsById(controls)
   const positions = course.controls
     .map(cc => controlMap.get(cc.controlId))
     .filter((c): c is Control => c != null)
@@ -564,7 +565,7 @@ export function coursePreviewMm(
     const course = project.courses.find(c => c.id === realCourseId)
     if (!course) return null
 
-    const controlMap = new Map(project.controls.map(c => [c.id, c]))
+    const controlMap = controlsById(project.controls)
 
     if (parsed && locked) {
       const submaps = computeSubmaps(course, project.controls)
@@ -649,73 +650,9 @@ function setColor(doc: jsPDF, hex: string) {
 
 // ── Gap dash patterns ──────────────────────────────────────────────────────
 
-function circleGapDash(gaps: CircleGap[], circumference: number): { dash: number[]; phase: number } | null {
-  if (gaps.length === 0) return null
-
-  const segments: { start: number; end: number }[] = []
-  for (const g of gaps) {
-    const s = ((g.startAngle % 360) + 360) % 360
-    const e = ((g.endAngle % 360) + 360) % 360
-    if (e < s) {
-      segments.push({ start: s, end: 360 })
-      if (e > 0) segments.push({ start: 0, end: e })
-    } else if (e > s) {
-      segments.push({ start: s, end: e })
-    }
-  }
-
-  segments.sort((a, b) => a.start - b.start)
-  const merged: { start: number; end: number }[] = []
-  for (const seg of segments) {
-    const last = merged[merged.length - 1]
-    if (last && seg.start <= last.end) {
-      last.end = Math.max(last.end, seg.end)
-    } else {
-      merged.push({ start: seg.start, end: seg.end })
-    }
-  }
-
-  const dashes: number[] = []
-  let pos = 0
-  for (const seg of merged) {
-    const gapStart = (seg.start / 360) * circumference
-    const gapEnd = (seg.end / 360) * circumference
-    const visible = gapStart - pos
-    if (visible > 0) dashes.push(visible)
-    else if (dashes.length === 0) dashes.push(0)
-    dashes.push(gapEnd - Math.max(pos, gapStart))
-    pos = gapEnd
-  }
-  const remaining = circumference - pos
-  if (remaining > 0) dashes.push(remaining)
-
-  return { dash: dashes, phase: 0 }
-}
-
 function legGapDash(gaps: LegGap[], lineLen: number): { dash: number[]; phase: number } | null {
-  if (gaps.length === 0) return null
-  const sorted = [...gaps].sort((a, b) => a.start - b.start)
-  const dashes: number[] = []
-  let pos = 0
-  for (const g of sorted) {
-    const gapStart = g.start * lineLen
-    const gapEnd = g.end * lineLen
-    if (gapStart > pos) {
-      dashes.push(gapStart - pos)
-      dashes.push(gapEnd - gapStart)
-    } else {
-      if (dashes.length > 0) {
-        dashes[dashes.length - 1] += gapEnd - pos
-      } else {
-        dashes.push(0)
-        dashes.push(gapEnd - pos)
-      }
-    }
-    pos = gapEnd
-  }
-  const remaining = lineLen - pos
-  if (remaining > 0) dashes.push(remaining)
-  return { dash: dashes, phase: 0 }
+  const dash = legGapDashArray(gaps, lineLen)
+  return dash ? { dash, phase: 0 } : null
 }
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
@@ -731,10 +668,12 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   const controlR = dims.controlR * sf
   const controlSw = dims.strokeW * sf
 
+  // mirror=true for circles: jsPDF winds the opposite way from SVG (see gapDash.ts).
+  // The start triangle is drawn with explicit, matching vertex order, so it uses mirror=false.
   const gapDash = gaps?.length
-    ? (circ: number) => {
-        const d = circleGapDash(gaps, circ)
-        if (d) doc.setLineDashPattern(d.dash, d.phase)
+    ? (circ: number, mirror: boolean) => {
+        const d = circleGapDashArray(gaps, circ, mirror)
+        if (d) doc.setLineDashPattern(d, 0)
       }
     : () => {}
   const resetDash = gaps?.length ? () => doc.setLineDashPattern([], 0) : () => {}
@@ -742,7 +681,7 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   if (type === 'start') {
     const h = startSide * Math.sqrt(3) / 2
     doc.setLineWidth(startSw)
-    gapDash(startSide * 3)
+    gapDash(startSide * 3, false)
     doc.triangle(
       pos.x, pos.y - h * 2 / 3,
       pos.x - startSide / 2, pos.y + h / 3,
@@ -752,15 +691,15 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     resetDash()
   } else if (type === 'finish') {
     doc.setLineWidth(finishSw)
-    gapDash(2 * Math.PI * finishOuter)
+    gapDash(2 * Math.PI * finishOuter, true)
     doc.circle(pos.x, pos.y, finishOuter, 'S')
     resetDash()
-    gapDash(2 * Math.PI * finishInner)
+    gapDash(2 * Math.PI * finishInner, true)
     doc.circle(pos.x, pos.y, finishInner, 'S')
     resetDash()
   } else if (isExchange) {
     doc.setLineWidth(controlSw)
-    gapDash(2 * Math.PI * controlR)
+    gapDash(2 * Math.PI * controlR, true)
     doc.circle(pos.x, pos.y, controlR, 'S')
     resetDash()
     const triPoints: [number, number][] = [90, 210, 330].map(deg => {
@@ -775,7 +714,7 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     )
   } else {
     doc.setLineWidth(controlSw)
-    gapDash(2 * Math.PI * controlR)
+    gapDash(2 * Math.PI * controlR, true)
     doc.circle(pos.x, pos.y, controlR, 'S')
     resetDash()
   }
@@ -784,9 +723,7 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
 function clipR(type: string, printScale: number, spec: EventSpec): number {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
-  if (type === 'start') return (dims.startSide * sf) * Math.sqrt(3) / 2 * 2 / 3
-  if (type === 'finish') return dims.finishROuter * sf
-  return dims.controlR * sf
+  return controlSymbolRadiusMm(type as ControlType, dims) * sf
 }
 
 function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[], gaps?: LegGap[]) {
@@ -907,12 +844,18 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
 
 // ── Crossing point ──────────────────────────────────────────────────────────
 
-function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: number, spec: EventSpec) {
+function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, elongation: number, mapScale: number, spec: EventSpec) {
   const d = annotationDimsMm(mapScale, spec)
   const spread = d.crossHalf
   const hh = d.crossH
+  const ext = Math.max(0, elongation)
+  const totalHH = hh + ext
   const halfGapCenter = (d.crossGap + d.crossW) / 2
   const cx = 2 * halfGapCenter - spread
+  // Split the pinch curve at its centre; elongation pulls the halves apart and
+  // joins them with a vertical line at the inner pinch (matches canvas render).
+  const midX = (spread + cx) / 2
+  const ctrlY = hh / 2
   const { x, y } = center
   const cos = Math.cos(rotation * Math.PI / 180)
   const sin = Math.sin(rotation * Math.PI / 180)
@@ -920,30 +863,31 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, mapScale: 
     const dx = px - x, dy = py - y
     return { x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }
   }
-
-  const r0 = rot(x + spread, y - hh)
-  const rq = rot(x + cx, y)
-  const r1 = rot(x + spread, y + hh)
-
-  const l0 = rot(x - spread, y - hh)
-  const lq = rot(x - cx, y)
-  const l1 = rot(x - spread, y + hh)
+  // Quadratic (p0 → qc → p1) drawn as a cubic via the 2/3 control rule.
+  function quad(p0: Pos, qc: Pos, p1: Pos) {
+    doc.curveTo(
+      p0.x + 2 / 3 * (qc.x - p0.x), p0.y + 2 / 3 * (qc.y - p0.y),
+      p1.x + 2 / 3 * (qc.x - p1.x), p1.y + 2 / 3 * (qc.y - p1.y),
+      p1.x, p1.y,
+    )
+  }
 
   doc.setLineWidth(d.crossW)
   doc.setLineCap(1)
 
-  doc.moveTo(r0.x, r0.y)
-  doc.curveTo(
-    r0.x + 2 / 3 * (rq.x - r0.x), r0.y + 2 / 3 * (rq.y - r0.y),
-    r1.x + 2 / 3 * (rq.x - r1.x), r1.y + 2 / 3 * (rq.y - r1.y),
-    r1.x, r1.y,
-  )
-  doc.moveTo(l0.x, l0.y)
-  doc.curveTo(
-    l0.x + 2 / 3 * (lq.x - l0.x), l0.y + 2 / 3 * (lq.y - l0.y),
-    l1.x + 2 / 3 * (lq.x - l1.x), l1.y + 2 / 3 * (lq.y - l1.y),
-    l1.x, l1.y,
-  )
+  for (const s of [1, -1]) {
+    const top      = rot(x + s * spread, y - totalHH)
+    const pinchTop = rot(x + s * midX, y - ext)
+    const ctrlTop  = rot(x + s * midX, y - ctrlY - ext)
+    const pinchBot = rot(x + s * midX, y + ext)
+    const ctrlBot  = rot(x + s * midX, y + ctrlY + ext)
+    const bot      = rot(x + s * spread, y + totalHH)
+
+    doc.moveTo(top.x, top.y)
+    quad(top, ctrlTop, pinchTop)
+    doc.lineTo(pinchBot.x, pinchBot.y)
+    quad(pinchBot, ctrlBot, bot)
+  }
   doc.stroke()
 }
 
@@ -1233,7 +1177,7 @@ export async function exportCoursePdf(
   const useRaster = options.mapRendering === 'raster'
   if (loadedMap?.type === 'svg' && !useRaster) await import('svg2pdf.js')
   const doc = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] })
-  const controlMap = new Map(project.controls.map(c => [c.id, c]))
+  const controlMap = controlsById(project.controls)
   const courses = expandVariations(project.courses.filter(c => options.courseIds.includes(c.id)))
 
   /** After svg2pdf fails once, use raster fallback for remaining pages. */
@@ -1355,7 +1299,7 @@ export async function exportCoursePdf(
             if (ann.type === 'forbidden_route') {
               drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
             } else if (ann.type === 'crossing_point' && ann.points[0]) {
-              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, allCtrlSpec)
+              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, allCtrlSpec)
             } else if (ann.type === 'out_of_bounds') {
               drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
             } else if (ann.type === 'north_arrow' && ann.points[0]) {
@@ -1464,7 +1408,7 @@ export async function exportCoursePdf(
             if (ann.type === 'forbidden_route') {
               drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
             } else if (ann.type === 'crossing_point' && ann.points[0]) {
-              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, mapScale, courseSpec)
+              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, courseSpec)
             } else if (ann.type === 'out_of_bounds') {
               drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
             } else if (ann.type === 'north_arrow' && ann.points[0]) {

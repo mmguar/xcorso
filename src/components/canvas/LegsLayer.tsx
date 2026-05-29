@@ -6,11 +6,12 @@
 
 import { memo, useMemo } from 'react'
 import type { Course, Control, MapConfig, MapPoint, LegGap, AppearanceSettings, EventSpec } from '../../types'
-import { unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
+import { unitsPerMm, computeSubmaps, controlsById } from '../../lib/courseUtils'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
+import { legGapDashArray } from '../../lib/gapDash'
 
 interface Props {
   course: Course | null
@@ -25,29 +26,8 @@ interface Props {
 const BEND_HANDLE_R_MM = 0.8
 
 function legGapsToDashArray(gaps: LegGap[], lineLen: number): string | null {
-  if (gaps.length === 0) return null
-  const sorted = [...gaps].sort((a, b) => a.start - b.start)
-  const dashes: number[] = []
-  let pos = 0
-  for (const g of sorted) {
-    const gapStart = g.start * lineLen
-    const gapEnd = g.end * lineLen
-    if (gapStart > pos) {
-      dashes.push(gapStart - pos)
-      dashes.push(gapEnd - gapStart)
-    } else {
-      if (dashes.length > 0) {
-        dashes[dashes.length - 1] += gapEnd - pos
-      } else {
-        dashes.push(0)
-        dashes.push(gapEnd - pos)
-      }
-    }
-    pos = gapEnd
-  }
-  const remaining = lineLen - pos
-  if (remaining > 0) dashes.push(remaining)
-  return dashes.join(' ')
+  const dashes = legGapDashArray(gaps, lineLen)
+  return dashes ? dashes.join(' ') : null
 }
 
 function renderLegs(
@@ -207,7 +187,7 @@ function renderLegs(
 export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec, selectedSubmapIndex }: Props) {
   useRenderTracker('LegsLayer')
   const draggingControlId = useStore(s => s.editor.draggingControlId)
-  const controlMap = useMemo(() => new Map(controls.map(c => [c.id, c])), [controls])
+  const controlMap = useMemo(() => controlsById(controls), [controls])
 
   if (!course) return null
 

@@ -1,4 +1,4 @@
-import type { EventSpec } from '../types'
+import type { EventSpec, ControlType } from '../types'
 export type { EventSpec }
 
 export interface SymbolDims {
@@ -47,6 +47,15 @@ export function getSymbolDims(spec: EventSpec): SymbolDims {
 
 export function symbolScaleFactor(spec: EventSpec, printScale: number): number {
   return SPECS[spec].baseScale / printScale
+}
+
+// Bounding circumradius of a control symbol in spec mm (before upm / scaleFactor).
+// Single source of truth for hit-testing and PDF clipping radii — keep in sync with
+// the shapes drawn in ControlsLayer.tsx / pdfExport.ts.
+export function controlSymbolRadiusMm(type: ControlType, dims: SymbolDims): number {
+  if (type === 'start') return dims.startSide * Math.sqrt(3) / 2 * (2 / 3)
+  if (type === 'finish') return dims.finishROuter
+  return dims.controlR
 }
 
 export function resolveSpec(projectSpec?: EventSpec, courseSpec?: EventSpec): EventSpec {
