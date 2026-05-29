@@ -465,7 +465,7 @@ function drawSheetHeader(
     doc.text(fmtDist(distanceM), gridX + colW + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
   }
   if (course.climb != null && course.climb > 0) {
-    doc.text(`${course.climb} m↑`, gridX + 2 * colW + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
+    doc.text(`${course.climb} m`, gridX + 2 * colW + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
   }
 }
 
