@@ -5,7 +5,7 @@ import {
   PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
   checkFitForCourse, checkTilingForCourse, suggestFitScaleForCourse,
 } from '../../lib/pdfExport'
-import { defaultControlLabel } from '../../lib/courseUtils'
+import { defaultControlLabel, controlsById } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
 import { getLayoutDefaults } from '../../store/layoutSlice'
 import type { PageSizeKey, Control, DescMode } from '../../types'
@@ -808,7 +808,7 @@ function CourseCard({ courseId }: { courseId: string }) {
             onClick={() => {
               const proj = useStore.getState().project
               if (!proj) return
-              const controlMap = new Map(proj.controls.map(c => [c.id, c]))
+              const controlMap = controlsById(proj.controls)
               const positions = course.controls
                 .map(cc => controlMap.get(cc.controlId))
                 .filter(Boolean)

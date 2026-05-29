@@ -18,7 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields, isDimensionText, getSymbol } from '../lib/iofSymbols'
-import { defaultControlLabel, computeSubmaps } from '../lib/courseUtils'
+import { defaultControlLabel, computeSubmaps, controlsById } from '../lib/courseUtils'
 import { computeCourseDistances, formatDistance } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
@@ -54,7 +54,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
   const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
-  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const controlMap = controlsById(controls)
   const submaps = computeSubmaps(course)
   const hasSubmaps = submaps.length > 1
 

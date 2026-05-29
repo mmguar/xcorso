@@ -1,6 +1,7 @@
 import type { MapPoint, CourseLayout, LayoutElementPosition, LayoutDefaults, MapBorder } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
+import { controlsById } from '../lib/courseUtils'
 
 /** Swap border dimensions (and margins) when page orientation changes. */
 function flipMapBorder(border: MapBorder): MapBorder {
@@ -66,7 +67,7 @@ function defaultLayout(courseId: string, get: GetState): CourseLayout {
 
   let center: MapPoint = { x: map.width / 2, y: map.height / 2 }
   if (course) {
-    const controlMap = new Map(project.controls.map(c => [c.id, c]))
+    const controlMap = controlsById(project.controls)
     const positions = course.controls
       .map(cc => controlMap.get(cc.controlId))
       .filter(Boolean)

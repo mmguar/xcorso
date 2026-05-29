@@ -66,6 +66,14 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       })
     },
 
+    beginElongateAnnotation: () => h.pushUndoSnapshot(),
+
+    elongateAnnotation: (id: string, elongation: number) => {
+      h.mutateProjectSilent(p => {
+        p.annotations = p.annotations.map(a => a.id === id ? { ...a, elongation } : a)
+      })
+    },
+
     setSelectedAnnotation: (id: string | null) => {
       set(state => ({ editor: { ...state.editor, selectedAnnotationId: id } }))
     },

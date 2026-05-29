@@ -5,52 +5,11 @@ import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import type { SymbolDims } from '../../lib/symbolSpec'
+import { circleGapDashArray } from '../../lib/gapDash'
 
 function gapsToDashArray(gaps: CircleGap[], circumference: number): { dashArray: string; dashOffset: number } | null {
-  if (gaps.length === 0) return null
-
-  // Split wrapping gaps into two non-wrapping segments
-  const segments: { start: number; end: number }[] = []
-  for (const g of gaps) {
-    const s = ((g.startAngle % 360) + 360) % 360
-    const e = ((g.endAngle % 360) + 360) % 360
-    if (e < s) {
-      segments.push({ start: s, end: 360 })
-      if (e > 0) segments.push({ start: 0, end: e })
-    } else if (e > s) {
-      segments.push({ start: s, end: e })
-    }
-  }
-
-  // Sort and merge overlapping segments
-  segments.sort((a, b) => a.start - b.start)
-  const merged: { start: number; end: number }[] = []
-  for (const seg of segments) {
-    const last = merged[merged.length - 1]
-    if (last && seg.start <= last.end) {
-      last.end = Math.max(last.end, seg.end)
-    } else {
-      merged.push({ start: seg.start, end: seg.end })
-    }
-  }
-
-  // Build dash pattern starting from angle 0
-  // SVG circles start at 3 o'clock (0°) and go clockwise, which matches our convention
-  const dashes: number[] = []
-  let pos = 0
-  for (const seg of merged) {
-    const gapStart = (seg.start / 360) * circumference
-    const gapEnd = (seg.end / 360) * circumference
-    const visible = gapStart - pos
-    if (visible > 0) dashes.push(visible)
-    else if (dashes.length === 0) dashes.push(0)
-    dashes.push(gapEnd - Math.max(pos, gapStart))
-    pos = gapEnd
-  }
-  const remaining = circumference - pos
-  if (remaining > 0) dashes.push(remaining)
-
-  return { dashArray: dashes.join(' '), dashOffset: 0 }
+  const dashes = circleGapDashArray(gaps, circumference)
+  return dashes ? { dashArray: dashes.join(' '), dashOffset: 0 } : null
 }
 
 interface ShapeProps {

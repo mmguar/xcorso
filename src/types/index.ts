@@ -158,6 +158,7 @@ export interface Annotation {
   points: MapPoint[]         // polyline for routes/bounds; single point for crossing_point/north_arrow
   rotation?: number          // degrees, for crossing_point
   scale?: number             // size multiplier, for north_arrow (default 1)
+  elongation?: number        // extra half-height in mm, for crossing_point (default 0)
   color?: string             // fill color (north_arrow)
   textColor?: string         // text color (north_arrow, default white)
 }

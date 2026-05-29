@@ -1,4 +1,5 @@
 import type { MapPoint, MapConfig, CourseDistances, Control, Course } from '../types'
+import { controlsById } from './courseUtils'
 
 /**
  * Euclidean distance between two map points in map-native units.
@@ -55,7 +56,7 @@ export function computeCourseDistances(
   controls: Control[],
   map: MapConfig,
 ): CourseDistances {
-  const controlMap = new Map(controls.map(c => [c.id, c]))
+  const controlMap = controlsById(controls)
   const positions = course.controls
     .map(cc => controlMap.get(cc.controlId)?.position)
     .filter((p): p is MapPoint => p !== undefined)

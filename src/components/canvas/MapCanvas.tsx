@@ -8,21 +8,21 @@ import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
 import { DragLegsLayer } from './DragLegsLayer'
 import type { DragLegsHandle } from './DragLegsLayer'
-import { AnnotationsLayer, northArrowHeight, northArrowGeometry } from './AnnotationsLayer'
+import { AnnotationsLayer, northArrowHeight, northArrowGeometry, crossingPointTotalHH } from './AnnotationsLayer'
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
-import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
-  findCrossingPointRotationHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle,
+  findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle,
 } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
@@ -84,15 +84,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
   return (
     <g style={{ pointerEvents: 'none' }}>
       {controls.map(c => {
-        const scale = controlScale * sf
-        let symbolR: number
-        if (c.type === 'start') {
-          symbolR = dims.startSide * upm * scale * Math.sqrt(3) / 2 * 2 / 3
-        } else if (c.type === 'finish') {
-          symbolR = dims.finishROuter * upm * sf * controlScale
-        } else {
-          symbolR = dims.controlR * upm * sf * controlScale
-        }
+        const symbolR = controlSymbolRadiusMm(c.type, dims) * upm * sf * controlScale
         return (
           <circle key={`hit-${c.id}`} cx={c.position.x} cy={c.position.y} r={symbolR}
             fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={1 / vp.scale} />
@@ -105,15 +97,21 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
         const d = getAnnotationDims(annSf)
         const handleR = 1 * upm
         const rotation = (ann.rotation ?? 0) * Math.PI / 180
-        const handleLocalY = -(d.crossH + handleR * 2)
+        const totalHH = crossingPointTotalHH(d, ann.elongation ?? 0, upm)
+        const handleLocalY = -(totalHH + handleR * 2)
         const handleX = p.x - handleLocalY * Math.sin(rotation)
         const handleY = p.y + handleLocalY * Math.cos(rotation)
+        const resizeLocalY = totalHH + handleR * 2
+        const resizeX = p.x - resizeLocalY * Math.sin(rotation)
+        const resizeY = p.y + resizeLocalY * Math.cos(rotation)
         return (
           <g key={`ann-${ann.id}`}>
-            <circle cx={p.x} cy={p.y} r={d.crossH}
+            <circle cx={p.x} cy={p.y} r={totalHH}
               fill="rgba(255,0,255,0.1)" stroke="rgba(255,0,255,0.5)" strokeWidth={1 / vp.scale} />
             <circle cx={handleX} cy={handleY} r={handleR}
               fill="rgba(255,128,0,0.1)" stroke="rgba(255,128,0,0.5)" strokeWidth={1 / vp.scale} />
+            <circle cx={resizeX} cy={resizeY} r={handleR}
+              fill="rgba(0,128,255,0.1)" stroke="rgba(0,128,255,0.5)" strokeWidth={1 / vp.scale} />
           </g>
         )
       })}
@@ -333,6 +331,9 @@ export function MapCanvas({ loadedMap }: Props) {
 
     let dragAnnResize: { annId: string; centerX: number; centerY: number; origScale: number; origHandleDist: number } | null = null
     let dragAnnResizeStarted = false
+
+    let dragCrossElongate: { annId: string; centerX: number; centerY: number; baseHH: number } | null = null
+    let dragCrossElongateStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -556,6 +557,18 @@ export function MapCanvas({ loadedMap }: Props) {
           if (rotHit && rotHit.points[0]) {
             dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
             dragRotationStarted = false
+            return
+          }
+
+          const crossResizeHit = findCrossingPointResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (crossResizeHit && crossResizeHit.points[0]) {
+            const crUpm = unitsPerMm(proj.map)
+            const crSpec = resolveSpec(proj.spec)
+            const crSf = symbolScaleFactor(crSpec, proj.map.scale)
+            const crD = getAnnotationDims(crSf * crUpm)
+            // Handle sits crossH + 2·handleR beyond centre; subtract that so grabbing doesn't jump.
+            dragCrossElongate = { annId: crossResizeHit.id, centerX: crossResizeHit.points[0].x, centerY: crossResizeHit.points[0].y, baseHH: crD.crossH + 2 * crUpm }
+            dragCrossElongateStarted = false
             return
           }
 
@@ -854,6 +867,26 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragCrossElongate && pos.size === 1) {
+        if (!dragCrossElongateStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginElongateAnnotation()
+          dragCrossElongateStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const proj2 = useStore.getState().project!
+        const rotation = (proj2.annotations.find(a => a.id === dragCrossElongate!.annId)?.rotation ?? 0) * Math.PI / 180
+        const dx = mapPt.x - dragCrossElongate.centerX
+        const dy = mapPt.y - dragCrossElongate.centerY
+        const projectedDist = dx * (-Math.sin(rotation)) + dy * Math.cos(rotation)
+        const upm = unitsPerMm(proj2.map)
+        const newElongation = Math.max(0, (projectedDist - dragCrossElongate.baseHH) / upm)
+        useStore.getState().elongateAnnotation(dragCrossElongate.annId, newElongation)
+        return
+      }
+
       if (dragResize && pos.size === 1) {
         if (!dragResizeStarted) {
           const start = down.get(e.pointerId)
@@ -989,6 +1022,9 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (dragAnnResize && dragAnnResizeStarted) { dragAnnResize = null; dragAnnResizeStarted = false; return }
       dragAnnResize = null; dragAnnResizeStarted = false
+
+      if (dragCrossElongate && dragCrossElongateStarted) { dragCrossElongate = null; dragCrossElongateStarted = false; return }
+      dragCrossElongate = null; dragCrossElongateStarted = false
 
       if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
       dragResize = null; dragResizeStarted = false
@@ -1127,6 +1163,7 @@ export function MapCanvas({ loadedMap }: Props) {
       dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
       dragAnnResize = null; dragAnnResizeStarted = false
+      dragCrossElongate = null; dragCrossElongateStarted = false
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
@@ -1416,16 +1453,23 @@ export function MapCanvas({ loadedMap }: Props) {
               if (ann?.type === 'crossing_point' && ann.points[0]) {
                 const d = getAnnotationDims(symbolScaleFactor(spec, map.scale) * upm)
                 const { x, y } = ann.points[0]
-                const hh = d.crossH
+                const totalHH = crossingPointTotalHH(d, ann.elongation ?? 0, upm)
                 const handleR = 1 * upm
                 const rotation = ann.rotation ?? 0
                 elements.push(
-                  <circle key="cp-rot"
-                    cx={x} cy={y - hh - handleR * 2}
-                    r={handleR}
-                    fill="#a626ff" stroke="white" strokeWidth={strokeW}
-                    transform={`rotate(${rotation}, ${x}, ${y})`}
-                  />
+                  <g key="cp-handles" transform={`rotate(${rotation}, ${x}, ${y})`}>
+                    <circle
+                      cx={x} cy={y - totalHH - handleR * 2}
+                      r={handleR}
+                      fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                    />
+                    <rect
+                      x={x - handleR} y={y + totalHH + handleR}
+                      width={handleR * 2} height={handleR * 2}
+                      rx={strokeW * 2}
+                      fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                    />
+                  </g>
                 )
               }
               if (ann?.type === 'north_arrow' && ann.points[0]) {
