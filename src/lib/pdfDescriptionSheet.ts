@@ -333,7 +333,7 @@ function drawFinishIofRow(
 
   // Distance text
   if (distM != null) {
-    doc.setFontSize(5.5)
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     doc.text(fmtDist(distM), midX, cy + 0.8, { align: 'center' })

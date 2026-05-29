@@ -452,15 +452,15 @@ function makeSideSymbols(): SymbolDef[] {
 }
 
 function makeEdgeSymbols(): SymbolDef[] {
-  const dirs: [string, string, number, number][] = [
-    ['N', 'North', 0, -65], ['NE', 'North-east', 50, -55], ['E', 'East', 50, 0],
-    ['SE', 'South-east', 50, 55], ['S', 'South', 0, 65], ['SW', 'South-west', -50, 55],
-    ['W', 'West', -50, 0], ['NW', 'North-west', -50, -55],
+  const dirs: [string, string, number, number, number, number][] = [
+    ['N', 'North', 0, 35, 0, 75], ['NE', 'North-east', 19,19,59,59], ['E', 'East', 35,0,75, 0],
+    ['SE', 'South-east', 19,-19,59,-59], ['S', 'South', 0, -35, 0, -75], ['SW', 'South-west', -19,-19,-59,-59],
+    ['W', 'West', -75, 0, -35, 0], ['NW', 'North-west', -19, 19, -59,59]
   ]
-  return dirs.map(([d, name, dx, dy]) => ({
+  return dirs.map(([d, name, x0, y0, x1, y1]) => ({
     code: `11.2${d}`, name: `${name} edge`, column: 'G' as IofColumn,
-    lines: [[-20, -60, -20, 60], [20, -60, 20, 60]] as [number, number, number, number][],
-    filledCircles: [[dx, dy, 12] as [number, number, number]],
+    circles: [[ 0, 0, 55] as [number, number, number]],
+    paths: [`M ${x0}, ${y0}  ${x1}, ${y1}`],
   }))
 }
 
@@ -480,14 +480,14 @@ function makePartSymbols(): SymbolDef[] {
 
 function makeCornerInsideSymbols(): SymbolDef[] {
   const dirs: [string, string, number, number, string][] = [
-    ['N', 'North', 0, -25, 'M -50 20 L 0 20 L 0 70'],
-    ['NE', 'North-east', 30, -20, 'M -50 30 L 10 30 L 10 -70'],
-    ['E', 'East', 30, 0, 'M -20 -50 L -20 0 L 60 0'],
-    ['SE', 'South-east', 30, 25, 'M 10 -50 L 10 -10 L -60 -10'],
-    ['S', 'South', 0, 25, 'M 0 -50 L 0 0 L 50, 0'],
-    ['SW', 'South-west', -30, 25, 'M 60 -10 L -10 -10 L -10 -60'],
-    ['W', 'West', -30, 0, 'M 20 -50 L 20 0 L -60 0'],
-    ['NW', 'North-west', -30, -20, 'M 50 30 L -10 30 L -10 -60'],
+    ['N', 'North', 0, 0, 'M -45 0 L 0 -45 L 45 0'],
+    ['NE', 'North-east', 15, -15, 'M -20 -45 L 45 -45 L 45 20'],
+    ['E', 'East', 0, 0, 'M 0 45 L -45 0 L 0 -45'],
+    ['SE', 'South-east', 15, 15, 'M -20 45 L 45 45 L 45 -20'],
+    ['S', 'South', 0, 0, 'M -45 0 L 0 45 L 45 0'],
+    ['SW', 'South-west', -15, 15, 'M 20 45 L -45 45 L -45 -20'],
+    ['W', 'West', 0, 0, 'M 0 -45 L 45 0 L 0 45'],
+    ['NW', 'North-west', -15, -15, 'M 20 -45 L -45 -45 L -45 20'],
   ]
   return dirs.map(([d, name, dx, dy, path]) => ({
     code: `11.4${d}`, name: `${name} corner (inside)`, column: 'G' as IofColumn,
@@ -498,14 +498,14 @@ function makeCornerInsideSymbols(): SymbolDef[] {
 
 function makeCornerOutsideSymbols(): SymbolDef[] {
   const dirs: [string, string, number, number, string][] = [
-    ['N', 'North', 0, -55, 'M -50 20 L 0 20 L 0 70'],
-    ['NE', 'North-east', 40, -40, 'M -50 30 L 10 30 L 10 -70'],
-    ['E', 'East', 55, 0, 'M -20 -50 L -20 0 L 60 0'],
-    ['SE', 'South-east', 40, 40, 'M 10 -50 L 10 -10 L -60 -10'],
-    ['S', 'South', 0, 55, 'M 0 -50 L 0 0 L 50 0'],
-    ['SW', 'South-west', -40, 40, 'M 60 -10 L -10 -10 L -10 -60'],
-    ['W', 'West', -55, 0, 'M 20 -50 L 20 0 L -60 0'],
-    ['NW', 'North-west', -40, -40, 'M 50 30 L -10 30 L -10 -60'],
+    ['N', 'North', 0, -65, 'M -45 20 L 0 -25 L 45 20'],
+    ['NE', 'North-east', 50, -50, 'M -45 -20 L 20 -20 L 20 45'],
+    ['E', 'East', -65, 0, 'M 10 45 L -35 0 L 10 -45'],
+    ['SE', 'South-east', 50, 50, 'M -45 20 L 20 20 L 20 -45'],
+    ['S', 'South', 0, 65, 'M -45 -20 L 0 25 L 45 -20'],
+    ['SW', 'South-west', -50, 50, 'M 45 20 L -20 20 L -20 -45'],
+    ['W', 'West', 65, 0, 'M -10 -45 L 35 0 L -10 45'],
+    ['NW', 'North-west', -50, -50, 'M 45 -20 L -20 -20 L -20 45'],
   ]
   return dirs.map(([d, name, dx, dy, path]) => ({
     code: `11.5${d}`, name: `${name} corner (outside)`, column: 'G' as IofColumn,
@@ -516,13 +516,13 @@ function makeCornerOutsideSymbols(): SymbolDef[] {
 
 function makeTipSymbols(): SymbolDef[] {
   const dirs: [string, string, number, number, string][] = [
-    ['N', 'North', 0, -55, 'M -40 50 L 0 -30 L 40 50'],
+    ['N', 'North', 0, -65, 'M -40 50 L 0 -30 L 40 50'],
     ['NE', 'North-east', 35, -45, 'M -50 10 L 15 -20 L -10 50'],
-    ['E', 'East', 55, 0, 'M -50 -35 L 30 0 L -50 35'],
+    ['E', 'East', 65, 0, 'M -50 -35 L 30 0 L -50 35'],
     ['SE', 'South-east', 35, 45, 'M 10 -50 L 15 20 L -50 -10'],
-    ['S', 'South', 0, 55, 'M -40 -50 L 0 30 L 40 -50'],
+    ['S', 'South', 0, 65, 'M -40 -50 L 0 30 L 40 -50'],
     ['SW', 'South-west', -35, 45, 'M 50 -10 L -15 20 L 10 -50'],
-    ['W', 'West', -55, 0, 'M 50 -35 L -30 0 L 50 35'],
+    ['W', 'West', -65, 0, 'M 50 -35 L -30 0 L 50 35'],
     ['NW', 'North-west', -35, -45, 'M -10 50 L -15 -20 L 50 10'],
   ]
   return dirs.map(([d, name, dx, dy, path]) => ({

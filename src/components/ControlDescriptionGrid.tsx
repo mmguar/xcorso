@@ -807,7 +807,7 @@ function groupLocationSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
   const groups: Record<string, SymbolDef[]> = {}
   for (const s of syms) {
     const base = s.code.replace(/[NESW]+$/, '').replace(/\.$/, '')
-    const label = s.name.replace(/(North|South|East|West|North-east|North-west|South-east|South-west)\s*/i, '').trim()
+    const label = s.name.replace(/(North-east|North-west|South-east|South-west|North|South|East|West)\s*/i, '').trim()
     const group = label || base
     if (!groups[group]) groups[group] = []
     groups[group].push(s)

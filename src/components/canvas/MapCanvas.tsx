@@ -24,7 +24,7 @@ import {
   findAnnotationAt, findOverlayAt, findLabelAt,
   findCrossingPointRotationHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle,
 } from './hitTesting'
-import { handleGapTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
+import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
 const TAP_PX    = 8
 const MIN_SCALE = 0.05
@@ -601,6 +601,33 @@ export function MapCanvas({ loadedMap }: Props) {
             }
           }
 
+          // Annotations and overlays take priority over controls
+          const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
+          if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow') && annHit.points[0]) {
+            const mapPt2 = screenToMap(sx, sy, vpRef.current)
+            dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
+            dragAnnotationStarted = false
+            return
+          }
+
+          const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
+          if (overlayHit) {
+            const mapPt = screenToMap(sx, sy, vpRef.current)
+            let oPos: { x: number; y: number } | undefined
+            if (overlayHit.kind === 'scalebar') {
+              oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
+            } else if (overlayHit.kind === 'text') {
+              oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
+            } else {
+              oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
+            }
+            if (oPos) {
+              dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
+              dragOverlayStarted = false
+              return
+            }
+          }
+
           // Controls
           const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale)
           if (hit) {
@@ -608,31 +635,6 @@ export function MapCanvas({ loadedMap }: Props) {
             dragControlId = hit.id
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
             dragStarted = false
-          } else {
-            const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-            if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow') && annHit.points[0]) {
-              const mapPt2 = screenToMap(sx, sy, vpRef.current)
-              dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
-              dragAnnotationStarted = false
-              return
-            }
-
-            const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
-            if (overlayHit) {
-              const mapPt = screenToMap(sx, sy, vpRef.current)
-              let oPos: { x: number; y: number } | undefined
-              if (overlayHit.kind === 'scalebar') {
-                oPos = proj.scaleBars.find(s => s.id === overlayHit.id)?.position
-              } else if (overlayHit.kind === 'text') {
-                oPos = proj.textLabels.find(t => t.id === overlayHit.id)?.position
-              } else {
-                oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
-              }
-              if (oPos) {
-                dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
-                dragOverlayStarted = false
-              }
-            }
           }
         }
       }
@@ -678,7 +680,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const newY = dragBorderResize.oy - (newH - dragBorderResize.oh) / 2
           const clampedX = Math.max(0, newX)
           const clampedY = Math.max(0, newY)
-          st.updateCourseLayout(st.editor.layoutCourseId!, {
+          st.moveCourseLayout(st.editor.layoutCourseId!, {
             mapBorder: { ...layout.mapBorder, x: clampedX, y: clampedY, width: Math.min(newW, pageW - clampedX), height: Math.min(newH, pageH - clampedY) },
           })
         }
@@ -709,7 +711,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const bh = layout.mapBorder.height
           const newX = Math.max(0, Math.min(pageW - bw, dragBorderTranslate.ox + dx))
           const newY = Math.max(0, Math.min(pageH - bh, dragBorderTranslate.oy + dy))
-          st.updateCourseLayout(st.editor.layoutCourseId!, {
+          st.moveCourseLayout(st.editor.layoutCourseId!, {
             mapBorder: { ...layout.mapBorder, x: newX, y: newY, width: bw, height: bh },
           })
         }
@@ -1013,7 +1015,11 @@ export function MapCanvas({ loadedMap }: Props) {
       const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId, state.editor.appearance.controlScale)
 
       if (activeTool === 'gap') {
-        handleGapTap(sx, sy, vpRef.current, proj, selectedCourseId)
+        if (state.editor.gapRebuild) {
+          handleGapRebuildTap(sx, sy, vpRef.current, proj, selectedCourseId)
+        } else {
+          handleGapTap(sx, sy, vpRef.current, proj, selectedCourseId)
+        }
         return
       }
 
@@ -1240,6 +1246,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const gapSize = useStore(s => s.editor.gapSize)
+  const gapRebuild = useStore(s => s.editor.gapRebuild)
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
   const selectedCourseRaw = courses.find(c => c.id === selectedCourseId) ?? null
   const selectedCourse = useMemo(() => {
@@ -1357,13 +1364,14 @@ export function MapCanvas({ loadedMap }: Props) {
           const controlR = getSymbolDims(gapSpec).controlR * upm * sf * appearance.controlScale * vp.scale
           const arcLen = controlR * gapSize * Math.PI / 180
           const cursorR = arcLen / 2
+          const cursorColor = gapRebuild ? '#16a34a' : '#ea580c'
           return (
             <g ref={gapRingRef} style={{ pointerEvents: 'none', display: 'none' }}>
               <circle
                 r={cursorR}
-                fill="#ea580c"
+                fill={cursorColor}
                 fillOpacity={0.25}
-                stroke="#ea580c"
+                stroke={cursorColor}
                 strokeWidth={1}
               />
             </g>
