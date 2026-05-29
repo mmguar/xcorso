@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
@@ -233,8 +233,11 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [loadedMap])
 
   // ── Snap viewport to layout page ────────────────────────────────────────
+  // useLayoutEffect (not useEffect) so the re-centre is flushed before paint —
+  // otherwise undo/redo paints one frame with the restored mapCenter but the old
+  // viewport, which shows as a page jump before the correction lands.
   const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string; snap: number } | null>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!layoutMode || !layoutCourse?.layout) {
       prevLayoutRef.current = null
       return
