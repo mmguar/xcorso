@@ -24,6 +24,7 @@ export interface EditorState {
   layoutMode: boolean
   layoutCourseId: string | null
   layoutSnapRequest: number
+  gapRebuild: boolean
 }
 
 export interface AppState {
@@ -85,6 +86,7 @@ export interface AppActions {
   updateClassName: (id: string, name: string) => void
   updateClassCourse: (id: string, courseId: string) => void
 
+  addMissingControlGaps: (controlId: string, courseId: string, gapSize: number) => void
   addControlGap: (controlId: string, gap: CircleGap) => void
   removeControlGap: (controlId: string, index: number) => void
   clearControlGaps: (controlId: string) => void
@@ -141,11 +143,13 @@ export interface AppActions {
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setGapSize: (size: number) => void
+  setGapRebuild: (on: boolean) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void
 
   enterLayoutMode: (courseId: string) => void
   exitLayoutMode: () => void
   updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
+  moveCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
   updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => void
   ensureAllCourseLayouts: () => void
   beginLayoutDrag: () => void
@@ -200,4 +204,5 @@ export const defaultEditor: EditorState = {
   layoutMode: false,
   layoutCourseId: null,
   layoutSnapRequest: 0,
+  gapRebuild: false,
 }

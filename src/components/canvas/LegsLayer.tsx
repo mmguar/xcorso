@@ -102,6 +102,7 @@ function renderLegs(
 
       const pointsStr = clipped.map(p => `${p.x},${p.y}`).join(' ')
       const legKey = `${course.id}-${course.controls[i].id}-${cc.id}`
+      const linecap = dashArray ? 'butt' : 'round'
       if (outlineSw > 0) {
         elements.push(
           <polyline
@@ -110,7 +111,7 @@ function renderLegs(
             fill="none"
             stroke={appearance.outlineColor}
             strokeWidth={strokeWidth + outlineSw * 2}
-            strokeLinecap="round"
+            strokeLinecap={linecap}
             strokeLinejoin="round"
             {...(dashArray ? { strokeDasharray: dashArray } : {})}
           />
@@ -123,7 +124,7 @@ function renderLegs(
           fill="none"
           stroke={legColor}
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap={linecap}
           strokeLinejoin="round"
           {...(dashArray ? { strokeDasharray: dashArray } : {})}
         />
@@ -175,6 +176,7 @@ function renderLegs(
       const dashArray = remappedGaps?.length ? legGapsToDashArray(remappedGaps, clippedLen) : null
 
       const legKey = `${course.id}-${course.controls[i].id}-${cc.id}`
+      const linecap = dashArray ? 'butt' : 'round'
       if (outlineSw > 0) {
         elements.push(
           <line
@@ -182,7 +184,7 @@ function renderLegs(
             x1={startX} y1={startY} x2={endX} y2={endY}
             stroke={appearance.outlineColor}
             strokeWidth={strokeWidth + outlineSw * 2}
-            strokeLinecap="round"
+            strokeLinecap={linecap}
             {...(dashArray ? { strokeDasharray: dashArray } : {})}
           />
         )
@@ -193,7 +195,7 @@ function renderLegs(
           x1={startX} y1={startY} x2={endX} y2={endY}
           stroke={legColor}
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap={linecap}
           {...(dashArray ? { strokeDasharray: dashArray } : {})}
         />
       )

@@ -155,6 +155,14 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       })
     },
 
+    moveCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => {
+      h.mutateProjectSilent(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout) return
+        Object.assign(course.layout, updates)
+      })
+    },
+
     updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => {
       const oldDefaults = getLayoutDefaults(get)
       h.mutateProject(p => {
@@ -229,12 +237,21 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     setLayoutMapCenter: (courseId: string, center: MapPoint) => {
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (course?.layout) course.layout.mapCenter = center
+        if (!course?.layout) return
+        const dx = center.x - course.layout.mapCenter.x
+        const dy = center.y - course.layout.mapCenter.y
+        course.layout.mapCenter = center
+        if (course.layout.overlayPositions) {
+          for (const id of Object.keys(course.layout.overlayPositions)) {
+            const pos = course.layout.overlayPositions[id]
+            course.layout.overlayPositions[id] = { x: pos.x + dx, y: pos.y + dy }
+          }
+        }
       })
     },
 
     updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => {
-      h.mutateProject(p => {
+      h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
         if (!course?.layout) return
         if (element === 'clueSheet') {

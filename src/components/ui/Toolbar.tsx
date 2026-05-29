@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
-  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers,
+  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers, Eraser,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
@@ -78,10 +78,29 @@ function GapSizeSlider() {
   )
 }
 
+function GapRebuildToggle() {
+  const gapRebuild = useStore(s => s.editor.gapRebuild)
+  const setGapRebuild = useStore(s => s.setGapRebuild)
+  return (
+    <button
+      onClick={() => setGapRebuild(!gapRebuild)}
+      title="Rebuild gaps (click control to add missing gaps)"
+      className={`w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all ${
+        gapRebuild
+          ? 'bg-green-600 text-white shadow-inner'
+          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+      }`}
+    >
+      <Eraser size={16} />
+    </button>
+  )
+}
+
 export function Toolbar() {
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const layoutMode = useStore(s => s.editor.layoutMode)
+  const gapRebuild = useStore(s => s.editor.gapRebuild)
   const setActiveTool = useStore(s => s.setActiveTool)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
@@ -228,7 +247,11 @@ export function Toolbar() {
           className="w-3 h-3 rounded-full shrink-0"
           style={{ background: selectedCourse?.color ?? '#7B2FBE' }}
         />
-        {activeTool === 'gap' ? (
+        {activeTool === 'gap' && gapRebuild ? (
+          <span className="text-xs md:text-sm text-green-700">
+            Click control to add missing gaps
+          </span>
+        ) : activeTool === 'gap' ? (
           <span className="text-xs md:text-sm text-gray-700">
             Click circle or leg to add gap
           </span>
@@ -254,7 +277,12 @@ export function Toolbar() {
         >
           {toolIcons['gap'](16)}
         </button>
-        {activeTool === 'gap' && <GapSizeSlider />}
+        {activeTool === 'gap' && (
+          <>
+            <GapSizeSlider />
+            <GapRebuildToggle />
+          </>
+        )}
         <button
           onClick={() => setActiveTool(activeTool === 'bend' ? 'select' : 'bend')}
           title="Bend leg tool (B)"

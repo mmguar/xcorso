@@ -141,7 +141,7 @@ export const useStore = create<Store>((set, get) => {
 
     setActiveTool: (tool) => {
       set(state => ({
-        editor: { ...state.editor, activeTool: tool, pendingAnnotationPoints: [] },
+        editor: { ...state.editor, activeTool: tool, pendingAnnotationPoints: [], gapRebuild: tool === 'gap' ? state.editor.gapRebuild : false },
       }))
     },
 
@@ -154,19 +154,23 @@ export const useStore = create<Store>((set, get) => {
     },
 
     setSelectedCourse: (id) => {
-      set(state => ({
-        editor: {
-          ...state.editor,
-          selectedCourseId: id,
-          selectedVariationId: null,
-          selectedSubmapIndex: null,
-          selectedControlId: id ? null : state.editor.selectedControlId,
-          selectedOverlayId: id ? null : state.editor.selectedOverlayId,
-          selectedAnnotationId: id ? null : state.editor.selectedAnnotationId,
-          activeTool: id ? (state.editor.activeTool === 'gap' || state.editor.activeTool === 'bend' ? state.editor.activeTool : 'select') : state.editor.activeTool,
-          pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
-        },
-      }))
+      set(state => {
+        const tool = state.editor.activeTool
+        const courseOnlyTool = tool === 'gap' || tool === 'bend'
+        return {
+          editor: {
+            ...state.editor,
+            selectedCourseId: id,
+            selectedVariationId: null,
+            selectedSubmapIndex: null,
+            selectedControlId: id ? null : state.editor.selectedControlId,
+            selectedOverlayId: id ? null : state.editor.selectedOverlayId,
+            selectedAnnotationId: id ? null : state.editor.selectedAnnotationId,
+            activeTool: id ? (courseOnlyTool ? tool : 'select') : (courseOnlyTool ? 'select' : tool),
+            pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
+          },
+        }
+      })
     },
 
     setSelectedSubmap: (index) => {
@@ -185,6 +189,10 @@ export const useStore = create<Store>((set, get) => {
 
     setGapSize: (size) => {
       set(state => ({ editor: { ...state.editor, gapSize: size } }))
+    },
+
+    setGapRebuild: (on) => {
+      set(state => ({ editor: { ...state.editor, gapRebuild: on } }))
     },
 
     setAppearance: (settings) => {

@@ -40,6 +40,15 @@ export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Proj
   }
 }
 
+export function handleGapRebuildTap(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
+  if (!selectedCourseId) return
+  const { gapSize, appearance: { controlScale } } = useStore.getState().editor
+  const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale, GAP_EXTRA_PX)
+  if (hitControl) {
+    useStore.getState().addMissingControlGaps(hitControl.id, selectedCourseId, gapSize)
+  }
+}
+
 export function handleGapRightClick(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
   const { controlScale } = useStore.getState().editor.appearance
   const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale)
