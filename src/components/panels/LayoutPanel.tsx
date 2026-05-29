@@ -842,7 +842,7 @@ export function LayoutPanel() {
   const ensureAllCourseLayouts = useStore(s => s.ensureAllCourseLayouts)
   const scalable = canExportPdf(project.map)
   const [exporting, setExporting] = useState(false)
-  const [allControls, setAllControls] = useState(false)
+  const [allControls, setAllControls] = useState(true)
 
   useEffect(() => {
     if (courses.length > 0) ensureAllCourseLayouts()
