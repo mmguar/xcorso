@@ -245,7 +245,7 @@ export function Toolbar() {
       ">
         <div
           className="w-3 h-3 rounded-full shrink-0"
-          style={{ background: selectedCourse?.color ?? '#7B2FBE' }}
+          style={{ background: selectedCourse?.color ?? '#a626ff' }}
         />
         {activeTool === 'gap' && gapRebuild ? (
           <span className="text-xs md:text-sm text-green-700">
