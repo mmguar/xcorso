@@ -8,7 +8,7 @@
    version="1.1"
    id="svg1"
    sodipodi:docname="favicon.svg"
-   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
@@ -24,8 +24,8 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
      inkscape:zoom="19.736095"
-     inkscape:cx="8.3096479"
-     inkscape:cy="6.2069017"
+     inkscape:cx="9.2470167"
+     inkscape:cy="13.857858"
      inkscape:window-width="1438"
      inkscape:window-height="936"
      inkscape:window-x="0"
@@ -38,17 +38,27 @@
      inkscape:label="Layer 1"
      inkscape:groupmode="layer"
      id="layer1">
-    <rect
-       style="fill:#ff6600;stroke:#ff6600;stroke-width:0.564999"
-       id="rect1"
-       width="5.2922258"
-       height="5.2922258"
-       x="-5.5839601"
-       y="0.29094243"
-       transform="scale(-1,1)" />
-    <path
-       style="fill:#ffffff;stroke:none;stroke-width:0.546543"
-       d="M 0.10457778,0.11228658 H 5.7567131 L 0.092628,5.7763727 Z"
-       id="path1" />
+    <g
+       id="g3">
+      <circle
+         style="fill:#ffffff;stroke:#ff6600;stroke-width:0.101983;stroke-dasharray:none"
+         id="path2"
+         cx="2.9300001"
+         cy="2.9300001"
+         r="2.8790083" />
+      <path
+         style="fill:#ff6600;stroke:#ff6600;stroke-width:0.101037;stroke-dasharray:none"
+         id="path3"
+         sodipodi:type="arc"
+         sodipodi:cx="3.7169542e-08"
+         sodipodi:cy="4.1435757"
+         sodipodi:rx="2.8794813"
+         sodipodi:ry="2.8794813"
+         sodipodi:start="0"
+         sodipodi:end="3.1415927"
+         sodipodi:arc-type="slice"
+         d="m 2.8794814,4.1435757 a 2.8794813,2.8794813 0 0 1 -1.4397407,2.493704 2.8794813,2.8794813 0 0 1 -2.8794814,-10e-8 2.8794813,2.8794813 0 0 1 -1.4397406,-2.4937039 H 3.7169542e-8 Z"
+         transform="rotate(-45)" />
+    </g>
   </g>
 </svg>
