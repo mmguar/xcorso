@@ -22,7 +22,7 @@ import {
   screenToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
-  findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle,
+  findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
 } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 
@@ -212,6 +212,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
   const gapRingRef = useRef<SVGGElement>(null)
+  const [oobCursorPoint, setOobCursorPoint] = useState<MapPoint | null>(null)
 
   // ── Fit to screen on map load ──────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -338,6 +339,12 @@ export function MapCanvas({ loadedMap }: Props) {
 
     let dragCrossElongate: { annId: string; centerX: number; centerY: number; baseHH: number } | null = null
     let dragCrossElongateStarted = false
+
+    let dragOobVertex: { annId: string; vertexIndex: number } | null = null
+    let dragOobVertexStarted = false
+
+    let dragPendingVertex: { vertexIndex: number } | null = null
+    let dragPendingVertexStarted = false
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -536,6 +543,22 @@ export function MapCanvas({ loadedMap }: Props) {
       const proj = state.project
       if (!proj) return
 
+      if (activeTool === 'out-of-bounds' && pos.size === 1 && state.editor.pendingAnnotationPoints.length > 0) {
+        const rect = getRect()
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+        const mapPt = screenToMap(sx, sy, vpRef.current)
+        const upm = unitsPerMm(proj.map)
+        const handleR = 1 * upm
+        for (let i = 0; i < state.editor.pendingAnnotationPoints.length; i++) {
+          const p = state.editor.pendingAnnotationPoints[i]
+          if (Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < handleR) {
+            dragPendingVertex = { vertexIndex: i }
+            dragPendingVertexStarted = false
+            return
+          }
+        }
+      }
       if (activeTool === 'bend' && pos.size === 1) {
         const rect = getRect()
         const sx = e.clientX - rect.left
@@ -618,9 +641,17 @@ export function MapCanvas({ loadedMap }: Props) {
             }
           }
 
+          // Out-of-bounds vertex handle (when selected)
+          const oobVtx = findOobVertexHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
+          if (oobVtx) {
+            dragOobVertex = { annId: oobVtx.ann.id, vertexIndex: oobVtx.vertexIndex }
+            dragOobVertexStarted = false
+            return
+          }
+
           // Annotations and overlays take priority over controls
           const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-          if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow') && annHit.points[0]) {
+          if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow' || annHit.type === 'out_of_bounds') && annHit.points[0]) {
             const mapPt2 = screenToMap(sx, sy, vpRef.current)
             dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
             dragAnnotationStarted = false
@@ -891,6 +922,31 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragPendingVertex && pos.size === 1) {
+        if (!dragPendingVertexStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          dragPendingVertexStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        useStore.getState().movePendingAnnotationPoint(dragPendingVertex.vertexIndex, mapPt)
+        return
+      }
+
+      if (dragOobVertex && pos.size === 1) {
+        if (!dragOobVertexStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveAnnotationVertex()
+          dragOobVertexStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        useStore.getState().moveAnnotationVertex(dragOobVertex.annId, dragOobVertex.vertexIndex, mapPt)
+        return
+      }
+
       if (dragResize && pos.size === 1) {
         if (!dragResizeStarted) {
           const start = down.get(e.pointerId)
@@ -1034,6 +1090,12 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragCrossElongate && dragCrossElongateStarted) { dragCrossElongate = null; dragCrossElongateStarted = false; return }
       dragCrossElongate = null; dragCrossElongateStarted = false
 
+      if (dragPendingVertex && dragPendingVertexStarted) { dragPendingVertex = null; dragPendingVertexStarted = false; return }
+      dragPendingVertex = null; dragPendingVertexStarted = false
+
+      if (dragOobVertex && dragOobVertexStarted) { dragOobVertex = null; dragOobVertexStarted = false; return }
+      dragOobVertex = null; dragOobVertexStarted = false
+
       if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
       dragResize = null; dragResizeStarted = false
 
@@ -1109,7 +1171,7 @@ export function MapCanvas({ loadedMap }: Props) {
           return
         }
         const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-        if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow')) {
+        if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow' || annHit.type === 'out_of_bounds')) {
           state.setSelectedAnnotation(annHit.id)
           state.setSelectedControl(null)
           state.setSelectedOverlay(null)
@@ -1172,6 +1234,8 @@ export function MapCanvas({ loadedMap }: Props) {
       dragLabel = null; dragLabelStarted = false
       dragAnnResize = null; dragAnnResizeStarted = false
       dragCrossElongate = null; dragCrossElongateStarted = false
+      dragOobVertex = null; dragOobVertexStarted = false
+      dragPendingVertex = null; dragPendingVertexStarted = false
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
@@ -1237,6 +1301,17 @@ export function MapCanvas({ loadedMap }: Props) {
       }
     }
 
+    function updateOobPreview(e: PointerEvent) {
+      const state = useStore.getState().editor
+      if (state.activeTool !== 'out-of-bounds' || state.pendingAnnotationPoints.length === 0 || e.pointerType === 'touch') {
+        setOobCursorPoint(null)
+        return
+      }
+      const rect = getRect()
+      const cursor = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+      setOobCursorPoint(cursor)
+    }
+
     function updateGapRing(e: PointerEvent) {
       if (e.pointerType === 'touch') return
       const g = gapRingRef.current
@@ -1254,12 +1329,14 @@ export function MapCanvas({ loadedMap }: Props) {
     function onLeave() {
       const g = gapRingRef.current
       if (g) g.style.display = 'none'
+      setOobCursorPoint(null)
     }
 
     div.addEventListener('wheel',        onWheel,   { passive: false })
     div.addEventListener('pointerdown',  onDown)
     div.addEventListener('pointermove',  onMove)
     div.addEventListener('pointermove',  updateGapRing)
+    div.addEventListener('pointermove',  updateOobPreview)
     div.addEventListener('pointerup',    onUp)
     div.addEventListener('pointercancel', onCancel)
     div.addEventListener('dblclick',     onDblClick)
@@ -1274,6 +1351,7 @@ export function MapCanvas({ loadedMap }: Props) {
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
       div.removeEventListener('pointermove',  updateGapRing)
+      div.removeEventListener('pointermove',  updateOobPreview)
       div.removeEventListener('pointerup',    onUp)
       div.removeEventListener('pointercancel', onCancel)
       div.removeEventListener('dblclick',     onDblClick)
@@ -1366,6 +1444,7 @@ export function MapCanvas({ loadedMap }: Props) {
             annotations={annotations}
             pendingPoints={pendingAnnotationPoints}
             pendingType={getAnnotationType()}
+            cursorPoint={oobCursorPoint}
             map={map}
             spec={resolveSpec(projectSpec, selectedCourse?.spec)}
             selectedAnnotationId={selectedAnnotationId}
@@ -1505,6 +1584,35 @@ export function MapCanvas({ loadedMap }: Props) {
                   </g>
                 )
               }
+              if (ann?.type === 'out_of_bounds' && ann.points.length >= 3) {
+                const handleR = 1 * upm
+                elements.push(
+                  <g key="oob-handles">
+                    {ann.points.map((p, i) => (
+                      <circle key={i}
+                        cx={p.x} cy={p.y} r={handleR}
+                        fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                        style={{ cursor: 'move' }}
+                      />
+                    ))}
+                  </g>
+                )
+              }
+            }
+
+            if (activeTool === 'out-of-bounds' && pendingAnnotationPoints.length > 0) {
+              const handleR = 1 * upm
+              elements.push(
+                <g key="pending-oob-handles">
+                  {pendingAnnotationPoints.map((p, i) => (
+                    <circle key={i}
+                      cx={p.x} cy={p.y} r={handleR}
+                      fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                      style={{ cursor: 'move' }}
+                    />
+                  ))}
+                </g>
+              )
             }
 
             if (selectedOverlayId) {

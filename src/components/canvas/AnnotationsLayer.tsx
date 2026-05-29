@@ -17,6 +17,7 @@ interface Props {
   annotations: Annotation[]
   pendingPoints: MapPoint[]
   pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow' | null
+  cursorPoint: MapPoint | null
   map: MapConfig
   spec: EventSpec
   selectedAnnotationId: string | null
@@ -242,7 +243,7 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, map, spec, selectedAnnotationId }: Props) {
+export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId }: Props) {
   useRenderTracker('AnnotationsLayer')
   const color = '#a626ff'
   const baseId = useId()
@@ -270,10 +271,18 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
           )
         }
         if (ann.type === 'out_of_bounds') {
+          const selected = ann.id === selectedAnnotationId
           return (
             <g key={ann.id}>
               <OutOfBoundsArea points={ann.points} upm={upm} scale={scale} color={color}
                 patternId={`${baseId}-oob-${idx}`} spec={spec} />
+              {selected && ann.points.length >= 3 && (
+                <path
+                  d={ann.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'}
+                  fill="none" stroke={color} strokeWidth={0.3 * upm}
+                  strokeDasharray={`${1.5 * upm} ${1.5 * upm}`}
+                />
+              )}
             </g>
           )
         }
@@ -301,12 +310,15 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
             rotation={0} elongation={0} color={color} spec={spec} selected={false} />
         </g>
       )}
-      {pendingPoints.length >= 2 && pendingType === 'out_of_bounds' && (
-        <g opacity={0.5}>
-          <OutOfBoundsArea points={pendingPoints} upm={upm} scale={scale} color={color}
-            patternId={`${baseId}-oob-pending`} spec={spec} />
-        </g>
-      )}
+      {pendingPoints.length >= 1 && pendingType === 'out_of_bounds' && (() => {
+        const pts = cursorPoint ? [...pendingPoints, cursorPoint] : pendingPoints
+        return pts.length >= 3 ? (
+          <g opacity={0.5}>
+            <OutOfBoundsArea points={pts} upm={upm} scale={scale} color={color}
+              patternId={`${baseId}-oob-pending`} spec={spec} />
+          </g>
+        ) : null
+      })()}
       {pendingPoints.length > 0 && pendingType === 'north_arrow' && (
         <g opacity={0.5}>
           <NorthArrow center={pendingPoints[0]} upm={upm} scale={scale}

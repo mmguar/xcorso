@@ -336,6 +336,23 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
   )
 }
 
+function OobSettings({ ann }: { ann: Annotation }) {
+  const deleteAnnotation = useStore(s => s.deleteAnnotation)
+
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-semibold text-gray-700">Out of Bounds</span>
+      <button
+        onClick={() => deleteAnnotation(ann.id)}
+        className="text-gray-400 hover:text-red-500 transition-colors"
+        title="Delete"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  )
+}
+
 function NorthArrowSettings({ ann }: { ann: Annotation }) {
   const updateAnnotation = useStore(s => s.updateAnnotation)
   const deleteAnnotation = useStore(s => s.deleteAnnotation)
@@ -444,11 +461,12 @@ export function AnnotationSettingsPanel() {
   if (!selectedAnnotationId || !project) return null
 
   const ann = project.annotations.find(a => a.id === selectedAnnotationId)
-  if (!ann || ann.type !== 'north_arrow') return null
+  if (!ann || (ann.type !== 'north_arrow' && ann.type !== 'out_of_bounds')) return null
 
   return (
     <div className="absolute top-2 left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
-      <NorthArrowSettings key={ann.id} ann={ann} />
+      {ann.type === 'north_arrow' && <NorthArrowSettings key={ann.id} ann={ann} />}
+      {ann.type === 'out_of_bounds' && <OobSettings key={ann.id} ann={ann} />}
     </div>
   )
 }

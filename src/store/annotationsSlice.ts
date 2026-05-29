@@ -28,6 +28,14 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       set(state => ({ editor: { ...state.editor, pendingAnnotationPoints: [] } }))
     },
 
+    movePendingAnnotationPoint: (index: number, position: MapPoint) => {
+      set(state => {
+        const pts = [...state.editor.pendingAnnotationPoints]
+        if (index >= 0 && index < pts.length) pts[index] = position
+        return { editor: { ...state.editor, pendingAnnotationPoints: pts } }
+      })
+    },
+
     deleteAnnotation: (id: string) => {
       h.mutateProject(p => { p.annotations = p.annotations.filter(a => a.id !== id) })
       set(state => ({
@@ -46,7 +54,28 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
 
     moveAnnotation: (id: string, position: MapPoint) => {
       h.mutateProjectSilent(p => {
-        p.annotations = p.annotations.map(a => a.id === id ? { ...a, points: [position, ...a.points.slice(1)] } : a)
+        p.annotations = p.annotations.map(a => {
+          if (a.id !== id) return a
+          if (a.type === 'out_of_bounds' || a.type === 'forbidden_route') {
+            const dx = position.x - a.points[0].x
+            const dy = position.y - a.points[0].y
+            return { ...a, points: a.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) }
+          }
+          return { ...a, points: [position, ...a.points.slice(1)] }
+        })
+      })
+    },
+
+    beginMoveAnnotationVertex: () => h.pushUndoSnapshot(),
+
+    moveAnnotationVertex: (id: string, vertexIndex: number, position: MapPoint) => {
+      h.mutateProjectSilent(p => {
+        p.annotations = p.annotations.map(a => {
+          if (a.id !== id || vertexIndex < 0 || vertexIndex >= a.points.length) return a
+          const pts = [...a.points]
+          pts[vertexIndex] = position
+          return { ...a, points: pts }
+        })
       })
     },
 

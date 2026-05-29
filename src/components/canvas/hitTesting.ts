@@ -113,6 +113,18 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
   return null
 }
 
+function pointInPolygon(pt: MapPoint, poly: MapPoint[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const yi = poly[i].y, yj = poly[j].y
+    if ((yi > pt.y) !== (yj > pt.y) &&
+        pt.x < (poly[j].x - poly[i].x) * (pt.y - yi) / (yj - yi) + poly[i].x) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
 export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport, project: Project): Annotation | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const hitR = HIT_PX / vp.scale
@@ -137,7 +149,23 @@ export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport,
       }
       if (ann.type === 'out_of_bounds' && ann.points.length >= 3) {
         if (distToSegment(mapPt, ann.points[ann.points.length - 1], ann.points[0]) < hitR) return ann
+        if (pointInPolygon(mapPt, ann.points)) return ann
       }
+    }
+  }
+  return null
+}
+
+export function findOobVertexHandle(screenX: number, screenY: number, vp: Viewport, project: Project, selectedAnnotationId: string | null): { ann: Annotation; vertexIndex: number } | null {
+  if (!selectedAnnotationId) return null
+  const ann = project.annotations.find(a => a.id === selectedAnnotationId)
+  if (!ann || ann.type !== 'out_of_bounds' || ann.points.length < 3) return null
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const upm = unitsPerMm(project.map)
+  const handleR = 1 * upm
+  for (let i = 0; i < ann.points.length; i++) {
+    if (Math.hypot(mapPt.x - ann.points[i].x, mapPt.y - ann.points[i].y) < handleR) {
+      return { ann, vertexIndex: i }
     }
   }
   return null
