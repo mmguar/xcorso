@@ -1,5 +1,5 @@
 import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
-import { getSymbolDims, symbolScaleFactor } from './symbolSpec'
+import { getSymbolDims, symbolScaleFactor, symbolLabelOffset } from './symbolSpec'
 import { distance } from './geometry'
 
 export function controlsById(controls: Control[]): Map<string, Control> {
@@ -29,19 +29,8 @@ export function unitsPerMm(map: MapConfig): number {
 }
 
 export function defaultLabelOffset(type: ControlType, upm: number, controlScale: number, spec: EventSpec = 'isom-2017', mapScale?: number): MapPoint {
-  const dims = getSymbolDims(spec)
   const sf = mapScale != null ? symbolScaleFactor(spec, mapScale) : 1
-  const cr = dims.controlR * upm * controlScale * sf
-  if (type === 'start') {
-    const side = dims.startSide * upm * controlScale * sf
-    const halfSide = side / 2
-    const h = side * Math.sqrt(3) / 2
-    return { x: halfSide * 1.1, y: -h * 0.4 }
-  }
-  if (type === 'finish') {
-    return { x: cr * 1.3, y: -cr * 1.1 }
-  }
-  return { x: cr * 1.1, y: -cr * 1.1 }
+  return symbolLabelOffset(type, getSymbolDims(spec), upm * controlScale * sf)
 }
 
 export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number[]> {

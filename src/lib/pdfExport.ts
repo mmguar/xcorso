@@ -4,7 +4,7 @@ import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, MM_TO_PT } from './symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
 import { walkPath, clipPolyline, distance } from './geometry'
 import { hexToRgb } from './color'
@@ -764,34 +764,15 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
 }
 
 
-function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
+function drawLabel(doc: jsPDF, label: string, pos: Pos, type: ControlType, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
-  const controlR = dims.controlR * sf
-  const startSide = dims.startSide * sf
-  const finishOuter = dims.finishROuter * sf
-  const fontSizePt = controlR * 1.1 * MM_TO_PT
 
-  doc.setFontSize(fontSizePt)
+  doc.setFontSize(dims.controlR * sf * 1.1 * MM_TO_PT)
   doc.setFont('helvetica', 'bold')
 
-  let ox: number, oy: number
-  if (labelOffsetMm) {
-    ox = labelOffsetMm.x
-    oy = labelOffsetMm.y
-  } else if (type === 'start') {
-    const h = startSide * Math.sqrt(3) / 2
-    ox = startSide / 2 * 1.1
-    oy = -h * 0.4
-  } else if (type === 'finish') {
-    ox = finishOuter * 1.3
-    oy = -finishOuter * 1.1
-  } else {
-    ox = controlR * 1.1
-    oy = -controlR * 1.1
-  }
-
-  doc.text(label, pos.x + ox, pos.y + oy)
+  const off = labelOffsetMm ?? symbolLabelOffset(type, dims, sf)
+  doc.text(label, pos.x + off.x, pos.y + off.y)
 }
 
 function annotationDimsMm(mapScale: number, spec: EventSpec) {

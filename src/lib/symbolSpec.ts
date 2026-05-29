@@ -1,4 +1,4 @@
-import type { EventSpec, ControlType } from '../types'
+import type { EventSpec, ControlType, MapPoint } from '../types'
 export type { EventSpec }
 
 export interface SymbolDims {
@@ -56,6 +56,24 @@ export function controlSymbolRadiusMm(type: ControlType, dims: SymbolDims): numb
   if (type === 'start') return dims.startSide * Math.sqrt(3) / 2 * (2 / 3)
   if (type === 'finish') return dims.finishROuter
   return dims.controlR
+}
+
+// Default offset of a control's code label from the symbol centre. `scale` is the
+// multiplier already applied to the symbol dimensions (upm*controlScale*sf on the
+// canvas, sf for the PDF where 1 unit = 1 mm). Single source of truth for the label
+// placement in ControlsLayer, pdfExport, and hit-testing — keep call sites passing
+// the matching scale.
+export function symbolLabelOffset(type: ControlType, dims: SymbolDims, scale: number): MapPoint {
+  if (type === 'start') {
+    const side = dims.startSide * scale
+    return { x: (side / 2) * 1.1, y: -(side * Math.sqrt(3) / 2) * 0.4 }
+  }
+  if (type === 'finish') {
+    const r = dims.finishROuter * scale
+    return { x: r * 1.3, y: -r * 1.1 }
+  }
+  const cr = dims.controlR * scale
+  return { x: cr * 1.1, y: -cr * 1.1 }
 }
 
 export function resolveSpec(projectSpec?: EventSpec, courseSpec?: EventSpec): EventSpec {

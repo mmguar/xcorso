@@ -3,7 +3,7 @@ import type { Control, Course, CircleGap, AppearanceSettings, MapPoint } from '.
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
 import type { SymbolDims } from '../../lib/symbolSpec'
 import { circleGapDashArray } from '../../lib/gapDash'
 
@@ -74,8 +74,9 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
   const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + halfSide * 1.1
-  const ly = labelOffset ? y + labelOffset.y : y - h * 0.4
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   const chExtent = h * 2 / 3
   return (
     <g>
@@ -105,8 +106,9 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
   const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
   const innerDash = control.gaps?.length ? gapsToDashArray(control.gaps, innerCirc) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.3
-  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
@@ -138,8 +140,9 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
   const circumference = 2 * Math.PI * cr
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
-  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
@@ -167,8 +170,9 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
   const circumference = 2 * Math.PI * cr
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
-  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330° (from center, measured CW from 3 o'clock)
   const triPoints = [90, 210, 330].map(deg => {
     const rad = (deg * Math.PI) / 180
