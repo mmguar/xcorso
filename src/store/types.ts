@@ -107,10 +107,13 @@ export interface AppActions {
   addAnnotationPoint: (point: MapPoint) => void
   commitAnnotation: (type: AnnotationType) => void
   cancelAnnotation: () => void
+  movePendingAnnotationPoint: (index: number, position: MapPoint) => void
   deleteAnnotation: (id: string) => void
   updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => void
   beginMoveAnnotation: () => void
   moveAnnotation: (id: string, position: MapPoint) => void
+  beginMoveAnnotationVertex: () => void
+  moveAnnotationVertex: (id: string, vertexIndex: number, position: MapPoint) => void
   beginRotateAnnotation: () => void
   rotateAnnotation: (id: string, rotation: number) => void
   beginResizeAnnotation: () => void
