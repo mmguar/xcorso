@@ -129,22 +129,12 @@ export function Header({ onGoHome }: Props) {
         {/* Export */}
         <div className="relative" ref={exportRef}>
           <button
-            onClick={() => setExportOpen(o => !o)}
+            onClick={handleExportIof}
             className="flex items-center gap-1.5 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-3 py-1.5 transition-colors"
           >
             <FileDown size={14} />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">Export IOF</span>
           </button>
-          {exportOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 min-w-40 overflow-hidden">
-              <button
-                onClick={handleExportIof}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors"
-              >
-                IOF XML v3 (.xml)
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </header>

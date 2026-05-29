@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
 import type { Course, Control, MapConfig, MapPoint, AppearanceSettings, EventSpec } from '../../types'
-import { unitsPerMm } from '../../lib/courseUtils'
+import { unitsPerMm, controlsById } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
 
@@ -73,7 +73,7 @@ export const DragLegsLayer = forwardRef<DragLegsHandle, Props>(function DragLegs
   useImperativeHandle(ref, () => ({
     begin(controlId: string) {
       draggingIdRef.current = controlId
-      const cMap = new Map(controls.map(c => [c.id, c]))
+      const cMap = controlsById(controls)
       controlMapRef.current = cMap
       const upm = unitsPerMm(map)
       const topo: LegTopology[] = []

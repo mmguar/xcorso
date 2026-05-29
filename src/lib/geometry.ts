@@ -1,5 +1,5 @@
 import type { Control, EventSpec } from '../types'
-import { getSymbolDims, symbolScaleFactor as specScaleFactor } from './symbolSpec'
+import { getSymbolDims, symbolScaleFactor as specScaleFactor, controlSymbolRadiusMm } from './symbolSpec'
 
 interface Point { x: number; y: number }
 
@@ -94,10 +94,8 @@ export function polylineLength<T extends Point>(pts: T[]): number {
 export function clipRadius(control: Control, mapScale: number, upm: number, controlScale: number, spec: EventSpec): number {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, mapScale)
-  const r = dims.controlR * upm * controlScale * sf * 1.3
   if (control.type === 'start') {
-    const side = dims.startSide * upm * controlScale * sf
-    return side * Math.sqrt(3) / 2 * 2 / 3
+    return controlSymbolRadiusMm('start', dims) * upm * controlScale * sf
   }
-  return r
+  return dims.controlR * upm * controlScale * sf * 1.3
 }
