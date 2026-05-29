@@ -1289,8 +1289,11 @@ export async function exportCoursePdf(
 
           await embedMap(toPage)
 
-          const mapScale = project.map.scale
-          const ctrlColor = '#7B2FBE'
+          // Annotations scale with the export print scale, exactly like control
+          // symbols and legs (which use acScale) — keeps their on-paper size
+          // consistent with the overlay when a scale override is in effect.
+          const mapScale = acScale
+          const ctrlColor = '#a626ff'
           const annColor = '#a626ff'
           const allCtrlSpec = resolveSpec(project.spec)
 
@@ -1399,7 +1402,9 @@ export async function exportCoursePdf(
 
           await embedMap(toPage)
 
-          const mapScale = project.map.scale
+          // Match control/leg sizing (courseScale) so annotations keep the same
+          // on-paper size as the overlay under a per-course scale override.
+          const mapScale = courseScale
           const annColor = '#a626ff'
           const courseSpec = resolveSpec(project.spec, course.spec)
           setColor(doc, annColor)

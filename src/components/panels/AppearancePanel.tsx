@@ -32,7 +32,7 @@ export function AppearancePanel() {
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={appearance.color || '#7B2FBE'}
+            value={appearance.color || '#a626ff'}
             onChange={e => setAppearance({ color: e.target.value })}
             className="w-7 h-7 rounded border border-gray-200 cursor-pointer p-0"
           />

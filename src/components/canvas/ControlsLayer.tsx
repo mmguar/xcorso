@@ -271,7 +271,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           color = '#ec4899'
           opacity = 0.7
         } else {
-          color = '#7B2FBE'
+          color = '#a626ff'
         }
 
         let label: string
