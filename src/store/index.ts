@@ -4,6 +4,7 @@ import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
 import { timeClone } from '../lib/perf'
+import { distance } from '../lib/geometry'
 import { createControlsSlice } from './controlsSlice'
 import { createCoursesSlice } from './coursesSlice'
 import { createGapsSlice } from './gapsSlice'
@@ -93,8 +94,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     setMapScaleMeasurement: (p1, p2, realWorldMeters, renderScale) => {
-      const dx = p2.x - p1.x; const dy = p2.y - p1.y
-      const pixelDist = Math.sqrt(dx * dx + dy * dy)
+      const pixelDist = distance(p1, p2)
       const effectiveDist = renderScale ? pixelDist / renderScale : pixelDist
       mutateProject(p => {
         p.map.scaleMeasurement = { p1, p2, realWorldMeters }

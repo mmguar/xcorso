@@ -12,6 +12,7 @@ import { useRenderTracker } from '../../lib/perf'
 import { symbolScaleFactor as specScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
 import type { AnnotationDims } from '../../lib/symbolSpec'
 import { walkPath } from '../../lib/geometry'
+import { darkenHex } from '../../lib/color'
 
 interface Props {
   annotations: Annotation[]
@@ -182,14 +183,6 @@ export function northArrowGeometry(h: number, upm: number) {
     resizeHandleLocalX: halfBase,
     resizeHandleLocalY: (1 / 3) * h,
   }
-}
-
-function darkenHex(hex: string, amount = 0.2): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  const f = 1 - amount
-  return `#${Math.round(r * f).toString(16).padStart(2, '0')}${Math.round(g * f).toString(16).padStart(2, '0')}${Math.round(b * f).toString(16).padStart(2, '0')}`
 }
 
 function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, spec, selected }: {

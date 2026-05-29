@@ -3,6 +3,10 @@ import { getSymbolDims, symbolScaleFactor as specScaleFactor, controlSymbolRadiu
 
 interface Point { x: number; y: number }
 
+export function distance(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y)
+}
+
 export function walkPath<T extends Point>(points: T[], spacing: number): { x: number; y: number; angle: number }[] {
   if (points.length < 2) return []
 

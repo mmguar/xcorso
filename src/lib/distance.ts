@@ -1,14 +1,6 @@
 import type { MapPoint, MapConfig, CourseDistances, Control, Course } from '../types'
 import { controlsById } from './courseUtils'
-
-/**
- * Euclidean distance between two map points in map-native units.
- */
-function mapUnitDistance(a: MapPoint, b: MapPoint): number {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  return Math.sqrt(dx * dx + dy * dy)
-}
+import { distance } from './geometry'
 
 /**
  * Convert a distance in map-native units to metres, given the map config.
@@ -37,8 +29,7 @@ export function mapUnitsToMetres(units: number, map: MapConfig): number {
   // Bitmap / PDF: use manual measurement if available
   if (map.scaleMeasurement) {
     const { p1, p2, realWorldMeters } = map.scaleMeasurement
-    const dx = p2.x - p1.x; const dy = p2.y - p1.y
-    const measuredUnits = Math.sqrt(dx * dx + dy * dy)
+    const measuredUnits = distance(p1, p2)
     if (measuredUnits === 0) return 0
     return units * (realWorldMeters / measuredUnits)
   }
@@ -65,7 +56,7 @@ export function computeCourseDistances(
 
   const legs: number[] = []
   for (let i = 0; i < positions.length - 1; i++) {
-    const units = mapUnitDistance(positions[i], positions[i + 1])
+    const units = distance(positions[i], positions[i + 1])
     legs.push(mapUnitsToMetres(units, map))
   }
 

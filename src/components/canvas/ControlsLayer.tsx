@@ -46,6 +46,20 @@ function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
   }
 }
 
+function ControlLabel({ x, y, cr, color, label, appearance, upm }: {
+  x: number; y: number; cr: number; color: string; label: string; appearance: AppearanceSettings; upm: number
+}) {
+  if (!label) return null
+  return (
+    <text x={x} y={y}
+      fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
+      textAnchor="start" dominantBaseline="auto"
+      {...labelOutlineSvgProps(appearance, upm)}>
+      {label}
+    </text>
+  )
+}
+
 function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
   const scale = appearance.controlScale * scaleFactor
   const cr = dims.controlR * upm * scale
@@ -75,12 +89,7 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
       <polygon points={points} fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      {label && <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>}
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -117,12 +126,7 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
       <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
         {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
       />
-      {label && <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>}
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -151,12 +155,7 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
         fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -190,12 +189,7 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
       <polygon points={triPoints} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-      <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }

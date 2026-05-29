@@ -1,5 +1,6 @@
 import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
 import { getSymbolDims, symbolScaleFactor } from './symbolSpec'
+import { distance } from './geometry'
 
 export function controlsById(controls: Control[]): Map<string, Control> {
   return new Map(controls.map(c => [c.id, c]))
@@ -18,8 +19,7 @@ export function unitsPerMm(map: MapConfig): number {
   if (map.type === 'ocad') return 100
   if (map.scaleMeasurement) {
     const { p1, p2, realWorldMeters } = map.scaleMeasurement
-    const dx = p2.x - p1.x, dy = p2.y - p1.y
-    const pixelDist = Math.sqrt(dx * dx + dy * dy)
+    const pixelDist = distance(p1, p2)
     if (pixelDist > 0 && map.scale > 0) {
       const mmOnPaper = (realWorldMeters * 1000000) / map.scale
       return pixelDist / mmOnPaper
