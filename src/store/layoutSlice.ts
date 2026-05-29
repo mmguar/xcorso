@@ -242,10 +242,13 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         const dy = center.y - course.layout.mapCenter.y
         course.layout.mapCenter = center
         if (course.layout.overlayPositions) {
+          // New object reference so the memoized OverlaysLayer re-renders.
+          const shifted: Record<string, MapPoint> = {}
           for (const id of Object.keys(course.layout.overlayPositions)) {
             const pos = course.layout.overlayPositions[id]
-            course.layout.overlayPositions[id] = { x: pos.x + dx, y: pos.y + dy }
+            shifted[id] = { x: pos.x + dx, y: pos.y + dy }
           }
+          course.layout.overlayPositions = shifted
         }
       })
     },
@@ -275,8 +278,8 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
             x: (layout.mapCenter.x - hwMap) + pos.x * mapPerMm,
             y: (layout.mapCenter.y - hhMap) + pos.y * mapPerMm,
           }
-          if (!layout.overlayPositions) layout.overlayPositions = {}
-          layout.overlayPositions[overlayId] = mapPos
+          // New object reference so the memoized OverlaysLayer re-renders.
+          layout.overlayPositions = { ...layout.overlayPositions, [overlayId]: mapPos }
         }
       })
     },
@@ -322,8 +325,8 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
         if (!course?.layout) return
-        if (!course.layout.overlayPositions) course.layout.overlayPositions = {}
-        course.layout.overlayPositions[overlayId] = position
+        // New object reference so the memoized OverlaysLayer re-renders.
+        course.layout.overlayPositions = { ...course.layout.overlayPositions, [overlayId]: position }
       })
     },
   }
