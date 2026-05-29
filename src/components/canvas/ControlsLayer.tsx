@@ -3,7 +3,8 @@ import type { Control, Course, CircleGap, AppearanceSettings, MapPoint } from '.
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
+import { startTriangleVertices, exchangeTriangleVertices } from '../../lib/symbolGeometry'
 import type { SymbolDims } from '../../lib/symbolSpec'
 import { circleGapDashArray } from '../../lib/gapDash'
 
@@ -46,22 +47,34 @@ function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
   }
 }
 
+function ControlLabel({ x, y, cr, color, label, appearance, upm }: {
+  x: number; y: number; cr: number; color: string; label: string; appearance: AppearanceSettings; upm: number
+}) {
+  if (!label) return null
+  return (
+    <text x={x} y={y}
+      fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
+      textAnchor="start" dominantBaseline="auto"
+      {...labelOutlineSvgProps(appearance, upm)}>
+      {label}
+    </text>
+  )
+}
+
 function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
   const scale = appearance.controlScale * scaleFactor
   const cr = dims.controlR * upm * scale
   const { x, y } = control.position
   const side = dims.startSide * upm * scale
-  const halfSide = side / 2
   const h = side * Math.sqrt(3) / 2
-  const topY = y - h * 2 / 3
-  const botY = y + h / 3
-  const points = `${x},${topY} ${x - halfSide},${botY} ${x + halfSide},${botY}`
+  const points = startTriangleVertices({ x, y }, side).map(p => `${p.x},${p.y}`).join(' ')
   const perimeter = side * 3
   const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + halfSide * 1.1
-  const ly = labelOffset ? y + labelOffset.y : y - h * 0.4
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   const chExtent = h * 2 / 3
   return (
     <g>
@@ -75,12 +88,7 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
       <polygon points={points} fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      {label && <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>}
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -96,8 +104,9 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
   const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
   const innerDash = control.gaps?.length ? gapsToDashArray(control.gaps, innerCirc) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.3
-  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
@@ -117,12 +126,7 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
       <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
         {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
       />
-      {label && <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>}
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -134,8 +138,9 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
   const circumference = 2 * Math.PI * cr
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
-  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
@@ -151,12 +156,7 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
         fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -168,13 +168,11 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
   const circumference = 2 * Math.PI * cr
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const lx = labelOffset ? x + labelOffset.x : x + cr * 1.1
-  const ly = labelOffset ? y + labelOffset.y : y - cr * 1.1
-  // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330° (from center, measured CW from 3 o'clock)
-  const triPoints = [90, 210, 330].map(deg => {
-    const rad = (deg * Math.PI) / 180
-    return `${x + cr * Math.cos(rad)},${y + cr * Math.sin(rad)}`
-  }).join(' ')
+  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+  const lx = x + off.x
+  const ly = y + off.y
+  // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330°
+  const triPoints = exchangeTriangleVertices({ x, y }, cr).map(p => `${p.x},${p.y}`).join(' ')
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
@@ -190,12 +188,7 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
       <polygon points={triPoints} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-      <text x={lx} y={ly}
-        fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
-        textAnchor="start" dominantBaseline="auto"
-        {...labelOutlineSvgProps(appearance, upm)}>
-        {label}
-      </text>
+      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }

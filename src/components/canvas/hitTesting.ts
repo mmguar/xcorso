@@ -1,16 +1,45 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../canvas/AnnotationsLayer'
+import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../../lib/symbolGeometry'
 
 export const HIT_PX = 20
+
+// ── Viewport scaling ─────────────────────────────────────────────────────────
+// `vp.scale` is the single source of zoom: screen_px = map_units × vp.scale.
+// Use these instead of hand-writing `× vp.scale` / `÷ vp.scale`. Rule of thumb:
+//   • a tolerance/handle that should stay a constant size on screen → pxToMap(px, vp)
+//   • a symbol that should scale with the map → size it in map units, then mapToPx
+
+/** Screen-pixel length → map units at the current zoom (constant on screen). */
+export function pxToMap(px: number, vp: Viewport): number {
+  return px / vp.scale
+}
+
+/** Map-unit length → on-screen pixels at the current zoom. */
+export function mapToPx(units: number, vp: Viewport): number {
+  return units * vp.scale
+}
+
+/** Extra grab slop (screen px) around a draggable handle, beyond its drawn size. */
+export const HANDLE_GRAB_PX = 8
+
+/** Grab radius for a handle: its drawn radius plus a constant screen-pixel slop,
+ *  so handles stay comfortably grabbable at any zoom. */
+export function handleHitRadius(drawnR: number, vp: Viewport): number {
+  return drawnR + pxToMap(HANDLE_GRAB_PX, vp)
+}
 
 export function screenToMap(sx: number, sy: number, vp: Viewport): MapPoint {
   return { x: (sx - vp.x) / vp.scale, y: (sy - vp.y) / vp.scale }
 }
 
+export function mapToScreen(p: MapPoint, vp: Viewport): { x: number; y: number } {
+  return { x: vp.x + p.x * vp.scale, y: vp.y + p.y * vp.scale }
+}
+
 export function controlToScreen(c: Control, vp: Viewport): { x: number; y: number } {
-  return { x: vp.x + c.position.x * vp.scale, y: vp.y + c.position.y * vp.scale }
+  return mapToScreen(c.position, vp)
 }
 
 export function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): number {
@@ -19,7 +48,7 @@ export function controlHitRadius(control: Control, vp: Viewport, project: Projec
   const dims = getSymbolDims(spec)
   const sf = symbolScaleFactor(spec, project.map.scale)
   const symbolR = controlSymbolRadiusMm(control.type, dims) * upm * sf * controlScale
-  return symbolR * vp.scale
+  return mapToPx(symbolR, vp)
 }
 
 export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, extraPx = 0): Control | null {
@@ -55,7 +84,7 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
   if (!course || course.type === 'score' || course.controls.length < 2) return null
   const controlMap = controlsById(project.controls)
   const mapPt = screenToMap(screenX, screenY, vp)
-  const hitR = HIT_PX / vp.scale
+  const hitR = pxToMap(HIT_PX, vp)
 
   for (let i = 1; i < course.controls.length; i++) {
     const fromCtrl = controlMap.get(course.controls[i - 1].controlId)
@@ -99,7 +128,7 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
   const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
   if (!course || course.controls.length < 2) return null
   const mapPt = screenToMap(screenX, screenY, vp)
-  const hitR = HIT_PX / vp.scale
+  const hitR = pxToMap(HIT_PX, vp)
 
   for (const cc of course.controls) {
     if (!cc.legBendPoints) continue
@@ -113,9 +142,21 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
   return null
 }
 
+function pointInPolygon(pt: MapPoint, poly: MapPoint[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const yi = poly[i].y, yj = poly[j].y
+    if ((yi > pt.y) !== (yj > pt.y) &&
+        pt.x < (poly[j].x - poly[i].x) * (pt.y - yi) / (yj - yi) + poly[i].x) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
 export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport, project: Project): Annotation | null {
   const mapPt = screenToMap(screenX, screenY, vp)
-  const hitR = HIT_PX / vp.scale
+  const hitR = pxToMap(HIT_PX, vp)
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec)
   const sf = symbolScaleFactor(spec, project.map.scale)
@@ -137,7 +178,23 @@ export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport,
       }
       if (ann.type === 'out_of_bounds' && ann.points.length >= 3) {
         if (distToSegment(mapPt, ann.points[ann.points.length - 1], ann.points[0]) < hitR) return ann
+        if (pointInPolygon(mapPt, ann.points)) return ann
       }
+    }
+  }
+  return null
+}
+
+export function findOobVertexHandle(screenX: number, screenY: number, vp: Viewport, project: Project, selectedAnnotationId: string | null): { ann: Annotation; vertexIndex: number } | null {
+  if (!selectedAnnotationId) return null
+  const ann = project.annotations.find(a => a.id === selectedAnnotationId)
+  if (!ann || ann.type !== 'out_of_bounds' || ann.points.length < 3) return null
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const upm = unitsPerMm(project.map)
+  const grabR = handleHitRadius(1 * upm, vp)
+  for (let i = 0; i < ann.points.length; i++) {
+    if (Math.hypot(mapPt.x - ann.points[i].x, mapPt.y - ann.points[i].y) < grabR) {
+      return { ann, vertexIndex: i }
     }
   }
   return null
@@ -163,7 +220,7 @@ export function findCrossingPointRotationHandle(screenX: number, screenY: number
 
   const mapPt = screenToMap(screenX, screenY, vp)
   const dist = Math.hypot(mapPt.x - handleX, mapPt.y - handleY)
-  if (dist < handleR) return ann
+  if (dist < handleHitRadius(handleR, vp)) return ann
   return null
 }
 
@@ -187,7 +244,7 @@ export function findCrossingPointResizeHandle(screenX: number, screenY: number, 
 
   const mapPt = screenToMap(screenX, screenY, vp)
   const dist = Math.hypot(mapPt.x - handleX, mapPt.y - handleY)
-  if (dist < handleR) return ann
+  if (dist < handleHitRadius(handleR, vp)) return ann
   return null
 }
 
@@ -211,7 +268,7 @@ export function findNorthArrowRotationHandle(screenX: number, screenY: number, v
 
   const handle = rotatePoint(geo.rotHandleLocalX, geo.rotHandleLocalY, center.x, center.y, rotation)
   const mapPt = screenToMap(screenX, screenY, vp)
-  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < geo.handleR) return ann
+  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < handleHitRadius(geo.handleR, vp)) return ann
   return null
 }
 
@@ -229,14 +286,14 @@ export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp:
 
   const handle = rotatePoint(geo.resizeHandleLocalX, geo.resizeHandleLocalY, center.x, center.y, rotation)
   const mapPt = screenToMap(screenX, screenY, vp)
-  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < geo.handleR) return ann
+  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < handleHitRadius(geo.handleR, vp)) return ann
   return null
 }
 
 export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' | 'image' } | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
-  const hitSlop = HIT_PX / vp.scale
+  const hitSlop = pxToMap(HIT_PX, vp)
 
   for (const sb of project.scaleBars) {
     const pos = posOverrides?.[sb.id] ?? sb.position
@@ -312,12 +369,11 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)
     const labelMapX = ctrl.position.x + offset.x
     const labelMapY = ctrl.position.y + offset.y
-    const labelScreenX = vp.x + labelMapX * vp.scale
-    const labelScreenY = vp.y + labelMapY * vp.scale
+    const { x: labelScreenX, y: labelScreenY } = mapToScreen({ x: labelMapX, y: labelMapY }, vp)
 
     const sf = symbolScaleFactor(labelSpec, project.map.scale)
     const cr = labelDims.controlR * upm * controlScale * sf
-    const fontSize = cr * 1.1 * vp.scale
+    const fontSize = mapToPx(cr * 1.1, vp)
     let labelText: string
     if (seqMap && ctrl.type === 'control') {
       const seqs = seqMap.get(ctrl.id)

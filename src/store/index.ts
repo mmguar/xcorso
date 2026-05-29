@@ -4,6 +4,7 @@ import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
 import { timeClone } from '../lib/perf'
+import { distance } from '../lib/geometry'
 import { createControlsSlice } from './controlsSlice'
 import { createCoursesSlice } from './coursesSlice'
 import { createGapsSlice } from './gapsSlice'
@@ -93,8 +94,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     setMapScaleMeasurement: (p1, p2, realWorldMeters, renderScale) => {
-      const dx = p2.x - p1.x; const dy = p2.y - p1.y
-      const pixelDist = Math.sqrt(dx * dx + dy * dy)
+      const pixelDist = distance(p1, p2)
       const effectiveDist = renderScale ? pixelDist / renderScale : pixelDist
       mutateProject(p => {
         p.map.scaleMeasurement = { p1, p2, realWorldMeters }
@@ -209,24 +209,27 @@ export const useStore = create<Store>((set, get) => {
     // ── Undo / Redo ───────────────────────────────────────────────────────
 
     undo: () => {
-      const { undoStack, project, redoStack } = get()
+      const { undoStack, project, redoStack, editor } = get()
       if (undoStack.length === 0 || !project) return
       const prev = undoStack[undoStack.length - 1]
       set({
         project: prev,
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack, structuredClone(project)],
+        // Re-snap the layout viewport onto the restored mapCenter (see MapCanvas).
+        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
 
     redo: () => {
-      const { redoStack, project, undoStack } = get()
+      const { redoStack, project, undoStack, editor } = get()
       if (redoStack.length === 0 || !project) return
       const next = redoStack[redoStack.length - 1]
       set({
         project: next,
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, structuredClone(project)],
+        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
   }

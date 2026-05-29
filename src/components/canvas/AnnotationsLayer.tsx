@@ -9,24 +9,25 @@ import { memo, useId } from 'react'
 import type { Annotation, MapConfig, MapPoint, EventSpec } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
-import { symbolScaleFactor as specScaleFactor, getAnnotationDims } from '../../lib/symbolSpec'
-import type { AnnotationDims } from '../../lib/symbolSpec'
 import { walkPath } from '../../lib/geometry'
+import { darkenHex } from '../../lib/color'
+import {
+  annotationDims as dims,
+  crossingPointCurve,
+  northArrowGeometry,
+  northArrowHeight,
+  routeXMarkSegments,
+} from '../../lib/symbolGeometry'
 
 interface Props {
   annotations: Annotation[]
   pendingPoints: MapPoint[]
   pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow' | null
+  cursorPoint: MapPoint | null
   map: MapConfig
   spec: EventSpec
   selectedAnnotationId: string | null
 }
-
-function dims(upm: number, scale: number, spec: EventSpec): AnnotationDims {
-  const sf = specScaleFactor(spec, scale) * upm
-  return getAnnotationDims(sf)
-}
-
 
 // ── 711 Out-of-bounds route ──────────────────────────────────────────────────
 // Thin connecting line with X marks placed at regular intervals along the path.
@@ -44,21 +45,13 @@ function ForbiddenRoute({ points, upm, scale, color, spec }: {
       <path d={pathD} fill="none" stroke={color} strokeWidth={d.routeLineW}
         strokeLinecap="round" strokeLinejoin="round" />
       {marks.map((m, i) => {
-        const a1 = m.angle + Math.PI / 4
-        const a2 = m.angle - Math.PI / 4
-        const arm = d.routeXArm
+        const [s1, s2] = routeXMarkSegments(m, d.routeXArm)
         return (
           <g key={i}>
-            <line
-              x1={m.x - Math.cos(a1) * arm} y1={m.y - Math.sin(a1) * arm}
-              x2={m.x + Math.cos(a1) * arm} y2={m.y + Math.sin(a1) * arm}
-              stroke={color} strokeWidth={d.routeXW} strokeLinecap="round"
-            />
-            <line
-              x1={m.x - Math.cos(a2) * arm} y1={m.y - Math.sin(a2) * arm}
-              x2={m.x + Math.cos(a2) * arm} y2={m.y + Math.sin(a2) * arm}
-              stroke={color} strokeWidth={d.routeXW} strokeLinecap="round"
-            />
+            <line x1={s1[0].x} y1={s1[0].y} x2={s1[1].x} y2={s1[1].y}
+              stroke={color} strokeWidth={d.routeXW} strokeLinecap="round" />
+            <line x1={s2[0].x} y1={s2[0].y} x2={s2[1].x} y2={s2[1].y}
+              stroke={color} strokeWidth={d.routeXW} strokeLinecap="round" />
           </g>
         )
       })}
@@ -69,31 +62,15 @@ function ForbiddenRoute({ points, upm, scale, color, spec }: {
 // ── 710 Crossing point ───────────────────────────────────────────────────────
 // Two outward-curving arcs like )( marking a mandatory crossing.
 
-export function crossingPointControlX(d: AnnotationDims): number {
-  const halfGapCenter = (d.crossGap + d.crossW) / 2
-  return 2 * halfGapCenter - d.crossHalf
-}
-
-export function crossingPointTotalHH(d: AnnotationDims, elongation: number, upm: number): number {
-  return d.crossH + elongation * upm
-}
-
 function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec, selected }: {
   center: MapPoint; upm: number; scale: number; rotation: number; elongation: number; color: string; spec: EventSpec; selected: boolean
 }) {
   const { x, y } = center
   const d = dims(upm, scale, spec)
-  const spread = d.crossHalf
-  const hh = d.crossH
   const ext = Math.max(0, elongation * upm)
-  const totalHH = hh + ext
-  const cx = crossingPointControlX(d)
-  // Split the original pinch curve at its centre (de Casteljau): each half is a
-  // quadratic with control point (midX, ±hh/2) ending tangent-vertical at the
-  // pinch (midX, 0). Elongation pulls the halves apart by `ext` and joins them
-  // with a straight vertical line — the curve halves keep their exact shape.
-  const midX = (spread + cx) / 2
-  const ctrlY = hh / 2
+  // Each half is a quadratic with control point (midX, ±ctrlY) ending tangent-vertical
+  // at the inner pinch (midX, ±ext), joined across the gap by a straight vertical line.
+  const { spread, midX, ctrlY, totalHH } = crossingPointCurve(d, ext)
 
   const strokeW = 0.2 * upm
   const handleR = 1 * upm
@@ -161,36 +138,6 @@ function OutOfBoundsArea({ points, upm, scale, color, patternId, spec }: {
 // ── North Arrow ─────────────────────────────────────────────────────────────
 // Blue isosceles triangle (30° apex) pointing up with a white "N" inside.
 
-const TAN_22_5 = Math.tan(Math.PI / 8) // half of 45° apex
-
-export function northArrowHeight(upm: number, scale: number, spec: EventSpec, annScale: number): number {
-  const d = dims(upm, scale, spec)
-  return d.northArrowH * annScale
-}
-
-export function northArrowGeometry(h: number, upm: number) {
-  const halfBase = h * TAN_22_5
-  const handleR = 1 * upm
-  return {
-    halfBase,
-    apexLocalY: -(2 / 3) * h,
-    baseLocalY: (1 / 3) * h,
-    handleR,
-    rotHandleLocalX: 0,
-    rotHandleLocalY: (1 / 3) * h + handleR * 2,
-    resizeHandleLocalX: halfBase,
-    resizeHandleLocalY: (1 / 3) * h,
-  }
-}
-
-function darkenHex(hex: string, amount = 0.2): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  const f = 1 - amount
-  return `#${Math.round(r * f).toString(16).padStart(2, '0')}${Math.round(g * f).toString(16).padStart(2, '0')}${Math.round(b * f).toString(16).padStart(2, '0')}`
-}
-
 function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, spec, selected }: {
   center: MapPoint; upm: number; scale: number; annScale: number; rotation: number; color: string; textColor: string; spec: EventSpec; selected: boolean
 }) {
@@ -242,7 +189,7 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, map, spec, selectedAnnotationId }: Props) {
+export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId }: Props) {
   useRenderTracker('AnnotationsLayer')
   const color = '#a626ff'
   const baseId = useId()
@@ -270,10 +217,18 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
           )
         }
         if (ann.type === 'out_of_bounds') {
+          const selected = ann.id === selectedAnnotationId
           return (
             <g key={ann.id}>
               <OutOfBoundsArea points={ann.points} upm={upm} scale={scale} color={color}
                 patternId={`${baseId}-oob-${idx}`} spec={spec} />
+              {selected && ann.points.length >= 3 && (
+                <path
+                  d={ann.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'}
+                  fill="none" stroke={color} strokeWidth={0.3 * upm}
+                  strokeDasharray={`${1.5 * upm} ${1.5 * upm}`}
+                />
+              )}
             </g>
           )
         }
@@ -301,12 +256,15 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
             rotation={0} elongation={0} color={color} spec={spec} selected={false} />
         </g>
       )}
-      {pendingPoints.length >= 2 && pendingType === 'out_of_bounds' && (
-        <g opacity={0.5}>
-          <OutOfBoundsArea points={pendingPoints} upm={upm} scale={scale} color={color}
-            patternId={`${baseId}-oob-pending`} spec={spec} />
-        </g>
-      )}
+      {pendingPoints.length >= 1 && pendingType === 'out_of_bounds' && (() => {
+        const pts = cursorPoint ? [...pendingPoints, cursorPoint] : pendingPoints
+        return pts.length >= 3 ? (
+          <g opacity={0.5}>
+            <OutOfBoundsArea points={pts} upm={upm} scale={scale} color={color}
+              patternId={`${baseId}-oob-pending`} spec={spec} />
+          </g>
+        ) : null
+      })()}
       {pendingPoints.length > 0 && pendingType === 'north_arrow' && (
         <g opacity={0.5}>
           <NorthArrow center={pendingPoints[0]} upm={upm} scale={scale}

@@ -1,12 +1,21 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, MM_TO_PT } from './symbolSpec'
+import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
-import { walkPath, clipPolyline } from './geometry'
+import { walkPath, clipPolyline, distance } from './geometry'
+import { hexToRgb, darkenHex } from './color'
+import {
+  startTriangleVertices,
+  exchangeTriangleVertices,
+  routeXMarkSegments,
+  crossingPointCurve,
+  northArrowGeometry,
+  rotateAround,
+} from './symbolGeometry'
 
 export const MARGIN = 10
 const TILE_OVERLAP = 15
@@ -110,9 +119,7 @@ export function mapToMm(point: MapPoint, map: MapConfig, printScale: number): Po
   }
   if (map.scaleMeasurement) {
     const { p1, p2, realWorldMeters } = map.scaleMeasurement
-    const dx = p2.x - p1.x
-    const dy = p2.y - p1.y
-    const pixelDist = Math.sqrt(dx * dx + dy * dy)
+    const pixelDist = distance(p1, p2)
     if (pixelDist === 0) return { x: 0, y: 0 }
     const factor = realWorldMeters * 1000 / (pixelDist * printScale)
     return { x: point.x * factor, y: point.y * factor }
@@ -127,9 +134,7 @@ export function mmToMap(mm: { x: number; y: number }, map: MapConfig, printScale
   }
   if (map.scaleMeasurement) {
     const { p1, p2, realWorldMeters } = map.scaleMeasurement
-    const dx = p2.x - p1.x
-    const dy = p2.y - p1.y
-    const pixelDist = Math.sqrt(dx * dx + dy * dy)
+    const pixelDist = distance(p1, p2)
     if (pixelDist === 0) return { x: 0, y: 0 }
     const factor = (pixelDist * printScale) / (realWorldMeters * 1000)
     return { x: mm.x * factor, y: mm.y * factor }
@@ -295,9 +300,23 @@ function allControlsBoundsMm(
   return computeBounds(controls.map(c => mapToMm(c.position, map, printScale)))
 }
 
+function pageDimsFor(pageSize: string, orientation: 'portrait' | 'landscape'): { w: number; h: number } {
+  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
+  return orientation === 'landscape' ? { w: base.h, h: base.w } : { w: base.w, h: base.h }
+}
+
 function pageDims(opts: PdfExportOptions): { w: number; h: number } {
-  const base = PAGE_SIZES[opts.pageSize] ?? PAGE_SIZES.a4
-  return opts.orientation === 'landscape' ? { w: base.h, h: base.w } : { w: base.w, h: base.h }
+  return pageDimsFor(opts.pageSize, opts.orientation)
+}
+
+/** Printable area inside the page margins, optionally clamped to a map border. */
+function printableSize(pw: number, ph: number, border?: MapBorder): { w: number; h: number } {
+  const marginW = pw - 2 * MARGIN
+  const marginH = ph - 2 * MARGIN
+  return {
+    w: border ? Math.min(border.width, marginW) : marginW,
+    h: border ? Math.min(border.height, marginH) : marginH,
+  }
 }
 
 export function checkFit(project: Project, options: PdfExportOptions): CourseFitInfo[] {
@@ -369,11 +388,8 @@ export function suggestFitScale(
   orientation: 'portrait' | 'landscape',
   allControls?: boolean,
 ): number | null {
-  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
-  const pw = orientation === 'landscape' ? base.h : base.w
-  const ph = orientation === 'landscape' ? base.w : base.h
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
+  const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
+  const { w: printableW, h: printableH } = printableSize(pw, ph)
 
   const courses = project.courses.filter(c => courseIds.includes(c.id))
   if (courses.length === 0 && !allControls) return null
@@ -405,13 +421,8 @@ export function suggestFitScaleForCourse(
   orientation: 'portrait' | 'landscape',
   border?: MapBorder,
 ): number | null {
-  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
-  const pw = orientation === 'landscape' ? base.h : base.w
-  const ph = orientation === 'landscape' ? base.w : base.h
-  const marginW = pw - 2 * MARGIN
-  const marginH = ph - 2 * MARGIN
-  const printableW = border ? Math.min(border.width, marginW) : marginW
-  const printableH = border ? Math.min(border.height, marginH) : marginH
+  const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
+  const { w: printableW, h: printableH } = printableSize(pw, ph, border)
 
   const course = project.courses.find(c => c.id === courseId)
   if (!course) return null
@@ -436,13 +447,8 @@ export function checkFitForCourse(
 ): CourseFitInfo | null {
   const course = project.courses.find(c => c.id === courseId)
   if (!course) return null
-  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
-  const pw = orientation === 'landscape' ? base.h : base.w
-  const ph = orientation === 'landscape' ? base.w : base.h
-  const marginW = pw - 2 * MARGIN
-  const marginH = ph - 2 * MARGIN
-  const printableW = border ? Math.min(border.width, marginW) : marginW
-  const printableH = border ? Math.min(border.height, marginH) : marginH
+  const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
+  const { w: printableW, h: printableH } = printableSize(pw, ph, border)
   const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
   return {
     courseId,
@@ -465,13 +471,8 @@ export function checkTilingForCourse(
 ): CourseTileInfo | null {
   const course = project.courses.find(c => c.id === courseId)
   if (!course) return null
-  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
-  const pw = orientation === 'landscape' ? base.h : base.w
-  const ph = orientation === 'landscape' ? base.w : base.h
-  const marginW = pw - 2 * MARGIN
-  const marginH = ph - 2 * MARGIN
-  const printableW = border ? Math.min(border.width, marginW) : marginW
-  const printableH = border ? Math.min(border.height, marginH) : marginH
+  const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
+  const { w: printableW, h: printableH } = printableSize(pw, ph, border)
   const bounds = courseBoundsMm(course, project.controls, project.map, printScale)
   if (!bounds) return { courseId, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }
   const cols = tileCount(bounds.width, printableW)
@@ -633,14 +634,6 @@ export function coursePreviewMm(
 
 // ── Color helpers ───────────────────────────────────────────────────────────
 
-function hexToRgb(hex: string): [number, number, number] {
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ]
-}
-
 function setColor(doc: jsPDF, hex: string) {
   const [r, g, b] = hexToRgb(hex)
   doc.setDrawColor(r, g, b)
@@ -679,15 +672,10 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   const resetDash = gaps?.length ? () => doc.setLineDashPattern([], 0) : () => {}
 
   if (type === 'start') {
-    const h = startSide * Math.sqrt(3) / 2
+    const [a, b, c] = startTriangleVertices(pos, startSide)
     doc.setLineWidth(startSw)
     gapDash(startSide * 3, false)
-    doc.triangle(
-      pos.x, pos.y - h * 2 / 3,
-      pos.x - startSide / 2, pos.y + h / 3,
-      pos.x + startSide / 2, pos.y + h / 3,
-      'S',
-    )
+    doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
     resetDash()
   } else if (type === 'finish') {
     doc.setLineWidth(finishSw)
@@ -702,16 +690,8 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     gapDash(2 * Math.PI * controlR, true)
     doc.circle(pos.x, pos.y, controlR, 'S')
     resetDash()
-    const triPoints: [number, number][] = [90, 210, 330].map(deg => {
-      const rad = (deg * Math.PI) / 180
-      return [pos.x + controlR * Math.cos(rad), pos.y + controlR * Math.sin(rad)]
-    })
-    doc.triangle(
-      triPoints[0][0], triPoints[0][1],
-      triPoints[1][0], triPoints[1][1],
-      triPoints[2][0], triPoints[2][1],
-      'S',
-    )
+    const [a, b, c] = exchangeTriangleVertices(pos, controlR)
+    doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
   } else {
     doc.setLineWidth(controlSw)
     gapDash(2 * Math.PI * controlR, true)
@@ -779,34 +759,15 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
 }
 
 
-function drawLabel(doc: jsPDF, label: string, pos: Pos, type: string, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
+function drawLabel(doc: jsPDF, label: string, pos: Pos, type: ControlType, printScale: number, spec: EventSpec, labelOffsetMm?: Pos) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
-  const controlR = dims.controlR * sf
-  const startSide = dims.startSide * sf
-  const finishOuter = dims.finishROuter * sf
-  const fontSizePt = controlR * 1.1 * MM_TO_PT
 
-  doc.setFontSize(fontSizePt)
+  doc.setFontSize(dims.controlR * sf * 1.1 * MM_TO_PT)
   doc.setFont('helvetica', 'bold')
 
-  let ox: number, oy: number
-  if (labelOffsetMm) {
-    ox = labelOffsetMm.x
-    oy = labelOffsetMm.y
-  } else if (type === 'start') {
-    const h = startSide * Math.sqrt(3) / 2
-    ox = startSide / 2 * 1.1
-    oy = -h * 0.4
-  } else if (type === 'finish') {
-    ox = finishOuter * 1.3
-    oy = -finishOuter * 1.1
-  } else {
-    ox = controlR * 1.1
-    oy = -controlR * 1.1
-  }
-
-  doc.text(label, pos.x + ox, pos.y + oy)
+  const off = labelOffsetMm ?? symbolLabelOffset(type, dims, sf)
+  doc.text(label, pos.x + off.x, pos.y + off.y)
 }
 
 function annotationDimsMm(mapScale: number, spec: EventSpec) {
@@ -832,12 +793,10 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
   doc.setLineWidth(d.routeXW)
   const marks = walkPath(points, d.routeXSpace)
   for (const m of marks) {
-    const a1 = m.angle + Math.PI / 4
-    const a2 = m.angle - Math.PI / 4
-    doc.moveTo(m.x - Math.cos(a1) * d.routeXArm, m.y - Math.sin(a1) * d.routeXArm)
-    doc.lineTo(m.x + Math.cos(a1) * d.routeXArm, m.y + Math.sin(a1) * d.routeXArm)
-    doc.moveTo(m.x - Math.cos(a2) * d.routeXArm, m.y - Math.sin(a2) * d.routeXArm)
-    doc.lineTo(m.x + Math.cos(a2) * d.routeXArm, m.y + Math.sin(a2) * d.routeXArm)
+    for (const [p0, p1] of routeXMarkSegments(m, d.routeXArm)) {
+      doc.moveTo(p0.x, p0.y)
+      doc.lineTo(p1.x, p1.y)
+    }
   }
   if (marks.length > 0) doc.stroke()
 }
@@ -846,23 +805,12 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
 
 function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, elongation: number, mapScale: number, spec: EventSpec) {
   const d = annotationDimsMm(mapScale, spec)
-  const spread = d.crossHalf
-  const hh = d.crossH
   const ext = Math.max(0, elongation)
-  const totalHH = hh + ext
-  const halfGapCenter = (d.crossGap + d.crossW) / 2
-  const cx = 2 * halfGapCenter - spread
   // Split the pinch curve at its centre; elongation pulls the halves apart and
   // joins them with a vertical line at the inner pinch (matches canvas render).
-  const midX = (spread + cx) / 2
-  const ctrlY = hh / 2
+  const { spread, midX, ctrlY, totalHH } = crossingPointCurve(d, ext)
   const { x, y } = center
-  const cos = Math.cos(rotation * Math.PI / 180)
-  const sin = Math.sin(rotation * Math.PI / 180)
-  function rot(px: number, py: number): Pos {
-    const dx = px - x, dy = py - y
-    return { x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }
-  }
+  const rot = (px: number, py: number): Pos => rotateAround({ x: px, y: py }, center, rotation)
   // Quadratic (p0 → qc → p1) drawn as a cubic via the 2/3 control rule.
   function quad(p0: Pos, qc: Pos, p1: Pos) {
     doc.curveTo(
@@ -953,8 +901,6 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
 
 // ── North arrow ────────────────────────────────────────────────────────────
 
-const TAN_22_5 = Math.tan(Math.PI / 8)
-
 function drawNorthArrow(
   doc: jsPDF,
   center: Pos,
@@ -967,17 +913,11 @@ function drawNorthArrow(
 ) {
   const d = annotationDimsMm(mapScale, spec)
   const h = d.northArrowH * annScale
-  const halfBase = h * TAN_22_5
-  const apexLocalY = -(2 / 3) * h
-  const baseLocalY = (1 / 3) * h
+  const { halfBase, apexLocalY, baseLocalY } = northArrowGeometry(h, 1)
   const strokeW = 0.15
 
   const { x: cx, y: cy } = center
-  const rad = rotation * Math.PI / 180
-  const cos = Math.cos(rad), sin = Math.sin(rad)
-  function rot(lx: number, ly: number): Pos {
-    return { x: cx + lx * cos - ly * sin, y: cy + lx * sin + ly * cos }
-  }
+  const rot = (lx: number, ly: number): Pos => rotateAround({ x: cx + lx, y: cy + ly }, center, rotation)
 
   const apex = rot(0, apexLocalY)
   const br = rot(halfBase, baseLocalY)
@@ -986,8 +926,8 @@ function drawNorthArrow(
   // Filled triangle
   const [r, g, b] = hexToRgb(color)
   doc.setFillColor(r, g, b)
-  const f = 1 - 0.2
-  doc.setDrawColor(Math.round(r * f), Math.round(g * f), Math.round(b * f))
+  const [dr, dg, db] = hexToRgb(darkenHex(color))
+  doc.setDrawColor(dr, dg, db)
   doc.setLineWidth(strokeW)
   doc.setLineJoin(1)
   doc.moveTo(apex.x, apex.y)
@@ -1004,6 +944,26 @@ function drawNorthArrow(
   doc.setFontSize(fontSize * MM_TO_PT)
   doc.setFont('helvetica', 'bold')
   doc.text('N', textPos.x, textPos.y, { align: 'center', angle: -rotation })
+}
+
+function drawAnnotations(
+  doc: jsPDF,
+  annotations: Annotation[],
+  toPage: (pt: MapPoint) => Pos,
+  mapScale: number,
+  spec: EventSpec,
+) {
+  for (const ann of annotations) {
+    if (ann.type === 'forbidden_route') {
+      drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, spec)
+    } else if (ann.type === 'crossing_point' && ann.points[0]) {
+      drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, spec)
+    } else if (ann.type === 'out_of_bounds') {
+      drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, spec)
+    } else if (ann.type === 'north_arrow' && ann.points[0]) {
+      drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, spec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
+    }
+  }
 }
 
 // ── Labelling ───────────────────────────────────────────────────────────────
@@ -1298,17 +1258,7 @@ export async function exportCoursePdf(
           const allCtrlSpec = resolveSpec(project.spec)
 
           setColor(doc, annColor)
-          for (const ann of project.annotations) {
-            if (ann.type === 'forbidden_route') {
-              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
-            } else if (ann.type === 'crossing_point' && ann.points[0]) {
-              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, allCtrlSpec)
-            } else if (ann.type === 'out_of_bounds') {
-              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, allCtrlSpec)
-            } else if (ann.type === 'north_arrow' && ann.points[0]) {
-              drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, allCtrlSpec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
-            }
-          }
+          drawAnnotations(doc, project.annotations, toPage, mapScale, allCtrlSpec)
 
           setColor(doc, ctrlColor)
           for (const ctrl of project.controls) {
@@ -1408,18 +1358,7 @@ export async function exportCoursePdf(
           const annColor = '#a626ff'
           const courseSpec = resolveSpec(project.spec, course.spec)
           setColor(doc, annColor)
-
-          for (const ann of project.annotations) {
-            if (ann.type === 'forbidden_route') {
-              drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
-            } else if (ann.type === 'crossing_point' && ann.points[0]) {
-              drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, courseSpec)
-            } else if (ann.type === 'out_of_bounds') {
-              drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, courseSpec)
-            } else if (ann.type === 'north_arrow' && ann.points[0]) {
-              drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, courseSpec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
-            }
-          }
+          drawAnnotations(doc, project.annotations, toPage, mapScale, courseSpec)
 
           setColor(doc, course.color)
 
@@ -1468,10 +1407,7 @@ export async function exportCoursePdf(
             doc.rect(0, by + bh, cpw, cph - by - bh, 'F') // bottom
             doc.rect(0, by, bx, bh, 'F')                // left
             doc.rect(bx + bw, by, cpw - bx - bw, bh, 'F') // right
-            const hex = layout.mapBorder.color
-            const r = parseInt(hex.slice(1, 3), 16)
-            const g = parseInt(hex.slice(3, 5), 16)
-            const b = parseInt(hex.slice(5, 7), 16)
+            const [r, g, b] = hexToRgb(layout.mapBorder.color)
             const sw = layout.mapBorder.strokeWidth
             doc.setDrawColor(r, g, b)
             doc.setLineWidth(sw)
