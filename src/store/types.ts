@@ -86,12 +86,13 @@ export interface AppActions {
   updateClassName: (id: string, name: string) => void
   updateClassCourse: (id: string, courseId: string) => void
 
-  addMissingControlGaps: (controlId: string, courseId: string, gapSize: number) => void
   addControlGap: (controlId: string, gap: CircleGap) => void
   removeControlGap: (controlId: string, index: number) => void
+  removeControlGapAtAngle: (controlId: string, angle: number) => void
   clearControlGaps: (controlId: string) => void
   addLegGap: (courseId: string, courseControlId: string, gap: LegGap) => void
   removeLegGap: (courseId: string, courseControlId: string, index: number) => void
+  removeLegGapAtT: (courseId: string, courseControlId: string, t: number) => void
   clearLegGaps: (courseId: string, courseControlId: string) => void
 
   addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number) => void

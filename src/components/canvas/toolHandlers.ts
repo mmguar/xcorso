@@ -40,12 +40,24 @@ export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Proj
   }
 }
 
+// Rebuild gap: same hitboxes as the gap tool, but instead of cutting a gap it
+// removes the gap covering the clicked point so that arc/leg becomes visible again.
 export function handleGapRebuildTap(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
-  if (!selectedCourseId) return
-  const { gapSize, appearance: { controlScale } } = useStore.getState().editor
+  const { appearance: { controlScale } } = useStore.getState().editor
+  const mapPt = screenToMap(sx, sy, vp)
   const hitControl = findControlAt(sx, sy, vp, project, selectedCourseId, controlScale, GAP_EXTRA_PX)
+
   if (hitControl) {
-    useStore.getState().addMissingControlGaps(hitControl.id, selectedCourseId, gapSize)
+    const dx = mapPt.x - hitControl.position.x
+    const dy = mapPt.y - hitControl.position.y
+    const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360
+    useStore.getState().removeControlGapAtAngle(hitControl.id, angle)
+    return
+  }
+
+  const legHit = findLegAt(sx, sy, vp, project, selectedCourseId)
+  if (legHit) {
+    useStore.getState().removeLegGapAtT(legHit.courseId, legHit.courseControlId, legHit.t)
   }
 }
 

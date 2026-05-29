@@ -84,7 +84,7 @@ function GapRebuildToggle() {
   return (
     <button
       onClick={() => setGapRebuild(!gapRebuild)}
-      title="Rebuild gaps (click control to add missing gaps)"
+      title="Rebuild gaps (click a gapped arc or leg to make it visible again)"
       className={`w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all ${
         gapRebuild
           ? 'bg-green-600 text-white shadow-inner'
