@@ -161,6 +161,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const rectCacheRef = useRef<DOMRect | null>(null)
   const canvasPixelRef = useRef<[number, number]>([1, 1])
 
+  const layoutPanningRef = useRef(false)
   function syncTransform() {
     const v = vpRef.current
     const t = `translate(${v.x}px,${v.y}px) scale(${v.scale})`
@@ -172,7 +173,10 @@ export function MapCanvas({ loadedMap }: Props) {
     if (hdMapGRef.current) hdMapGRef.current.style.transform = t
     if (overlayGRef.current) overlayGRef.current.style.transform = t
     if (courseGRef.current) courseGRef.current.style.transform = t
-    if (aboveBorderGRef.current) aboveBorderGRef.current.style.transform = t
+    // In layout mode during a map pan, overlays are page-relative — freeze them
+    // so they don't slide with the map. setLayoutMapCenter shifts their map coords
+    // on pointer-up, and the post-render syncTransform applies the final transform.
+    if (aboveBorderGRef.current && !layoutPanningRef.current) aboveBorderGRef.current.style.transform = t
   }
   function setVp(next: Viewport) {
     vpRef.current = next
@@ -939,7 +943,10 @@ export function MapCanvas({ loadedMap }: Props) {
         const dy = e.clientY - prev.y
         const v = vpRef.current
         vpRef.current = { ...v, x: v.x + dx, y: v.y + dy }
-        if (!vpDirty) startPanning()
+        if (!vpDirty) {
+          startPanning()
+          if (useStore.getState().editor.layoutMode) layoutPanningRef.current = true
+        }
         vpDirty = true
       } else if (pos.size === 2 && !useStore.getState().editor.layoutMode) {
         const [a, b] = [...pos.values()]
@@ -971,6 +978,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (vpDirty && pos.size === 0) {
         vpDirty = false
+        layoutPanningRef.current = false
         if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
         syncTransform()
         setVpState(vpRef.current)
@@ -1177,6 +1185,7 @@ export function MapCanvas({ loadedMap }: Props) {
       down.delete(e.pointerId)
       if (vpDirty && pos.size === 0) {
         vpDirty = false
+        layoutPanningRef.current = false
         if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
         syncTransform()
         setVpState(vpRef.current)
