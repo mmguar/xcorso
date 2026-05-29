@@ -5,12 +5,32 @@ import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../.
 
 export const HIT_PX = 20
 
+// ── Viewport scaling ─────────────────────────────────────────────────────────
+// `vp.scale` is the single source of zoom: screen_px = map_units × vp.scale.
+// Use these instead of hand-writing `× vp.scale` / `÷ vp.scale`. Rule of thumb:
+//   • a tolerance/handle that should stay a constant size on screen → pxToMap(px, vp)
+//   • a symbol that should scale with the map → size it in map units, then mapToPx
+
+/** Screen-pixel length → map units at the current zoom (constant on screen). */
+export function pxToMap(px: number, vp: Viewport): number {
+  return px / vp.scale
+}
+
+/** Map-unit length → on-screen pixels at the current zoom. */
+export function mapToPx(units: number, vp: Viewport): number {
+  return units * vp.scale
+}
+
 export function screenToMap(sx: number, sy: number, vp: Viewport): MapPoint {
   return { x: (sx - vp.x) / vp.scale, y: (sy - vp.y) / vp.scale }
 }
 
+export function mapToScreen(p: MapPoint, vp: Viewport): { x: number; y: number } {
+  return { x: vp.x + p.x * vp.scale, y: vp.y + p.y * vp.scale }
+}
+
 export function controlToScreen(c: Control, vp: Viewport): { x: number; y: number } {
-  return { x: vp.x + c.position.x * vp.scale, y: vp.y + c.position.y * vp.scale }
+  return mapToScreen(c.position, vp)
 }
 
 export function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): number {
@@ -19,7 +39,7 @@ export function controlHitRadius(control: Control, vp: Viewport, project: Projec
   const dims = getSymbolDims(spec)
   const sf = symbolScaleFactor(spec, project.map.scale)
   const symbolR = controlSymbolRadiusMm(control.type, dims) * upm * sf * controlScale
-  return symbolR * vp.scale
+  return mapToPx(symbolR, vp)
 }
 
 export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, extraPx = 0): Control | null {
@@ -55,7 +75,7 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
   if (!course || course.type === 'score' || course.controls.length < 2) return null
   const controlMap = controlsById(project.controls)
   const mapPt = screenToMap(screenX, screenY, vp)
-  const hitR = HIT_PX / vp.scale
+  const hitR = pxToMap(HIT_PX, vp)
 
   for (let i = 1; i < course.controls.length; i++) {
     const fromCtrl = controlMap.get(course.controls[i - 1].controlId)
@@ -99,7 +119,7 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
   const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
   if (!course || course.controls.length < 2) return null
   const mapPt = screenToMap(screenX, screenY, vp)
-  const hitR = HIT_PX / vp.scale
+  const hitR = pxToMap(HIT_PX, vp)
 
   for (const cc of course.controls) {
     if (!cc.legBendPoints) continue
@@ -127,7 +147,7 @@ function pointInPolygon(pt: MapPoint, poly: MapPoint[]): boolean {
 
 export function findAnnotationAt(screenX: number, screenY: number, vp: Viewport, project: Project): Annotation | null {
   const mapPt = screenToMap(screenX, screenY, vp)
-  const hitR = HIT_PX / vp.scale
+  const hitR = pxToMap(HIT_PX, vp)
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec)
   const sf = symbolScaleFactor(spec, project.map.scale)
@@ -264,7 +284,7 @@ export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp:
 export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' | 'image' } | null {
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
-  const hitSlop = HIT_PX / vp.scale
+  const hitSlop = pxToMap(HIT_PX, vp)
 
   for (const sb of project.scaleBars) {
     const pos = posOverrides?.[sb.id] ?? sb.position
@@ -340,12 +360,11 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)
     const labelMapX = ctrl.position.x + offset.x
     const labelMapY = ctrl.position.y + offset.y
-    const labelScreenX = vp.x + labelMapX * vp.scale
-    const labelScreenY = vp.y + labelMapY * vp.scale
+    const { x: labelScreenX, y: labelScreenY } = mapToScreen({ x: labelMapX, y: labelMapY }, vp)
 
     const sf = symbolScaleFactor(labelSpec, project.map.scale)
     const cr = labelDims.controlR * upm * controlScale * sf
-    const fontSize = cr * 1.1 * vp.scale
+    const fontSize = mapToPx(cr * 1.1, vp)
     let labelText: string
     if (seqMap && ctrl.type === 'control') {
       const seqs = seqMap.get(ctrl.id)

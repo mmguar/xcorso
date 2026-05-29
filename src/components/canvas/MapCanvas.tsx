@@ -20,7 +20,7 @@ import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, contr
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
-  screenToMap,
+  screenToMap, pxToMap,
   findControlAt, findBendPointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
@@ -88,7 +88,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
         const symbolR = controlSymbolRadiusMm(c.type, dims) * upm * sf * controlScale
         return (
           <circle key={`hit-${c.id}`} cx={c.position.x} cy={c.position.y} r={symbolR}
-            fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={1 / vp.scale} />
+            fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={pxToMap(1, vp)} />
         )
       })}
       {project.annotations.filter(a => a.type === 'crossing_point').map(ann => {
@@ -108,11 +108,11 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
         return (
           <g key={`ann-${ann.id}`}>
             <circle cx={p.x} cy={p.y} r={totalHH}
-              fill="rgba(255,0,255,0.1)" stroke="rgba(255,0,255,0.5)" strokeWidth={1 / vp.scale} />
+              fill="rgba(255,0,255,0.1)" stroke="rgba(255,0,255,0.5)" strokeWidth={pxToMap(1, vp)} />
             <circle cx={handleX} cy={handleY} r={handleR}
-              fill="rgba(255,128,0,0.1)" stroke="rgba(255,128,0,0.5)" strokeWidth={1 / vp.scale} />
+              fill="rgba(255,128,0,0.1)" stroke="rgba(255,128,0,0.5)" strokeWidth={pxToMap(1, vp)} />
             <circle cx={resizeX} cy={resizeY} r={handleR}
-              fill="rgba(0,128,255,0.1)" stroke="rgba(0,128,255,0.5)" strokeWidth={1 / vp.scale} />
+              fill="rgba(0,128,255,0.1)" stroke="rgba(0,128,255,0.5)" strokeWidth={pxToMap(1, vp)} />
           </g>
         )
       })}
@@ -136,7 +136,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
           <rect key={`lhit-${c.id}`}
             x={lx} y={ly - textH}
             width={textW} height={textH}
-            fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={1 / vp.scale} />
+            fill="rgba(255,255,0,0.15)" stroke="rgba(255,255,0,0.5)" strokeWidth={pxToMap(1, vp)} />
         )
       })}
     </g>
