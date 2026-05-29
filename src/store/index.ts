@@ -209,24 +209,27 @@ export const useStore = create<Store>((set, get) => {
     // ── Undo / Redo ───────────────────────────────────────────────────────
 
     undo: () => {
-      const { undoStack, project, redoStack } = get()
+      const { undoStack, project, redoStack, editor } = get()
       if (undoStack.length === 0 || !project) return
       const prev = undoStack[undoStack.length - 1]
       set({
         project: prev,
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack, structuredClone(project)],
+        // Re-snap the layout viewport onto the restored mapCenter (see MapCanvas).
+        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
 
     redo: () => {
-      const { redoStack, project, undoStack } = get()
+      const { redoStack, project, undoStack, editor } = get()
       if (redoStack.length === 0 || !project) return
       const next = redoStack[redoStack.length - 1]
       set({
         project: next,
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, structuredClone(project)],
+        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
   }
