@@ -24,6 +24,7 @@ export interface EditorState {
   layoutMode: boolean
   layoutCourseId: string | null
   layoutSnapRequest: number
+  gapRebuild: boolean
 }
 
 export interface AppState {
@@ -87,9 +88,11 @@ export interface AppActions {
 
   addControlGap: (controlId: string, gap: CircleGap) => void
   removeControlGap: (controlId: string, index: number) => void
+  removeControlGapAtAngle: (controlId: string, angle: number) => void
   clearControlGaps: (controlId: string) => void
   addLegGap: (courseId: string, courseControlId: string, gap: LegGap) => void
   removeLegGap: (courseId: string, courseControlId: string, index: number) => void
+  removeLegGapAtT: (courseId: string, courseControlId: string, t: number) => void
   clearLegGaps: (courseId: string, courseControlId: string) => void
 
   addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number) => void
@@ -141,11 +144,13 @@ export interface AppActions {
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setGapSize: (size: number) => void
+  setGapRebuild: (on: boolean) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void
 
   enterLayoutMode: (courseId: string) => void
   exitLayoutMode: () => void
   updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
+  moveCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
   updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => void
   ensureAllCourseLayouts: () => void
   beginLayoutDrag: () => void
@@ -200,4 +205,5 @@ export const defaultEditor: EditorState = {
   layoutMode: false,
   layoutCourseId: null,
   layoutSnapRequest: 0,
+  gapRebuild: false,
 }

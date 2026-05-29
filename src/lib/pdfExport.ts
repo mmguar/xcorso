@@ -824,7 +824,10 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   }
 
   const gd = remapped?.length ? legGapDash(remapped, clippedLen) : null
-  if (gd) doc.setLineDashPattern(gd.dash, gd.phase)
+  if (gd) {
+    doc.setLineDashPattern(gd.dash, gd.phase)
+    doc.setLineCap(0)
+  }
 
   doc.moveTo(clipped[0].x, clipped[0].y)
   for (let i = 1; i < clipped.length; i++) {
@@ -832,7 +835,10 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   }
   doc.stroke()
 
-  if (gd) doc.setLineDashPattern([], 0)
+  if (gd) {
+    doc.setLineDashPattern([], 0)
+    doc.setLineCap(1)
+  }
 }
 
 
@@ -1167,7 +1173,22 @@ function drawTextLabel(
   }
 }
 
-function drawImageOverlay(
+async function ensureJpegOrPng(dataUrl: string): Promise<{ url: string; format: 'PNG' | 'JPEG' }> {
+  if (dataUrl.startsWith('data:image/png')) return { url: dataUrl, format: 'PNG' }
+  if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg'))
+    return { url: dataUrl, format: 'JPEG' }
+  const img = new Image()
+  img.src = dataUrl
+  await img.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(img, 0, 0)
+  return { url: canvas.toDataURL('image/png'), format: 'PNG' }
+}
+
+async function drawImageOverlay(
   doc: jsPDF,
   img: ImageOverlay,
   toPage: (pt: MapPoint) => Pos,
@@ -1191,8 +1212,10 @@ function drawImageOverlay(
     doc.setGState(doc.GState({ opacity: 1 }))
   }
 
-  const format = img.dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-  doc.addImage(img.dataUrl, format, pos.x, pos.y, w, h)
+  try {
+    const { url, format } = await ensureJpegOrPng(img.dataUrl)
+    doc.addImage(url, format, pos.x, pos.y, w, h)
+  } catch { /* skip image if it can't be converted */ }
 }
 
 // ── Main export ─────────────────────────────────────────────────────────────
@@ -1350,7 +1373,7 @@ export async function exportCoursePdf(
           // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
-          for (const img of project.imageOverlays) drawImageOverlay(doc, img, toPage, project.map)
+          for (const img of project.imageOverlays) await drawImageOverlay(doc, img, toPage, project.map)
 
         }
       }
@@ -1519,7 +1542,7 @@ export async function exportCoursePdf(
           for (const img of project.imageOverlays) {
             const overridePos = layout?.overlayPositions?.[img.id]
             const effectiveImg = overridePos ? { ...img, position: overridePos } : img
-            drawImageOverlay(doc, effectiveImg, toPage, project.map)
+            await drawImageOverlay(doc, effectiveImg, toPage, project.map)
           }
 
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {

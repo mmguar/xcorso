@@ -123,8 +123,8 @@ function CourseEditor({ course }: { course: Course }) {
             <label className="flex items-center gap-1 text-xs text-gray-500">
               <span>Climb</span>
               <input
-                type="number"
-                min={0}
+                type="text"
+                inputMode="numeric"
                 value={course.climb ?? ''}
                 placeholder="m"
                 onChange={e => {
