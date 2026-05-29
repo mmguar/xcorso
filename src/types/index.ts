@@ -132,7 +132,7 @@ export interface Course {
   scoreTimeLimit?: number    // minutes, score-O only
   climb?: number             // metres, manually set
   finishType?: FinishType    // IOF 16.1/16.2/16.3 — defaults to 'taped'
-  color: string              // overprint color, default '#7B2FBE'
+  color: string              // overprint color, default '#a626ff' (CMYK 35/85/0/0)
   showPoints?: boolean       // display [points] next to controls on map
   loops?: CourseLoop[]
   variations?: CourseVariation[]

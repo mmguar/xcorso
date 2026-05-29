@@ -395,7 +395,7 @@ export function PdfExportDialog({ onClose }: Props) {
                     : parsed
                       ? `${course?.name ?? realCourseId} — Map ${parsed.submapIndex + 1}`
                       : (course?.name ?? id)
-                  const color = id === ALL_CONTROLS_ID ? '#ea580c' : (course?.color ?? '#7B2FBE')
+                  const color = id === ALL_CONTROLS_ID ? '#ea580c' : (course?.color ?? '#a626ff')
                   const isActive = id === s.activePreviewId
 
                   const isFirstSubmap = parsed && (idx === 0 || parseSubmapPreviewId(s.previewIds[idx - 1])?.courseId !== parsed.courseId)
@@ -465,7 +465,7 @@ export function PdfExportDialog({ onClose }: Props) {
               offsetY={s.activeOffset.y}
               onOffsetChange={s.setActiveOffset}
               mapImage={mapImage}
-              dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === (parseSubmapPreviewId(s.activePreviewId)?.courseId ?? s.activePreviewId))?.color ?? '#7B2FBE')}
+              dotColor={s.activePreviewId === ALL_CONTROLS_ID ? '#ea580c' : (s.project.courses.find(c => c.id === (parseSubmapPreviewId(s.activePreviewId)?.courseId ?? s.activePreviewId))?.color ?? '#a626ff')}
               {...(s.sheetParts ? {
                 sheetParts: s.sheetParts,
                 onSheetPartChange: s.setSheetPartPos,

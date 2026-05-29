@@ -21,7 +21,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (starts.length === 1) controls.push({ id: uuidv4(), controlId: starts[0].id })
         if (finishes.length === 1) controls.push({ id: uuidv4(), controlId: finishes[0].id })
       }
-      const course: Course = { id: uuidv4(), name, type, controls, color: '#7B2FBE' }
+      const course: Course = { id: uuidv4(), name, type, controls, color: '#a626ff' }
       h.mutateProject(p => { p.courses.push(course) })
       set(state => ({
         editor: {
