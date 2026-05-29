@@ -21,6 +21,15 @@ export function mapToPx(units: number, vp: Viewport): number {
   return units * vp.scale
 }
 
+/** Extra grab slop (screen px) around a draggable handle, beyond its drawn size. */
+export const HANDLE_GRAB_PX = 8
+
+/** Grab radius for a handle: its drawn radius plus a constant screen-pixel slop,
+ *  so handles stay comfortably grabbable at any zoom. */
+export function handleHitRadius(drawnR: number, vp: Viewport): number {
+  return drawnR + pxToMap(HANDLE_GRAB_PX, vp)
+}
+
 export function screenToMap(sx: number, sy: number, vp: Viewport): MapPoint {
   return { x: (sx - vp.x) / vp.scale, y: (sy - vp.y) / vp.scale }
 }
@@ -182,9 +191,9 @@ export function findOobVertexHandle(screenX: number, screenY: number, vp: Viewpo
   if (!ann || ann.type !== 'out_of_bounds' || ann.points.length < 3) return null
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
-  const handleR = 1 * upm
+  const grabR = handleHitRadius(1 * upm, vp)
   for (let i = 0; i < ann.points.length; i++) {
-    if (Math.hypot(mapPt.x - ann.points[i].x, mapPt.y - ann.points[i].y) < handleR) {
+    if (Math.hypot(mapPt.x - ann.points[i].x, mapPt.y - ann.points[i].y) < grabR) {
       return { ann, vertexIndex: i }
     }
   }
@@ -211,7 +220,7 @@ export function findCrossingPointRotationHandle(screenX: number, screenY: number
 
   const mapPt = screenToMap(screenX, screenY, vp)
   const dist = Math.hypot(mapPt.x - handleX, mapPt.y - handleY)
-  if (dist < handleR) return ann
+  if (dist < handleHitRadius(handleR, vp)) return ann
   return null
 }
 
@@ -235,7 +244,7 @@ export function findCrossingPointResizeHandle(screenX: number, screenY: number, 
 
   const mapPt = screenToMap(screenX, screenY, vp)
   const dist = Math.hypot(mapPt.x - handleX, mapPt.y - handleY)
-  if (dist < handleR) return ann
+  if (dist < handleHitRadius(handleR, vp)) return ann
   return null
 }
 
@@ -259,7 +268,7 @@ export function findNorthArrowRotationHandle(screenX: number, screenY: number, v
 
   const handle = rotatePoint(geo.rotHandleLocalX, geo.rotHandleLocalY, center.x, center.y, rotation)
   const mapPt = screenToMap(screenX, screenY, vp)
-  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < geo.handleR) return ann
+  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < handleHitRadius(geo.handleR, vp)) return ann
   return null
 }
 
@@ -277,7 +286,7 @@ export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp:
 
   const handle = rotatePoint(geo.resizeHandleLocalX, geo.resizeHandleLocalY, center.x, center.y, rotation)
   const mapPt = screenToMap(screenX, screenY, vp)
-  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < geo.handleR) return ann
+  if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < handleHitRadius(geo.handleR, vp)) return ann
   return null
 }
 
