@@ -233,16 +233,19 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [loadedMap])
 
   // ── Snap viewport to layout page ────────────────────────────────────────
-  const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string; snap: number } | null>(null)
+  const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string; snap: number; mcx: number; mcy: number } | null>(null)
   useEffect(() => {
     if (!layoutMode || !layoutCourse?.layout) {
       prevLayoutRef.current = null
       return
     }
     const layout = layoutCourse.layout
-    const key = { courseId: layoutCourseId, printScale: layout.printScale, pageSize: layout.pageSize, orientation: layout.orientation, snap: layoutSnapRequest }
+    // mapCenter is part of the key so the page re-centers when it changes from
+    // outside a drag (undo/redo) — at drag end the viewport was derived from the
+    // same mapCenter, so re-snapping there is a no-op and doesn't fight the drag.
+    const key = { courseId: layoutCourseId, printScale: layout.printScale, pageSize: layout.pageSize, orientation: layout.orientation, snap: layoutSnapRequest, mcx: layout.mapCenter.x, mcy: layout.mapCenter.y }
     const prev = prevLayoutRef.current
-    if (prev && prev.courseId === key.courseId && prev.printScale === key.printScale && prev.pageSize === key.pageSize && prev.orientation === key.orientation && prev.snap === key.snap) return
+    if (prev && prev.courseId === key.courseId && prev.printScale === key.printScale && prev.pageSize === key.pageSize && prev.orientation === key.orientation && prev.snap === key.snap && prev.mcx === key.mcx && prev.mcy === key.mcy) return
     prevLayoutRef.current = key
 
     const el = divRef.current
@@ -1047,6 +1050,9 @@ export function MapCanvas({ loadedMap }: Props) {
           const v = vpRef.current
           const centerX = (rect.width / 2 - v.x) / v.scale
           const centerY = (rect.height / 2 - v.y) / v.scale
+          // mapCenter is still the pre-drag value here (only written below), so
+          // snapshot now — undo then restores it and the snap effect re-centers.
+          st.beginLayoutDrag()
           st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY })
         }
       }
