@@ -7,7 +7,15 @@ import { computeCourseDistances } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
 import { walkPath, clipPolyline, distance } from './geometry'
-import { hexToRgb } from './color'
+import { hexToRgb, darkenHex } from './color'
+import {
+  startTriangleVertices,
+  exchangeTriangleVertices,
+  routeXMarkSegments,
+  crossingPointCurve,
+  northArrowGeometry,
+  rotateAround,
+} from './symbolGeometry'
 
 export const MARGIN = 10
 const TILE_OVERLAP = 15
@@ -664,15 +672,10 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   const resetDash = gaps?.length ? () => doc.setLineDashPattern([], 0) : () => {}
 
   if (type === 'start') {
-    const h = startSide * Math.sqrt(3) / 2
+    const [a, b, c] = startTriangleVertices(pos, startSide)
     doc.setLineWidth(startSw)
     gapDash(startSide * 3, false)
-    doc.triangle(
-      pos.x, pos.y - h * 2 / 3,
-      pos.x - startSide / 2, pos.y + h / 3,
-      pos.x + startSide / 2, pos.y + h / 3,
-      'S',
-    )
+    doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
     resetDash()
   } else if (type === 'finish') {
     doc.setLineWidth(finishSw)
@@ -687,16 +690,8 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
     gapDash(2 * Math.PI * controlR, true)
     doc.circle(pos.x, pos.y, controlR, 'S')
     resetDash()
-    const triPoints: [number, number][] = [90, 210, 330].map(deg => {
-      const rad = (deg * Math.PI) / 180
-      return [pos.x + controlR * Math.cos(rad), pos.y + controlR * Math.sin(rad)]
-    })
-    doc.triangle(
-      triPoints[0][0], triPoints[0][1],
-      triPoints[1][0], triPoints[1][1],
-      triPoints[2][0], triPoints[2][1],
-      'S',
-    )
+    const [a, b, c] = exchangeTriangleVertices(pos, controlR)
+    doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
   } else {
     doc.setLineWidth(controlSw)
     gapDash(2 * Math.PI * controlR, true)
@@ -798,12 +793,10 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
   doc.setLineWidth(d.routeXW)
   const marks = walkPath(points, d.routeXSpace)
   for (const m of marks) {
-    const a1 = m.angle + Math.PI / 4
-    const a2 = m.angle - Math.PI / 4
-    doc.moveTo(m.x - Math.cos(a1) * d.routeXArm, m.y - Math.sin(a1) * d.routeXArm)
-    doc.lineTo(m.x + Math.cos(a1) * d.routeXArm, m.y + Math.sin(a1) * d.routeXArm)
-    doc.moveTo(m.x - Math.cos(a2) * d.routeXArm, m.y - Math.sin(a2) * d.routeXArm)
-    doc.lineTo(m.x + Math.cos(a2) * d.routeXArm, m.y + Math.sin(a2) * d.routeXArm)
+    for (const [p0, p1] of routeXMarkSegments(m, d.routeXArm)) {
+      doc.moveTo(p0.x, p0.y)
+      doc.lineTo(p1.x, p1.y)
+    }
   }
   if (marks.length > 0) doc.stroke()
 }
@@ -812,23 +805,12 @@ function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: E
 
 function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, elongation: number, mapScale: number, spec: EventSpec) {
   const d = annotationDimsMm(mapScale, spec)
-  const spread = d.crossHalf
-  const hh = d.crossH
   const ext = Math.max(0, elongation)
-  const totalHH = hh + ext
-  const halfGapCenter = (d.crossGap + d.crossW) / 2
-  const cx = 2 * halfGapCenter - spread
   // Split the pinch curve at its centre; elongation pulls the halves apart and
   // joins them with a vertical line at the inner pinch (matches canvas render).
-  const midX = (spread + cx) / 2
-  const ctrlY = hh / 2
+  const { spread, midX, ctrlY, totalHH } = crossingPointCurve(d, ext)
   const { x, y } = center
-  const cos = Math.cos(rotation * Math.PI / 180)
-  const sin = Math.sin(rotation * Math.PI / 180)
-  function rot(px: number, py: number): Pos {
-    const dx = px - x, dy = py - y
-    return { x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }
-  }
+  const rot = (px: number, py: number): Pos => rotateAround({ x: px, y: py }, center, rotation)
   // Quadratic (p0 → qc → p1) drawn as a cubic via the 2/3 control rule.
   function quad(p0: Pos, qc: Pos, p1: Pos) {
     doc.curveTo(
@@ -919,8 +901,6 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
 
 // ── North arrow ────────────────────────────────────────────────────────────
 
-const TAN_22_5 = Math.tan(Math.PI / 8)
-
 function drawNorthArrow(
   doc: jsPDF,
   center: Pos,
@@ -933,17 +913,11 @@ function drawNorthArrow(
 ) {
   const d = annotationDimsMm(mapScale, spec)
   const h = d.northArrowH * annScale
-  const halfBase = h * TAN_22_5
-  const apexLocalY = -(2 / 3) * h
-  const baseLocalY = (1 / 3) * h
+  const { halfBase, apexLocalY, baseLocalY } = northArrowGeometry(h, 1)
   const strokeW = 0.15
 
   const { x: cx, y: cy } = center
-  const rad = rotation * Math.PI / 180
-  const cos = Math.cos(rad), sin = Math.sin(rad)
-  function rot(lx: number, ly: number): Pos {
-    return { x: cx + lx * cos - ly * sin, y: cy + lx * sin + ly * cos }
-  }
+  const rot = (lx: number, ly: number): Pos => rotateAround({ x: cx + lx, y: cy + ly }, center, rotation)
 
   const apex = rot(0, apexLocalY)
   const br = rot(halfBase, baseLocalY)
@@ -952,8 +926,8 @@ function drawNorthArrow(
   // Filled triangle
   const [r, g, b] = hexToRgb(color)
   doc.setFillColor(r, g, b)
-  const f = 1 - 0.2
-  doc.setDrawColor(Math.round(r * f), Math.round(g * f), Math.round(b * f))
+  const [dr, dg, db] = hexToRgb(darkenHex(color))
+  doc.setDrawColor(dr, dg, db)
   doc.setLineWidth(strokeW)
   doc.setLineJoin(1)
   doc.moveTo(apex.x, apex.y)

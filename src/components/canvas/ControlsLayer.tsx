@@ -4,6 +4,7 @@ import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
+import { startTriangleVertices, exchangeTriangleVertices } from '../../lib/symbolGeometry'
 import type { SymbolDims } from '../../lib/symbolSpec'
 import { circleGapDashArray } from '../../lib/gapDash'
 
@@ -65,11 +66,8 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
   const cr = dims.controlR * upm * scale
   const { x, y } = control.position
   const side = dims.startSide * upm * scale
-  const halfSide = side / 2
   const h = side * Math.sqrt(3) / 2
-  const topY = y - h * 2 / 3
-  const botY = y + h / 3
-  const points = `${x},${topY} ${x - halfSide},${botY} ${x + halfSide},${botY}`
+  const points = startTriangleVertices({ x, y }, side).map(p => `${p.x},${p.y}`).join(' ')
   const perimeter = side * 3
   const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
@@ -173,11 +171,8 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
   const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
   const lx = x + off.x
   const ly = y + off.y
-  // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330° (from center, measured CW from 3 o'clock)
-  const triPoints = [90, 210, 330].map(deg => {
-    const rad = (deg * Math.PI) / 180
-    return `${x + cr * Math.cos(rad)},${y + cr * Math.sin(rad)}`
-  }).join(' ')
+  // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330°
+  const triPoints = exchangeTriangleVertices({ x, y }, cr).map(p => `${p.x},${p.y}`).join(' ')
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}

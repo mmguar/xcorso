@@ -1,7 +1,7 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../canvas/AnnotationsLayer'
+import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../../lib/symbolGeometry'
 
 export const HIT_PX = 20
 
