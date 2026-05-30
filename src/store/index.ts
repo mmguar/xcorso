@@ -68,6 +68,7 @@ export const useStore = create<Store>((set, get) => {
         scaleBars: [],
         textLabels: [],
         imageOverlays: [],
+        overprint: 1,
       }
       set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
     },
@@ -185,6 +186,11 @@ export const useStore = create<Store>((set, get) => {
 
     setMapSaturation: (saturation) => {
       set(state => ({ editor: { ...state.editor, mapSaturation: saturation } }))
+    },
+
+    setOverprint: (overprint) => {
+      const v = Math.max(0, Math.min(1, overprint))
+      mutateProjectSilent(p => { p.overprint = v })
     },
 
     setGapSize: (size) => {

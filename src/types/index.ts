@@ -260,6 +260,8 @@ export interface Project {
   textLabels: TextLabel[]
   imageOverlays: ImageOverlay[]
   layoutDefaults?: LayoutDefaults
+  /** Overprint level for course/annotation ink: 0 = solid knockout, 1 = full multiply overprint. Default 1. */
+  overprint?: number
 }
 
 // ─── Appearance ──────────���──────────────────────���───────────────────────────

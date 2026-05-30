@@ -893,6 +893,7 @@ export function LayoutPanel() {
         mapOpacity: defaults.mapOpacity,
         mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
         rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
+        overprint: currentProject.overprint ?? 1,
       }
 
       const currentMap = useStore.getState().loadedMap

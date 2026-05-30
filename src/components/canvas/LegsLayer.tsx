@@ -18,6 +18,9 @@ interface Props {
   controls: Control[]
   map: MapConfig
   showBendHandles?: boolean
+  /** Render only the (white) bend handles, skipping the leg lines. Used to keep
+   *  handles out of the overprint multiply pass. */
+  handlesOnly?: boolean
   appearance: AppearanceSettings
   projectSpec?: EventSpec
   selectedSubmapIndex?: number | null
@@ -39,6 +42,7 @@ function renderLegs(
   appearance: AppearanceSettings,
   spec: EventSpec,
   excludeControlId?: string | null,
+  handlesOnly?: boolean,
 ): React.ReactNode[] {
   if (course.controls.length < 2 || course.type === 'score') return []
   const dims = getSymbolDims(spec)
@@ -83,7 +87,7 @@ function renderLegs(
       const pointsStr = clipped.map(p => `${p.x},${p.y}`).join(' ')
       const legKey = `${course.id}-${course.controls[i].id}-${cc.id}`
       const linecap = dashArray ? 'butt' : 'round'
-      if (outlineSw > 0) {
+      if (!handlesOnly && outlineSw > 0) {
         elements.push(
           <polyline
             key={`${legKey}-outline`}
@@ -97,18 +101,20 @@ function renderLegs(
           />
         )
       }
-      elements.push(
-        <polyline
-          key={legKey}
-          points={pointsStr}
-          fill="none"
-          stroke={legColor}
-          strokeWidth={strokeWidth}
-          strokeLinecap={linecap}
-          strokeLinejoin="round"
-          {...(dashArray ? { strokeDasharray: dashArray } : {})}
-        />
-      )
+      if (!handlesOnly) {
+        elements.push(
+          <polyline
+            key={legKey}
+            points={pointsStr}
+            fill="none"
+            stroke={legColor}
+            strokeWidth={strokeWidth}
+            strokeLinecap={linecap}
+            strokeLinejoin="round"
+            {...(dashArray ? { strokeDasharray: dashArray } : {})}
+          />
+        )
+      }
 
       if (showBendHandles) {
         const handleR = BEND_HANDLE_R_MM * upm
@@ -157,7 +163,7 @@ function renderLegs(
 
       const legKey = `${course.id}-${course.controls[i].id}-${cc.id}`
       const linecap = dashArray ? 'butt' : 'round'
-      if (outlineSw > 0) {
+      if (!handlesOnly && outlineSw > 0) {
         elements.push(
           <line
             key={`${legKey}-outline`}
@@ -169,22 +175,24 @@ function renderLegs(
           />
         )
       }
-      elements.push(
-        <line
-          key={legKey}
-          x1={startX} y1={startY} x2={endX} y2={endY}
-          stroke={legColor}
-          strokeWidth={strokeWidth}
-          strokeLinecap={linecap}
-          {...(dashArray ? { strokeDasharray: dashArray } : {})}
-        />
-      )
+      if (!handlesOnly) {
+        elements.push(
+          <line
+            key={legKey}
+            x1={startX} y1={startY} x2={endX} y2={endY}
+            stroke={legColor}
+            strokeWidth={strokeWidth}
+            strokeLinecap={linecap}
+            {...(dashArray ? { strokeDasharray: dashArray } : {})}
+          />
+        )
+      }
     }
   }
   return elements
 }
 
-export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, appearance, projectSpec, selectedSubmapIndex }: Props) {
+export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, handlesOnly = false, appearance, projectSpec, selectedSubmapIndex }: Props) {
   useRenderTracker('LegsLayer')
   const draggingControlId = useStore(s => s.editor.draggingControlId)
   const controlMap = useMemo(() => controlsById(controls), [controls])
@@ -201,7 +209,7 @@ export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBe
 
   const spec = resolveSpec(projectSpec, course.spec)
   const upm = unitsPerMm(map)
-  const elements = renderLegs(effectiveCourse, controlMap, map.scale, upm, showBendHandles, appearance, spec, draggingControlId)
+  const elements = renderLegs(effectiveCourse, controlMap, map.scale, upm, showBendHandles, appearance, spec, draggingControlId, handlesOnly)
   if (elements.length === 0) return null
   return <g style={{ pointerEvents: 'none' }}>{elements}</g>
 })

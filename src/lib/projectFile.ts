@@ -52,6 +52,9 @@ function validateProject(raw: unknown): Project {
   if (!Array.isArray(obj.textLabels)) obj.textLabels = []
   if (!Array.isArray(obj.imageOverlays)) obj.imageOverlays = []
 
+  if (typeof obj.overprint !== 'number' || !isFinite(obj.overprint as number)) obj.overprint = 1
+  else obj.overprint = Math.max(0, Math.min(1, obj.overprint as number))
+
   const mapScale = typeof mc.scale === 'number' && isFinite(mc.scale) && mc.scale > 0 ? mc.scale : 10000
   for (const sb of obj.scaleBars as Record<string, unknown>[]) {
     if (typeof sb.scale !== 'number' || !isFinite(sb.scale) || sb.scale <= 0) sb.scale = mapScale
