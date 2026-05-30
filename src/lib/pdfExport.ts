@@ -1011,7 +1011,8 @@ function drawScaleBar(
   printScale: number,
 ) {
   const scaleDen =  printScale
-  const segMm = (sb.segmentLengthM * 1000) / scaleDen
+  const segMm = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / scaleDen
+  const segRealM = sb.fixedCmSegments ? scaleDen / 100 : sb.segmentLengthM
   const totalMm = segMm * sb.segments
   const barH = 2.0
   const textH = 2.5
@@ -1061,7 +1062,7 @@ function drawScaleBar(
     doc.line(tx, barY - tickH, tx, barY)
 
     if (i === 0 || i === 1 || i === sb.segments) {
-      const label = fmtDist(i * sb.segmentLengthM)
+      const label = fmtDist(i * segRealM)
       doc.text(label, tx, barY - tickH - textH * 0.15, { align: 'center' })
     }
   }

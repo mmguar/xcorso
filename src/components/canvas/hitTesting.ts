@@ -297,7 +297,7 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
 
   for (const sb of project.scaleBars) {
     const pos = posOverrides?.[sb.id] ?? sb.position
-    const segMmOnPaper = (sb.segmentLengthM * 1000) / (sb.scale ?? project.map.scale)
+    const segMmOnPaper = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / (sb.scale ?? project.map.scale)
     const segU = segMmOnPaper * upm
     const totalU = segU * sb.segments
     const pad = 3 * upm
