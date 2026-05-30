@@ -27,6 +27,12 @@ interface Props {
   map: MapConfig
   spec: EventSpec
   selectedAnnotationId: string | null
+  /**
+   * 'ink'   — the purple ISOM symbols (709/710/711) that participate in overprint.
+   * 'chrome' — north arrows, selection outlines and pending previews (never overprinted).
+   * The caller renders 'ink' twice (a solid pass + a multiply pass) to crossfade overprint.
+   */
+  render: 'ink' | 'chrome'
 }
 
 // ── 711 Out-of-bounds route ──────────────────────────────────────────────────
@@ -62,8 +68,8 @@ function ForbiddenRoute({ points, upm, scale, color, spec }: {
 // ── 710 Crossing point ───────────────────────────────────────────────────────
 // Two outward-curving arcs like )( marking a mandatory crossing.
 
-function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec, selected }: {
-  center: MapPoint; upm: number; scale: number; rotation: number; elongation: number; color: string; spec: EventSpec; selected: boolean
+function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec }: {
+  center: MapPoint; upm: number; scale: number; rotation: number; elongation: number; color: string; spec: EventSpec
 }) {
   const { x, y } = center
   const d = dims(upm, scale, spec)
@@ -71,9 +77,6 @@ function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec, 
   // Each half is a quadratic with control point (midX, ±ctrlY) ending tangent-vertical
   // at the inner pinch (midX, ±ext), joined across the gap by a straight vertical line.
   const { spread, midX, ctrlY, totalHH } = crossingPointCurve(d, ext)
-
-  const strokeW = 0.2 * upm
-  const handleR = 1 * upm
 
   const rightD =
     `M ${x + spread} ${y - totalHH} Q ${x + midX} ${y - ctrlY - ext} ${x + midX} ${y - ext}` +
@@ -88,21 +91,6 @@ function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec, 
     <g transform={`rotate(${rotation}, ${x}, ${y})`}>
       <path d={rightD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
       <path d={leftD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
-      {selected && (
-        <>
-          <circle
-            cx={x} cy={y - totalHH - handleR * 2}
-            r={handleR}
-            fill="#a626ff" stroke="white" strokeWidth={strokeW}
-          />
-          <rect
-            x={x - handleR} y={y + totalHH + handleR}
-            width={handleR * 2} height={handleR * 2}
-            rx={strokeW * 2}
-            fill="#a626ff" stroke="white" strokeWidth={strokeW}
-          />
-        </>
-      )}
     </g>
   )
 }
@@ -189,61 +177,64 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId }: Props) {
+export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId, render }: Props) {
   useRenderTracker('AnnotationsLayer')
   const color = '#a626ff'
   const baseId = useId()
   const upm = unitsPerMm(map)
   const scale = map.scale
 
+  // ── Ink pass: the purple ISOM symbols (709/710/711) that overprint the map. ──
+  if (render === 'ink') {
+    const inkSymbol = (ann: Annotation) => {
+      if (ann.type === 'crossing_point' && ann.points[0]) {
+        return (
+          <CrossingPoint key={ann.id} center={ann.points[0]} upm={upm} scale={scale}
+            rotation={ann.rotation ?? 0} elongation={ann.elongation ?? 0}
+            color={color} spec={spec} />
+        )
+      }
+      if (ann.type === 'forbidden_route') {
+        return <ForbiddenRoute key={ann.id} points={ann.points} upm={upm} scale={scale} color={color} spec={spec} />
+      }
+      if (ann.type === 'out_of_bounds') {
+        return (
+          <OutOfBoundsArea key={ann.id} points={ann.points} upm={upm} scale={scale} color={color}
+            patternId={`${baseId}-oob-${ann.id}`} spec={spec} />
+        )
+      }
+      return null
+    }
+    return (
+      <g style={{ pointerEvents: 'none' }}>
+        {annotations.filter(a => a.type !== 'north_arrow').map(inkSymbol)}
+      </g>
+    )
+  }
+
+  // ── Chrome pass: north arrows, selection outline, pending previews. ──────────
+  // North arrows are excluded from overprint (their white "N" would vanish under
+  // a multiply blend), so they live here at full opacity.
+  const selectedOob = selectedAnnotationId
+    ? annotations.find(a => a.id === selectedAnnotationId && a.type === 'out_of_bounds')
+    : undefined
+
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {annotations.map((ann, idx) => {
-        if (ann.type === 'crossing_point' && ann.points[0]) {
-          return (
-            <g key={ann.id}>
-              <CrossingPoint center={ann.points[0]} upm={upm} scale={scale}
-                rotation={ann.rotation ?? 0} elongation={ann.elongation ?? 0}
-                color={color} spec={spec}
-                selected={ann.id === selectedAnnotationId} />
-            </g>
-          )
-        }
-        if (ann.type === 'forbidden_route') {
-          return (
-            <g key={ann.id}>
-              <ForbiddenRoute points={ann.points} upm={upm} scale={scale} color={color} spec={spec} />
-            </g>
-          )
-        }
-        if (ann.type === 'out_of_bounds') {
-          const selected = ann.id === selectedAnnotationId
-          return (
-            <g key={ann.id}>
-              <OutOfBoundsArea points={ann.points} upm={upm} scale={scale} color={color}
-                patternId={`${baseId}-oob-${idx}`} spec={spec} />
-              {selected && ann.points.length >= 3 && (
-                <path
-                  d={ann.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'}
-                  fill="none" stroke={color} strokeWidth={0.3 * upm}
-                  strokeDasharray={`${1.5 * upm} ${1.5 * upm}`}
-                />
-              )}
-            </g>
-          )
-        }
-        if (ann.type === 'north_arrow' && ann.points[0]) {
-          return (
-            <g key={ann.id}>
-              <NorthArrow center={ann.points[0]} upm={upm} scale={scale}
-                annScale={ann.scale ?? 1} rotation={ann.rotation ?? 0}
-                color={ann.color ?? '#38bdf8'} textColor={ann.textColor ?? '#ffffff'}
-                spec={spec} selected={ann.id === selectedAnnotationId} />
-            </g>
-          )
-        }
-        return null
-      })}
+      {selectedOob && selectedOob.points.length >= 3 && (
+        <path
+          d={selectedOob.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'}
+          fill="none" stroke={color} strokeWidth={0.3 * upm}
+          strokeDasharray={`${1.5 * upm} ${1.5 * upm}`}
+        />
+      )}
+
+      {annotations.filter(a => a.type === 'north_arrow').map(ann => ann.points[0] ? (
+        <NorthArrow key={ann.id} center={ann.points[0]} upm={upm} scale={scale}
+          annScale={ann.scale ?? 1} rotation={ann.rotation ?? 0}
+          color={ann.color ?? '#38bdf8'} textColor={ann.textColor ?? '#ffffff'}
+          spec={spec} selected={ann.id === selectedAnnotationId} />
+      ) : null)}
 
       {pendingPoints.length > 0 && pendingType === 'forbidden_route' && (
         <g opacity={0.5}>
@@ -253,7 +244,7 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
       {pendingPoints.length > 0 && pendingType === 'crossing_point' && (
         <g opacity={0.5}>
           <CrossingPoint center={pendingPoints[0]} upm={upm} scale={scale}
-            rotation={0} elongation={0} color={color} spec={spec} selected={false} />
+            rotation={0} elongation={0} color={color} spec={spec} />
         </g>
       )}
       {pendingPoints.length >= 1 && pendingType === 'out_of_bounds' && (() => {

@@ -116,8 +116,12 @@ function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; 
   )
 }
 
-function TextLabelSvg({ tl, map, selected }: { tl: TextLabel; map: MapConfig; selected: boolean }) {
-  const upm = unitsPerMm(map)
+function TextLabelSvg({ tl, map, selected, printScaleOverride }: { tl: TextLabel; map: MapConfig; selected: boolean; printScaleOverride?: number }) {
+  const baseUpm = unitsPerMm(map)
+  // Text labels are a fixed size in mm on the printed page (like scale bars), so
+  // when a print-scale override is active the on-screen size must track it too —
+  // otherwise the editor shows a different size than the exported PDF.
+  const upm = printScaleOverride ? baseUpm * printScaleOverride / map.scale : baseUpm
   const fontSize = tl.fontSizeMm * upm
   const strokeW = 0.2 * upm
 
@@ -231,6 +235,7 @@ export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels
             tl={effectiveTl}
             map={map}
             selected={tl.id === selectedOverlayId}
+            printScaleOverride={printScaleOverride}
           />
         )
       })}

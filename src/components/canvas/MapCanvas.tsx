@@ -156,7 +156,9 @@ export function MapCanvas({ loadedMap }: Props) {
   const hdSvgRef = useRef<SVGSVGElement>(null)
   const hdMapGRef = useRef<SVGGElement>(null)
   const overlayGRef = useRef<SVGGElement>(null)
+  const overlayMultGRef = useRef<SVGGElement>(null)
   const courseGRef = useRef<SVGGElement>(null)
+  const courseMultGRef = useRef<SVGGElement>(null)
   const aboveBorderGRef = useRef<SVGGElement>(null)
   const dragLegsRef = useRef<DragLegsHandle>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
@@ -173,7 +175,9 @@ export function MapCanvas({ loadedMap }: Props) {
     }
     if (hdMapGRef.current) hdMapGRef.current.style.transform = t
     if (overlayGRef.current) overlayGRef.current.style.transform = t
+    if (overlayMultGRef.current) overlayMultGRef.current.style.transform = t
     if (courseGRef.current) courseGRef.current.style.transform = t
+    if (courseMultGRef.current) courseMultGRef.current.style.transform = t
     // In layout mode during a map pan, overlays are page-relative — freeze them
     // so they don't slide with the map. setLayoutMapCenter shifts their map coords
     // on pointer-up, and the post-render syncTransform applies the final transform.
@@ -311,7 +315,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragOffset: { dx: number; dy: number } | null = null
     let dragStarted = false
     let dragOrigPos: { x: number; y: number } | null = null
-    let dragControlEl: SVGGElement | null = null
+    // The dragged control is rendered in both the solid and multiply overprint
+    // passes; transform every copy so they move together.
+    let dragControlEls: SVGGElement[] = []
     let pendingControlPos: { x: number; y: number } | null = null
     let pendingControlRaf = 0
 
@@ -395,6 +401,12 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Pointer down ─────────────────────────────────────────────────────────
     function onDown(e: PointerEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return
+      // Refresh the cached rect at the start of every gesture. ResizeObserver only
+      // fires on size changes and the scroll listener only on window scroll, so a
+      // position-only shift of the canvas (header settling, layout reflow) would
+      // otherwise leave rect.top stale — making every hit-test land below the
+      // cursor, i.e. the handle's hitbox feeling offset toward the top.
+      rectCacheRef.current = div.getBoundingClientRect()
       div.setPointerCapture(e.pointerId)
       pos.set(e.pointerId, { x: e.clientX, y: e.clientY })
       down.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -839,8 +851,10 @@ export function MapCanvas({ loadedMap }: Props) {
           dragStarted = true
           const ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
           dragOrigPos = ctrl ? { ...ctrl.position } : null
-          const og = courseGRef.current
-          dragControlEl = og?.querySelector(`[data-control-id="${dragControlId}"]`) as SVGGElement | null
+          const sel = `[data-control-id="${dragControlId}"]`
+          dragControlEls = [courseGRef.current, courseMultGRef.current]
+            .map(g => g?.querySelector(sel) as SVGGElement | null)
+            .filter((el): el is SVGGElement => el != null)
           dragLegsRef.current?.begin(dragControlId)
         }
         const rect = getRect()
@@ -849,10 +863,10 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!pendingControlRaf) {
           pendingControlRaf = requestAnimationFrame(() => {
             pendingControlRaf = 0
-            if (pendingControlPos && dragOrigPos && dragControlEl) {
+            if (pendingControlPos && dragOrigPos && dragControlEls.length) {
               const dx = pendingControlPos.x - dragOrigPos.x
               const dy = pendingControlPos.y - dragOrigPos.y
-              dragControlEl.style.transform = `translate(${dx}px,${dy}px)`
+              for (const el of dragControlEls) el.style.transform = `translate(${dx}px,${dy}px)`
             }
             if (pendingControlPos) {
               dragLegsRef.current?.update(pendingControlPos)
@@ -1075,7 +1089,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragControlId && dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
-        if (dragControlEl) { dragControlEl.style.transform = ''; dragControlEl = null }
+        if (dragControlEls.length) { for (const el of dragControlEls) el.style.transform = ''; dragControlEls = [] }
         dragLegsRef.current?.end()
         dragOrigPos = null
         useStore.getState().setDraggingControl(null)
@@ -1250,7 +1264,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
-        if (dragControlEl) { dragControlEl.style.transform = ''; dragControlEl = null }
+        if (dragControlEls.length) { for (const el of dragControlEls) el.style.transform = ''; dragControlEls = [] }
         dragLegsRef.current?.end()
         dragOrigPos = null
         useStore.getState().setDraggingControl(null)
@@ -1380,6 +1394,7 @@ export function MapCanvas({ loadedMap }: Props) {
   }
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
+  const overprint = useStore(s => s.project?.overprint ?? 1)
   const gapSize = useStore(s => s.editor.gapSize)
   const gapRebuild = useStore(s => s.editor.gapRebuild)
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
@@ -1406,11 +1421,28 @@ export function MapCanvas({ loadedMap }: Props) {
     : activeTool === 'select' ? 'grab'
     : 'crosshair'
 
+  // Overprint crossfade: t=0 → solid knockout ink, t=1 → full multiply overprint.
+  // The multiply pass lives in its own sibling <svg> (a direct child of the
+  // container) so its backdrop is the map — putting mix-blend-mode inside the
+  // transformed group would blend against an empty backdrop instead.
+  const overprintT = Math.max(0, Math.min(1, overprint))
+  const annBase = {
+    annotations,
+    pendingPoints: pendingAnnotationPoints,
+    pendingType: getAnnotationType(),
+    cursorPoint: oobCursorPoint,
+    map,
+    spec: resolveSpec(projectSpec, selectedCourse?.spec),
+    selectedAnnotationId,
+  }
+
   return (
     <div
       ref={divRef}
       className="w-full h-full overflow-hidden bg-gray-100 relative"
-      style={{ cursor, touchAction: 'none', userSelect: 'none' }}
+      // `isolation: isolate` keeps the overprint multiply blending against the
+      // map deterministically (otherwise GPU layer promotion drops the backdrop).
+      style={{ cursor, touchAction: 'none', userSelect: 'none', isolation: 'isolate' }}
     >
       {/* Map layer — HTML div+canvas for GPU-composited pan/zoom */}
       <div
@@ -1448,33 +1480,48 @@ export function MapCanvas({ loadedMap }: Props) {
           </g>
         </svg>
       )}
-      {/* Annotations layer — below course and border */}
+      {/* Annotations — solid ink pass + chrome (below course and border) */}
       <svg key="overlay" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }}>
         <g ref={overlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
-          <AnnotationsLayer
-            annotations={annotations}
-            pendingPoints={pendingAnnotationPoints}
-            pendingType={getAnnotationType()}
-            cursorPoint={oobCursorPoint}
-            map={map}
-            spec={resolveSpec(projectSpec, selectedCourse?.spec)}
-            selectedAnnotationId={selectedAnnotationId}
-          />
+          {overprintT < 1 && (
+            <g opacity={1 - overprintT}>
+              <AnnotationsLayer {...annBase} render="ink" />
+            </g>
+          )}
+          <AnnotationsLayer {...annBase} render="chrome" />
         </g>
       </svg>
+      {/* Annotation overprint (multiply) pass — blends with the map below */}
+      {overprintT > 0 && (
+        <svg key="overlay-mult" width="100%" height="100%"
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', opacity: overprintT }}>
+          <g ref={overlayMultGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
+            <AnnotationsLayer {...annBase} render="ink" />
+          </g>
+        </svg>
+      )}
 
-      {/* Course layer (controls + labels + legs) — below the border mask */}
+      {/* Course layer (controls + labels + legs) — below the border mask.
+          Solid ink pass + chrome (drag preview, bend handles, debug). */}
       <svg key="course" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <g ref={courseGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
-          <LegsLayer
-            course={selectedCourse}
-            controls={controls}
-            map={map}
-            showBendHandles={activeTool === 'bend'}
-            appearance={appearance}
-            projectSpec={projectSpec}
-            selectedSubmapIndex={selectedSubmapIndex}
-          />
+          {overprintT < 1 && (
+            <g opacity={1 - overprintT}>
+              <LegsLayer
+                course={selectedCourse}
+                controls={controls}
+                map={map}
+                appearance={appearance}
+                projectSpec={projectSpec}
+                selectedSubmapIndex={selectedSubmapIndex}
+              />
+              <ControlsLayer
+                controls={layoutControls}
+                course={selectedCourse}
+              />
+            </g>
+          )}
+          {/* Drag preview — chrome, always solid so it stays visible mid-drag. */}
           <DragLegsLayer
             ref={dragLegsRef}
             courses={courses}
@@ -1485,10 +1532,19 @@ export function MapCanvas({ loadedMap }: Props) {
             projectSpec={projectSpec}
             viewportScale={vp.scale}
           />
-          <ControlsLayer
-            controls={layoutControls}
-            course={selectedCourse}
-          />
+          {/* Bend handles (white) — kept out of the overprint multiply. */}
+          {activeTool === 'bend' && (
+            <LegsLayer
+              course={selectedCourse}
+              controls={controls}
+              map={map}
+              showBendHandles
+              handlesOnly
+              appearance={appearance}
+              projectSpec={projectSpec}
+              selectedSubmapIndex={selectedSubmapIndex}
+            />
+          )}
           {import.meta.env.DEV && (
             <DebugHitboxes controls={controls} map={map} vp={vp} selectedCourseId={selectedCourseId} appearance={appearance} projectSpec={projectSpec} />
           )}
@@ -1514,6 +1570,26 @@ export function MapCanvas({ loadedMap }: Props) {
           )
         })()}
       </svg>
+      {/* Course overprint (multiply) pass — legs + controls + labels blend with the map */}
+      {overprintT > 0 && (
+        <svg key="course-mult" width="100%" height="100%"
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', opacity: overprintT }}>
+          <g ref={courseMultGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
+            <LegsLayer
+              course={selectedCourse}
+              controls={controls}
+              map={map}
+              appearance={appearance}
+              projectSpec={projectSpec}
+              selectedSubmapIndex={selectedSubmapIndex}
+            />
+            <ControlsLayer
+              controls={layoutControls}
+              course={selectedCourse}
+            />
+          </g>
+        </svg>
+      )}
 
       {/* Layout mode page overlay (border mask) */}
       {layoutMode && layoutCourse?.layout && (
