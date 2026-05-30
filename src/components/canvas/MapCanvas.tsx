@@ -401,6 +401,12 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Pointer down ─────────────────────────────────────────────────────────
     function onDown(e: PointerEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return
+      // Refresh the cached rect at the start of every gesture. ResizeObserver only
+      // fires on size changes and the scroll listener only on window scroll, so a
+      // position-only shift of the canvas (header settling, layout reflow) would
+      // otherwise leave rect.top stale — making every hit-test land below the
+      // cursor, i.e. the handle's hitbox feeling offset toward the top.
+      rectCacheRef.current = div.getBoundingClientRect()
       div.setPointerCapture(e.pointerId)
       pos.set(e.pointerId, { x: e.clientX, y: e.clientY })
       down.set(e.pointerId, { x: e.clientX, y: e.clientY })

@@ -1180,14 +1180,29 @@ export async function exportCoursePdf(
     const dpi = options.rasterDpi ?? 300
     let targetPx: { w: number; h: number } | undefined
     if (loadedMap.type === 'svg') {
-      const mapMmW = mapToMm({ x: loadedMap.bounds.maxX, y: 0 }, project.map, options.printScale).x
-        - mapToMm({ x: loadedMap.bounds.minX, y: 0 }, project.map, options.printScale).x
-      const mapMmH = mapToMm({ x: 0, y: loadedMap.bounds.maxY }, project.map, options.printScale).y
-        - mapToMm({ x: 0, y: loadedMap.bounds.minY }, project.map, options.printScale).y
-      targetPx = {
-        w: Math.ceil(Math.abs(mapMmW) / 25.4 * dpi),
-        h: Math.ceil(Math.abs(mapMmH) / 25.4 * dpi),
+      // The map is rasterised once and reused on every page, but courses can be
+      // exported at different scales (scaleOverrides). A larger scale (smaller
+      // denominator) draws the map physically bigger on paper, so size the raster
+      // for the largest scale used — otherwise the most zoomed-in page upscales a
+      // raster sized for the default scale and looks pixelated.
+      const scaleDen = Math.min(
+        options.printScale,
+        ...Object.values(options.scaleOverrides ?? {}),
+      )
+      const mapMmW = mapToMm({ x: loadedMap.bounds.maxX, y: 0 }, project.map, scaleDen).x
+        - mapToMm({ x: loadedMap.bounds.minX, y: 0 }, project.map, scaleDen).x
+      const mapMmH = mapToMm({ x: 0, y: loadedMap.bounds.maxY }, project.map, scaleDen).y
+        - mapToMm({ x: 0, y: loadedMap.bounds.minY }, project.map, scaleDen).y
+      let pxW = Math.ceil(Math.abs(mapMmW) / 25.4 * dpi)
+      let pxH = Math.ceil(Math.abs(mapMmH) / 25.4 * dpi)
+      // Cap the longest edge so an extreme scale can't blow past canvas limits.
+      const longest = Math.max(pxW, pxH)
+      if (longest > MAX_RASTER_PX) {
+        const k = MAX_RASTER_PX / longest
+        pxW = Math.max(1, Math.round(pxW * k))
+        pxH = Math.max(1, Math.round(pxH * k))
       }
+      targetPx = { w: pxW, h: pxH }
     }
     try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1, targetPx) } catch { /* fall back to no map */ }
   }
