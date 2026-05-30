@@ -150,53 +150,47 @@ export function canExportPdf(map: MapConfig): boolean {
 
 // ── Map rasterization ──────────────────────────────────────────────────────
 
-async function rasterizeMap(loadedMap: LoadedMap, opacity = 1, targetPx?: { w: number; h: number }): Promise<string> {
-  if (loadedMap.type === 'svg') {
-    const svgEl = loadedMap.content as SVGElement
-    const clone = svgEl.cloneNode(true) as SVGElement
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+interface RasterCrop {
+  minX: number; minY: number; width: number; height: number
+}
 
-    const { width, height } = loadedMap.bounds
-    let canvasW: number, canvasH: number
-    if (targetPx) {
-      canvasW = targetPx.w
-      canvasH = targetPx.h
-    } else {
-      const maxDim = Math.max(width, height)
-      const renderScale = MAX_RASTER_PX / maxDim
-      canvasW = Math.ceil(width * renderScale)
-      canvasH = Math.ceil(height * renderScale)
-    }
+async function rasterizeSvgRegion(
+  svgEl: SVGElement,
+  crop: RasterCrop,
+  canvasW: number,
+  canvasH: number,
+  opacity: number,
+): Promise<string> {
+  const clone = svgEl.cloneNode(true) as SVGElement
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('viewBox', `${crop.minX} ${crop.minY} ${crop.width} ${crop.height}`)
+  clone.setAttribute('width', String(canvasW))
+  clone.setAttribute('height', String(canvasH))
 
-    clone.setAttribute('width', String(canvasW))
-    clone.setAttribute('height', String(canvasH))
-
-    const svgString = new XMLSerializer().serializeToString(clone)
-    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-
-    try {
-      const img = new Image()
-      img.src = url
-      await img.decode()
-
-      const canvas = document.createElement('canvas')
-      canvas.width = canvasW
-      canvas.height = canvasH
-      const ctx = canvas.getContext('2d')!
-      ctx.fillStyle = 'white'
-      ctx.fillRect(0, 0, canvasW, canvasH)
-      ctx.globalAlpha = opacity
-      ctx.drawImage(img, 0, 0, canvasW, canvasH)
-      return canvas.toDataURL('image/jpeg', 0.92)
-    } finally {
-      URL.revokeObjectURL(url)
-    }
+  const svgString = new XMLSerializer().serializeToString(clone)
+  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = canvasW
+    canvas.height = canvasH
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = 'white'
+    ctx.fillRect(0, 0, canvasW, canvasH)
+    ctx.globalAlpha = opacity
+    ctx.drawImage(img, 0, 0, canvasW, canvasH)
+    return canvas.toDataURL('image/jpeg', 0.92)
+  } finally {
+    URL.revokeObjectURL(url)
   }
+}
 
+async function rasterizeBitmap(loadedMap: LoadedMap, opacity: number): Promise<string> {
   const url = loadedMap.content as string
   if (url.startsWith('data:')) return url
-
   const img = new Image()
   img.src = url
   await img.decode()
@@ -1174,38 +1168,15 @@ export async function exportCoursePdf(
 
   /** After svg2pdf fails once, use raster fallback for remaining pages. */
   let svgEmbedDisabled = useRaster
-  let mapDataUrl: string | null = null
+  let bitmapDataUrl: string | null = null
 
-  if (loadedMap && (loadedMap.type !== 'svg' || useRaster)) {
-    const dpi = options.rasterDpi ?? 300
-    let targetPx: { w: number; h: number } | undefined
-    if (loadedMap.type === 'svg') {
-      // The map is rasterised once and reused on every page, but courses can be
-      // exported at different scales (scaleOverrides). A larger scale (smaller
-      // denominator) draws the map physically bigger on paper, so size the raster
-      // for the largest scale used — otherwise the most zoomed-in page upscales a
-      // raster sized for the default scale and looks pixelated.
-      const scaleDen = Math.min(
-        options.printScale,
-        ...Object.values(options.scaleOverrides ?? {}),
-      )
-      const mapMmW = mapToMm({ x: loadedMap.bounds.maxX, y: 0 }, project.map, scaleDen).x
-        - mapToMm({ x: loadedMap.bounds.minX, y: 0 }, project.map, scaleDen).x
-      const mapMmH = mapToMm({ x: 0, y: loadedMap.bounds.maxY }, project.map, scaleDen).y
-        - mapToMm({ x: 0, y: loadedMap.bounds.minY }, project.map, scaleDen).y
-      let pxW = Math.ceil(Math.abs(mapMmW) / 25.4 * dpi)
-      let pxH = Math.ceil(Math.abs(mapMmH) / 25.4 * dpi)
-      // Cap the longest edge so an extreme scale can't blow past canvas limits.
-      const longest = Math.max(pxW, pxH)
-      if (longest > MAX_RASTER_PX) {
-        const k = MAX_RASTER_PX / longest
-        pxW = Math.max(1, Math.round(pxW * k))
-        pxH = Math.max(1, Math.round(pxH * k))
-      }
-      targetPx = { w: pxW, h: pxH }
-    }
-    try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1, targetPx) } catch { /* fall back to no map */ }
+  // For bitmap (non-SVG) maps, pre-rasterize once — the source pixels are fixed.
+  if (loadedMap && loadedMap.type !== 'svg') {
+    try { bitmapDataUrl = await rasterizeBitmap(loadedMap, options.mapOpacity ?? 1) } catch { /* fall back to no map */ }
   }
+
+  const rasterDpi = options.rasterDpi ?? 300
+  const mapOpacity = options.mapOpacity ?? 1
 
   /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */
   function prepareSvgForPdfEmbed(): SVGElement {
@@ -1222,26 +1193,20 @@ export async function exportCoursePdf(
         ? (docEl as unknown as SVGElement)
         : (svgEl.cloneNode(true) as SVGElement)
 
-    // ocad2geojson sets fill="transparent" on the root <svg>. svg2pdf.js treats
-    // this as rgba(0,0,0,0) whose alpha zero poisons the PDF graphics-state
-    // opacity for every descendant — even those with their own solid fill.
-    // Replacing with "none" avoids the opacity side-effect while keeping the
-    // same visual result (unfilled by default).
     if (root.getAttribute('fill') === 'transparent') {
       root.setAttribute('fill', 'none')
     }
 
-    const opacity = options.mapOpacity ?? 1
-    if (opacity < 1) {
+    if (mapOpacity < 1) {
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-      g.setAttribute('opacity', String(opacity))
+      g.setAttribute('opacity', String(mapOpacity))
       while (root.firstChild) g.appendChild(root.firstChild)
       root.appendChild(g)
     }
     return root
   }
 
-  async function embedMap(toPage: (pt: MapPoint) => Pos) {
+  async function embedMap(toPage: (pt: MapPoint) => Pos, pageMmW: number, pageMmH: number) {
     if (!loadedMap) return
     const tl = toPage({ x: loadedMap.bounds.minX, y: loadedMap.bounds.minY })
     const br = toPage({ x: loadedMap.bounds.maxX, y: loadedMap.bounds.maxY })
@@ -1254,10 +1219,36 @@ export async function exportCoursePdf(
         return
       } catch {
         svgEmbedDisabled = true
-        if (!mapDataUrl) try { mapDataUrl = await rasterizeMap(loadedMap, options.mapOpacity ?? 1) } catch {}
       }
     }
-    if (mapDataUrl) doc.addImage(mapDataUrl, 'JPEG', tl.x, tl.y, w, h)
+    if (loadedMap.type === 'svg') {
+      // Rasterize just the visible page region from the SVG at the target DPI,
+      // so a zoomed-in page gets a fresh, high-resolution render instead of
+      // stretching a single pre-rasterized image of the whole map.
+      const pxW = Math.ceil(pageMmW / 25.4 * rasterDpi)
+      const pxH = Math.ceil(pageMmH / 25.4 * rasterDpi)
+      const mapBounds = loadedMap.bounds
+      const scaleX = mapBounds.width / w
+      const scaleY = mapBounds.height / h
+      const cropMinX = mapBounds.minX + (-tl.x) * scaleX
+      const cropMinY = mapBounds.minY + (-tl.y) * scaleY
+      const cropW = pageMmW * scaleX
+      const cropH = pageMmH * scaleY
+      let capW = pxW, capH = pxH
+      const longest = Math.max(capW, capH)
+      if (longest > MAX_RASTER_PX) {
+        const k = MAX_RASTER_PX / longest
+        capW = Math.max(1, Math.round(capW * k))
+        capH = Math.max(1, Math.round(capH * k))
+      }
+      try {
+        const svgEl = loadedMap.content as SVGElement
+        const dataUrl = await rasterizeSvgRegion(svgEl, { minX: cropMinX, minY: cropMinY, width: cropW, height: cropH }, capW, capH, mapOpacity)
+        doc.addImage(dataUrl, 'JPEG', 0, 0, pageMmW, pageMmH)
+        return
+      } catch { /* fall through */ }
+    }
+    if (bitmapDataUrl) doc.addImage(bitmapDataUrl, 'JPEG', tl.x, tl.y, w, h)
   }
 
   let pageIndex = 0
@@ -1294,7 +1285,7 @@ export async function exportCoursePdf(
             return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
 
-          await embedMap(toPage)
+          await embedMap(toPage, pw, ph)
 
           // Annotations scale with the export print scale, exactly like control
           // symbols and legs (which use acScale) — keeps their on-paper size
@@ -1400,7 +1391,7 @@ export async function exportCoursePdf(
             return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
 
-          await embedMap(toPage)
+          await embedMap(toPage, cpw, cph)
 
           // Match control/leg sizing (courseScale) so annotations keep the same
           // on-paper size as the overlay under a per-course scale override.
