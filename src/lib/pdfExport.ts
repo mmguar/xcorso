@@ -90,6 +90,8 @@ export interface PdfExportOptions {
   mapOpacity?: number
   mapRendering?: 'vector' | 'raster'
   rasterDpi?: number
+  /** Annotation overprint level: 0 = solid knockout, 1 = full multiply overprint. Default 1. */
+  overprint?: number
 }
 
 export interface CourseFitInfo {
@@ -946,7 +948,8 @@ function drawNorthArrow(
   doc.text('N', textPos.x, textPos.y, { align: 'center', angle: -rotation })
 }
 
-function drawAnnotations(
+// Purple ISOM symbols (709/710/711) — the overprint-able annotation ink.
+function drawAnnotationInk(
   doc: jsPDF,
   annotations: Annotation[],
   toPage: (pt: MapPoint) => Pos,
@@ -960,10 +963,39 @@ function drawAnnotations(
       drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, spec)
     } else if (ann.type === 'out_of_bounds') {
       drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, spec)
-    } else if (ann.type === 'north_arrow' && ann.points[0]) {
+    }
+  }
+}
+
+// North arrows — excluded from overprint (multiply would erase their white "N").
+function drawNorthArrows(
+  doc: jsPDF,
+  annotations: Annotation[],
+  toPage: (pt: MapPoint) => Pos,
+  mapScale: number,
+  spec: EventSpec,
+) {
+  for (const ann of annotations) {
+    if (ann.type === 'north_arrow' && ann.points[0]) {
       drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, spec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
     }
   }
+}
+
+// Crossfade the course/annotation ink between a solid knockout pass and a
+// multiply (overprint) pass against the rasterised map, mirroring the screen.
+// t=0 → solid, t=1 → full overprint. GState is reset to opaque/Normal after.
+function overprintPass(doc: jsPDF, overprint: number, drawInk: () => void) {
+  const t = Math.max(0, Math.min(1, overprint))
+  if (t < 1) {
+    doc.setGState(doc.GState({ opacity: 1 - t }))
+    drawInk()
+  }
+  if (t > 0) {
+    doc.setGState(doc.GState({ opacity: t, blendMode: 'Multiply' }))
+    drawInk()
+  }
+  doc.setGState(doc.GState({ opacity: 1, blendMode: 'Normal' }))
 }
 
 // ── Labelling ───────────────────────────────────────────────────────────────
@@ -1257,15 +1289,18 @@ export async function exportCoursePdf(
           const annColor = '#a626ff'
           const allCtrlSpec = resolveSpec(project.spec)
 
-          setColor(doc, annColor)
-          drawAnnotations(doc, project.annotations, toPage, mapScale, allCtrlSpec)
+          overprintPass(doc, options.overprint ?? 1, () => {
+            setColor(doc, annColor)
+            drawAnnotationInk(doc, project.annotations, toPage, mapScale, allCtrlSpec)
 
-          setColor(doc, ctrlColor)
-          for (const ctrl of project.controls) {
-            const pos = toPage(ctrl.position)
-            drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec, false, ctrl.gaps)
-            drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec)
-          }
+            setColor(doc, ctrlColor)
+            for (const ctrl of project.controls) {
+              const pos = toPage(ctrl.position)
+              drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec, false, ctrl.gaps)
+              drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec)
+            }
+          })
+          drawNorthArrows(doc, project.annotations, toPage, mapScale, allCtrlSpec)
 
           // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
@@ -1357,8 +1392,9 @@ export async function exportCoursePdf(
           const mapScale = courseScale
           const annColor = '#a626ff'
           const courseSpec = resolveSpec(project.spec, course.spec)
+          overprintPass(doc, options.overprint ?? 1, () => {
           setColor(doc, annColor)
-          drawAnnotations(doc, project.annotations, toPage, mapScale, courseSpec)
+          drawAnnotationInk(doc, project.annotations, toPage, mapScale, courseSpec)
 
           setColor(doc, course.color)
 
@@ -1396,6 +1432,8 @@ export async function exportCoursePdf(
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
             }
           }
+          })
+          drawNorthArrows(doc, project.annotations, toPage, mapScale, courseSpec)
 
           if (layout?.mapBorder) {
             const bx = layout.mapBorder.x

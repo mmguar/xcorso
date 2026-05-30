@@ -148,6 +148,7 @@ export interface AppActions {
   setSelectedCourse: (id: string | null) => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
+  setOverprint: (overprint: number) => void
   setGapSize: (size: number) => void
   setGapRebuild: (on: boolean) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void

@@ -4,6 +4,8 @@ import { useStore } from '../../store'
 export function AppearancePanel() {
   const appearance = useStore(s => s.editor.appearance)
   const setAppearance = useStore(s => s.setAppearance)
+  const overprint = useStore(s => s.project?.overprint ?? 1)
+  const setOverprint = useStore(s => s.setOverprint)
 
   return (
     <div className="p-3 space-y-4 text-sm">
@@ -14,6 +16,16 @@ export function AppearancePanel() {
           min={0.5} max={2.5} step={0.1}
           format={v => `${Math.round(v * 100)}%`}
           onChange={v => setAppearance({ controlScale: v })}
+        />
+      </Section>
+
+      {/* Overprint — multiply course & annotation ink with the map (0 = solid) */}
+      <Section label="Overprint">
+        <SliderRow
+          value={overprint}
+          min={0} max={1} step={0.05}
+          format={v => `${Math.round(v * 100)}%`}
+          onChange={v => setOverprint(v)}
         />
       </Section>
 
