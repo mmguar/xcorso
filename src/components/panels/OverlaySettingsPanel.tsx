@@ -76,21 +76,36 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Segment (m)</span>
+        <span className="w-16 shrink-0">1 cm segs</span>
         <input
-          type="number"
-          min={1}
-          value={segLen}
-          onChange={e => setSegLen(e.target.value)}
-          onBlur={() => {
-            const n = parseInt(segLen)
-            if (!isNaN(n) && n >= 1) updateScaleBar(sb.id, { segmentLengthM: n })
-            else setSegLen(String(sb.segmentLengthM))
-          }}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+          type="checkbox"
+          checked={!!sb.fixedCmSegments}
+          onChange={e => updateScaleBar(sb.id, { fixedCmSegments: e.target.checked })}
+          className="accent-orange-600"
         />
+        <span className="text-[10px] text-gray-400">
+          {sb.fixedCmSegments ? `${Math.round(sb.scale / 100)} m each` : ''}
+        </span>
       </label>
+
+      {!sb.fixedCmSegments && (
+        <label className="flex items-center gap-2 text-xs text-gray-600">
+          <span className="w-16 shrink-0">Segment (m)</span>
+          <input
+            type="number"
+            min={1}
+            value={segLen}
+            onChange={e => setSegLen(e.target.value)}
+            onBlur={() => {
+              const n = parseInt(segLen)
+              if (!isNaN(n) && n >= 1) updateScaleBar(sb.id, { segmentLengthM: n })
+              else setSegLen(String(sb.segmentLengthM))
+            }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+            className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+          />
+        </label>
+      )}
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <span className="w-16 shrink-0">Background</span>
