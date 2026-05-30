@@ -19,9 +19,9 @@ function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; 
   const scaleDen = printScaleOverride ?? sb.scale ?? map.scale
   const scaleStr = `1:${Math.round(scaleDen)}`
 
-  // Convert segment real-world metres to map units
-  // realMetres -> mm on paper: realM * 1_000_000 / scale (µm) / 1000 = realM * 1000 / scale mm
-  const segMmOnPaper = (sb.segmentLengthM * 1000) / scaleDen
+  // Convert segment size to map units
+  const segMmOnPaper = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / scaleDen
+  const segRealM = sb.fixedCmSegments ? scaleDen / 100 : sb.segmentLengthM
   const segUnits = segMmOnPaper * upm
   const totalUnits = segUnits * sb.segments
 
@@ -94,7 +94,7 @@ function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; 
                 fontFamily="Arial, sans-serif"
                 fill="#000000"
               >
-                {fmtDist(i * sb.segmentLengthM)}
+                {fmtDist(i * segRealM)}
               </text>
             )}
           </g>

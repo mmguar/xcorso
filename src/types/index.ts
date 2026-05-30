@@ -218,6 +218,7 @@ export interface ScaleBar {
   segmentLengthM: number     // real-world length per segment in metres (e.g. 100)
   bgAlpha: number            // 0 = transparent, 1 = opaque white
   scale: number              // scale for the bar
+  fixedCmSegments?: boolean  // when true, each segment is exactly 1 cm on paper
 }
 
 export interface TextLabel {
