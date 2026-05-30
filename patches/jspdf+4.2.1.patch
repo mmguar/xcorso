@@ -1,0 +1,35 @@
+diff --git a/node_modules/jspdf/dist/jspdf.es.js b/node_modules/jspdf/dist/jspdf.es.js
+index a8b0b2b..f2b2cfb 100644
+--- a/node_modules/jspdf/dist/jspdf.es.js
++++ b/node_modules/jspdf/dist/jspdf.es.js
+@@ -946,7 +946,7 @@ function GState(parameters) {
+    * @name GState#stroke-opacity
+    * @type {any}
+    */
+-  var supported = "opacity,stroke-opacity".split(",");
++  var supported = "opacity,stroke-opacity,blendMode".split(",");
+   for (var p in parameters) {
+     if (parameters.hasOwnProperty(p) && supported.indexOf(p) >= 0) {
+       this[p] = parameters[p];
+@@ -2754,6 +2754,9 @@ function jsPDF(options) {
+         case "stroke-opacity":
+           out("/CA " + f2(gState[p]));
+           break;
++        case "blendMode":
++          out("/BM /" + gState[p]);
++          break;
+       }
+     }
+     out(">>");
+diff --git a/node_modules/jspdf/types/index.d.ts b/node_modules/jspdf/types/index.d.ts
+index fd21f95..a1d1513 100644
+--- a/node_modules/jspdf/types/index.d.ts
++++ b/node_modules/jspdf/types/index.d.ts
+@@ -1389,6 +1389,7 @@ declare module "jspdf" {
+   export interface GState {
+     opacity?: number;
+     "stroke-opacity"?: number;
++    blendMode?: string;
+   }
+ 
+   export interface Matrix {
