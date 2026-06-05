@@ -99,9 +99,9 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     }
   }
 
-  // The patched ocad2geojson (see patches/) removes debug red circles that
-  // corrupted the library's z-order sort and adds data-order attributes.
-  // This is a defensive cleanup in case any stray debug circles remain.
+  // ocad2geojson >= 2.1.21 removed the debug red circles that used to corrupt
+  // the library's z-order sort (so the old patch is gone). This stays as a
+  // defensive cleanup in case any stray debug circles reappear upstream.
   cleanupSvg(svgEl)
 
   const rasterUrl = await rasterizeSvg(svgEl, bounds)
