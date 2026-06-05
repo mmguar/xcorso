@@ -912,6 +912,7 @@ export function LayoutPanel() {
         rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
         mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
         overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
+        overprintMode: currentProject.overprintMode ?? 'simulated',
       }
 
       const currentMap = useStore.getState().loadedMap

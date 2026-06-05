@@ -40,6 +40,37 @@ export interface LoadedMap {
   renderScale?: number
   /** For OCAD: pre-rasterized image URL for fast pan/zoom */
   rasterUrl?: string
+  /**
+   * For OCAD: rgb() strings of the "top" map colours (black, brown 100%, blue
+   * 100%) that should stay above course ink in the 'below' overprint mode.
+   * Empty/absent when the map has no identifiable such colours.
+   */
+  topOverprintColors?: string[]
+}
+
+/**
+ * Pick the OCAD colours that course ink should sit *below* — black, full brown,
+ * and full blue — matched by the standard ISOM/ISSprOM colour names (with a
+ * black-by-CMYK fallback). Returns their `rgb(r, g, b)` strings as used in the
+ * generated SVG's fill/stroke styles.
+ */
+function extractTopOverprintColors(colors: unknown): string[] {
+  if (!Array.isArray(colors)) return []
+  const fullShade = (n: string) => {
+    const m = n.match(/(\d+)\s*%/)
+    return !m || Number(m[1]) >= 100
+  }
+  const out: string[] = []
+  for (const c of colors) {
+    if (!c || typeof c.rgb !== 'string') continue
+    const name = typeof c.name === 'string' ? c.name.toLowerCase() : ''
+    const cmyk = Array.isArray(c.cmyk) ? c.cmyk.map(Number) : [0, 0, 0, 0]
+    const isBlack = name.includes('black') || (cmyk[0] === 0 && cmyk[1] === 0 && cmyk[2] === 0 && cmyk[3] >= 100)
+    const isBrown = name.includes('brown') && fullShade(name)
+    const isBlue = name.includes('blue') && fullShade(name)
+    if ((isBlack || isBrown || isBlue) && !out.includes(c.rgb)) out.push(c.rgb)
+  }
+  return out
 }
 
 export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
@@ -106,8 +137,10 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
   cleanupSvg(svgEl)
 
   const rasterUrl = await rasterizeSvg(svgEl, bounds)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const topOverprintColors = extractTopOverprintColors((ocadFile as any).colors)
 
-  return { type: 'svg', content: svgEl, bounds, detectedScale, detectedGeoref, rasterUrl }
+  return { type: 'svg', content: svgEl, bounds, detectedScale, detectedGeoref, rasterUrl, topOverprintColors }
 }
 
 function cleanupSvg(svgEl: SVGElement) {

@@ -53,3 +53,35 @@ function appendStyle(el: Element, decl: string): void {
   const prev = el.getAttribute('style')
   el.setAttribute('style', prev ? `${prev};${decl}` : decl)
 }
+
+/**
+ * Prunes a *cloned* OCAD SVG in place so only elements painted in one of the
+ * given `rgb(r, g, b)` colours remain (ocad2geojson puts colours in the `style`
+ * attribute, e.g. `stroke: rgb(0, 0, 0)`). Used to redraw the black/brown/blue
+ * map layers on top of course ink for the 'below' overprint mode. Returns true
+ * if anything was kept.
+ */
+export function pruneSvgToColors(root: Element, rgbs: string[]): boolean {
+  let kept = false
+  for (const child of Array.from(root.children)) {
+    const painted = elementPaint(child)
+    const selfMatches = rgbs.some(rgb => painted.includes(rgb))
+    if (selfMatches) {
+      kept = true
+      continue // keep the element and its whole subtree
+    }
+    if (child.children.length > 0) {
+      if (pruneSvgToColors(child, rgbs)) kept = true
+      else child.remove()
+    } else {
+      child.remove()
+    }
+  }
+  return kept
+}
+
+function elementPaint(el: Element): string {
+  return [el.getAttribute('style'), el.getAttribute('fill'), el.getAttribute('stroke')]
+    .filter(Boolean)
+    .join(' ')
+}

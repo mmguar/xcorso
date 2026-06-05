@@ -160,6 +160,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const overlayMultGRef = useRef<SVGGElement>(null)
   const courseGRef = useRef<SVGGElement>(null)
   const courseMultGRef = useRef<SVGGElement>(null)
+  const topOverlayGRef = useRef<SVGGElement>(null)
   const aboveBorderGRef = useRef<SVGGElement>(null)
   const dragLegsRef = useRef<DragLegsHandle>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
@@ -179,6 +180,7 @@ export function MapCanvas({ loadedMap }: Props) {
     if (overlayMultGRef.current) overlayMultGRef.current.style.transform = t
     if (courseGRef.current) courseGRef.current.style.transform = t
     if (courseMultGRef.current) courseMultGRef.current.style.transform = t
+    if (topOverlayGRef.current) topOverlayGRef.current.style.transform = t
     // In layout mode during a map pan, overlays are page-relative — freeze them
     // so they don't slide with the map. setLayoutMapCenter shifts their map coords
     // on pointer-up, and the post-render syncTransform applies the final transform.
@@ -1474,10 +1476,15 @@ export function MapCanvas({ loadedMap }: Props) {
   // The multiply pass lives in its own sibling <svg> (a direct child of the
   // container) so its backdrop is the map — putting mix-blend-mode inside the
   // transformed group would blend against an empty backdrop instead.
-  // 'none' → solid ink on top (no multiply). 'simulated' and 'below' both use the
-  // multiply pass on the raster screen ('below' gets its true stacking in HD/export,
-  // commit 3); intensity comes from the overprint slider.
-  const overprintT = overprintMode === 'none' ? 0 : Math.max(0, Math.min(1, overprint))
+  //
+  // 'none'      → solid ink on top (no multiply).
+  // 'below'     → only achievable in HD (vector): draw ink solid, then redraw the
+  //               black/brown/blue map layers on top (see topOverlay below). On the
+  //               fast raster screen it falls back to 'simulated'.
+  // 'simulated' → multiply pass at the slider intensity.
+  const topOverprintColors = loadedMap.topOverprintColors ?? []
+  const belowHD = overprintMode === 'below' && !useRaster && loadedMap.type === 'svg' && topOverprintColors.length > 0
+  const overprintT = overprintMode === 'none' || belowHD ? 0 : Math.max(0, Math.min(1, overprint))
   const annBase = {
     annotations,
     pendingPoints: pendingAnnotationPoints,
@@ -1639,6 +1646,17 @@ export function MapCanvas({ loadedMap }: Props) {
               controls={layoutControls}
               course={selectedCourse}
             />
+          </g>
+        </svg>
+      )}
+
+      {/* 'Below' overprint (HD only): redraw the black/brown/blue map layers on
+          top of the course ink so the purple sits beneath them in the stack. */}
+      {belowHD && (
+        <svg key="top-overprint" width="100%" height="100%"
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined }}>
+          <g ref={topOverlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
+            <MapLayer loadedMap={loadedMap} useRaster={false} keepColors={topOverprintColors} transparent />
           </g>
         </svg>
       )}
