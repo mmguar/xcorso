@@ -694,6 +694,16 @@ export function MapCanvas({ loadedMap }: Props) {
             }
           }
 
+          // Pressing outside the selected out-of-bounds area — not on it and not
+          // on its vertex handles (ruled out above) — deselects it, whether the
+          // gesture ends up a tap or a pan.
+          const selAnn = state.editor.selectedAnnotationId
+            ? proj.annotations.find(a => a.id === state.editor.selectedAnnotationId)
+            : null
+          if (selAnn?.type === 'out_of_bounds' && (!annHit || annHit.id !== selAnn.id)) {
+            state.setSelectedAnnotation(null)
+          }
+
           const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
           if (overlayHit) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
