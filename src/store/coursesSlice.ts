@@ -111,8 +111,9 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       if (!project) return
       const course = project.courses.find(c => c.id === courseId)
       if (!course) return
+      const alreadyInCourse = new Set(course.controls.map(cc => cc.controlId))
       const regularControls = project.controls
-        .filter(c => c.type === 'control')
+        .filter(c => c.type === 'control' && !alreadyInCourse.has(c.id))
         .sort((a, b) => a.code - b.code)
       if (regularControls.length === 0) return
       h.mutateProject(p => {
