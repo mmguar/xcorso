@@ -76,6 +76,15 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     if (scalePar?.[0]?.m) detectedScale = scalePar[0].m
   }
 
+  // OCAD parameter-string values are strings (e.g. "4000.000000"). Coerce to a
+  // finite positive number so map.scale is never persisted as a string — a
+  // string scale survives the editing session (JS coerces it in arithmetic) but
+  // is silently discarded by validateProject on reopen.
+  if (detectedScale != null) {
+    const n = Number(detectedScale)
+    detectedScale = Number.isFinite(n) && n > 0 ? Math.round(n) : undefined
+  }
+
   let detectedGeoref: MapGeorefInfo | undefined
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const crs = (ocadFile as any).getCrs?.()
@@ -90,9 +99,9 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     }
   }
 
-  // The patched ocad2geojson (see patches/) removes debug red circles that
-  // corrupted the library's z-order sort and adds data-order attributes.
-  // This is a defensive cleanup in case any stray debug circles remain.
+  // ocad2geojson >= 2.1.21 removed the debug red circles that used to corrupt
+  // the library's z-order sort (so the old patch is gone). This stays as a
+  // defensive cleanup in case any stray debug circles reappear upstream.
   cleanupSvg(svgEl)
 
   const rasterUrl = await rasterizeSvg(svgEl, bounds)

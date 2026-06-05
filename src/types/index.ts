@@ -79,6 +79,7 @@ export interface Control {
   position: MapPoint
   description?: ControlDescription
   gaps?: CircleGap[]         // angular gaps in the control circle/triangle/finish
+  labelOffset?: MapPoint     // offset from control center to label anchor (all-controls layout), in map units
 }
 
 // ─── Courses ────────────────────────────────────────────────────────────────
