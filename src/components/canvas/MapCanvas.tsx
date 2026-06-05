@@ -118,7 +118,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
       })}
       {controls.map(c => {
         const cc = course?.controls.find(cc => cc.controlId === c.id)
-        const offset = cc?.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
+        const offset = cc?.labelOffset ?? c.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
         const lx = c.position.x + offset.x
         const ly = c.position.y + offset.y
         const cr = dims.controlR * upm * controlScale * sf
@@ -330,7 +330,7 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragResize: { id: string; origWidthMap: number; origHeightMap: number; posX: number; posY: number } | null = null
     let dragResizeStarted = false
 
-    let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
+    let dragLabel: { courseId: string | null; courseControlId: string | null; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
 
     let dragLayoutEl: { element: string; sx: number; sy: number; ox: number; oy: number } | null = null
@@ -838,7 +838,8 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!dragLabelStarted) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveCourseLabel()
+          if (dragLabel.courseId && dragLabel.courseControlId) useStore.getState().beginMoveCourseLabel()
+          else useStore.getState().beginMoveControlLabel()
           dragLabelStarted = true
         }
         const rect = getRect()
@@ -846,7 +847,11 @@ export function MapCanvas({ loadedMap }: Props) {
         const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
         if (ctrl) {
           const offset = { x: mapPt.x - dragLabel.dx - ctrl.position.x, y: mapPt.y - dragLabel.dy - ctrl.position.y }
-          useStore.getState().moveCourseLabel(dragLabel.courseId, dragLabel.courseControlId, offset)
+          if (dragLabel.courseId && dragLabel.courseControlId) {
+            useStore.getState().moveCourseLabel(dragLabel.courseId, dragLabel.courseControlId, offset)
+          } else {
+            useStore.getState().moveControlLabel(dragLabel.controlId, offset)
+          }
         }
         return
       }

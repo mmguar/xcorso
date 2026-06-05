@@ -289,7 +289,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           label += ` [${control.points}]`
         }
 
-        const labelOffset = cc?.labelOffset
+        const labelOffset = cc?.labelOffset ?? control.labelOffset
 
         let Shape: (props: ShapeProps) => React.ReactNode
         if (control.type === 'start') {

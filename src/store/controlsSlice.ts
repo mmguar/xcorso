@@ -38,6 +38,16 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       })
     },
 
+    beginMoveControlLabel: () => h.pushUndoSnapshot(),
+
+    moveControlLabel: (id: string, offset: MapPoint) => {
+      h.mutateProjectSilent(p => {
+        const i = p.controls.findIndex(c => c.id === id)
+        if (i === -1) return
+        p.controls = p.controls.map((c, j) => (j === i ? { ...c, labelOffset: offset } : c))
+      })
+    },
+
     deleteControl: (id: string) => {
       h.mutateProject(p => {
         p.controls = p.controls.filter(c => c.id !== id)

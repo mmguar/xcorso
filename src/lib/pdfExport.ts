@@ -1304,7 +1304,8 @@ export async function exportCoursePdf(
             for (const ctrl of project.controls) {
               const pos = toPage(ctrl.position)
               drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec, false, ctrl.gaps)
-              drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec)
+              const loMm = ctrl.labelOffset ? mapToMm(ctrl.labelOffset, project.map, acScale) : undefined
+              drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec, loMm)
             }
           })
           drawNorthArrows(doc, project.annotations, toPage, mapScale, allCtrlSpec)
@@ -1435,7 +1436,8 @@ export async function exportCoursePdf(
             drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange, ctrl.gaps)
             const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
             if (!isSubmapStart && ctrl.type === 'control') {
-              const loMm = cc.labelOffset ? mapToMm(cc.labelOffset, project.map, courseScale) : undefined
+              const lo = cc.labelOffset ?? ctrl.labelOffset
+              const loMm = lo ? mapToMm(lo, project.map, courseScale) : undefined
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
             }
           }
