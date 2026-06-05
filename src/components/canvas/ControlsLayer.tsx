@@ -252,6 +252,11 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         const isInSubmap = submapInfo ? submapInfo.controlIds.has(control.id) : true
         const isActiveInCourse = isInCourse && isInSubmap
 
+        // When viewing a submap, course controls belonging to other submap
+        // segments are not drawn as faint background — only controls outside the
+        // course remain as context.
+        if (submapInfo && isInCourse && !isInSubmap) return null
+
         let color: string
         let opacity = 1
         if (isSelected) {
@@ -289,7 +294,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           label += ` [${control.points}]`
         }
 
-        const labelOffset = cc?.labelOffset
+        const labelOffset = cc?.labelOffset ?? control.labelOffset
 
         let Shape: (props: ShapeProps) => React.ReactNode
         if (control.type === 'start') {

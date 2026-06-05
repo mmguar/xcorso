@@ -118,7 +118,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
       })}
       {controls.map(c => {
         const cc = course?.controls.find(cc => cc.controlId === c.id)
-        const offset = cc?.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
+        const offset = cc?.labelOffset ?? c.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
         const lx = c.position.x + offset.x
         const ly = c.position.y + offset.y
         const cr = dims.controlR * upm * controlScale * sf
@@ -330,7 +330,7 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragResize: { id: string; origWidthMap: number; origHeightMap: number; posX: number; posY: number } | null = null
     let dragResizeStarted = false
 
-    let dragLabel: { courseId: string; courseControlId: string; controlId: string; dx: number; dy: number } | null = null
+    let dragLabel: { courseId: string | null; courseControlId: string | null; controlId: string; dx: number; dy: number } | null = null
     let dragLabelStarted = false
 
     let dragLayoutEl: { element: string; sx: number; sy: number; ox: number; oy: number } | null = null
@@ -393,9 +393,18 @@ export function MapCanvas({ loadedMap }: Props) {
       const ratio = ns / v.scale
       vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
       startPanning()
-      syncTransform()
+      // Coalesce the DOM write into a single rAF — trackpad pinch / momentum
+      // scroll fire many wheel events per frame, and one syncTransform per frame
+      // is enough. (Shares pendingRaf with the pointer-move path.)
+      if (!pendingRaf) pendingRaf = requestAnimationFrame(() => { pendingRaf = 0; syncTransform() })
       if (wheelTimer) clearTimeout(wheelTimer)
-      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current); stopPanning() }, 150)
+      wheelTimer = setTimeout(() => {
+        wheelTimer = null
+        if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
+        syncTransform()
+        setVpState(vpRef.current)
+        stopPanning()
+      }, 150)
     }
 
     // ── Pointer down ─────────────────────────────────────────────────────────
@@ -669,13 +678,30 @@ export function MapCanvas({ loadedMap }: Props) {
             return
           }
 
-          // Annotations and overlays take priority over controls
+          // Annotations and overlays take priority over controls.
+          // Out-of-bounds areas are large fills, so they only drag once selected
+          // (a plain click selects them); crossing points and north arrows are
+          // small handle-like objects and drag directly.
           const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-          if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow' || annHit.type === 'out_of_bounds') && annHit.points[0]) {
-            const mapPt2 = screenToMap(sx, sy, vpRef.current)
-            dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
-            dragAnnotationStarted = false
-            return
+          if (annHit && annHit.points[0]) {
+            const draggable = annHit.type === 'crossing_point' || annHit.type === 'north_arrow'
+              || (annHit.type === 'out_of_bounds' && annHit.id === state.editor.selectedAnnotationId)
+            if (draggable) {
+              const mapPt2 = screenToMap(sx, sy, vpRef.current)
+              dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
+              dragAnnotationStarted = false
+              return
+            }
+          }
+
+          // Pressing outside the selected out-of-bounds area — not on it and not
+          // on its vertex handles (ruled out above) — deselects it, whether the
+          // gesture ends up a tap or a pan.
+          const selAnn = state.editor.selectedAnnotationId
+            ? proj.annotations.find(a => a.id === state.editor.selectedAnnotationId)
+            : null
+          if (selAnn?.type === 'out_of_bounds' && (!annHit || annHit.id !== selAnn.id)) {
+            state.setSelectedAnnotation(null)
           }
 
           const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
@@ -829,7 +855,8 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!dragLabelStarted) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveCourseLabel()
+          if (dragLabel.courseId && dragLabel.courseControlId) useStore.getState().beginMoveCourseLabel()
+          else useStore.getState().beginMoveControlLabel()
           dragLabelStarted = true
         }
         const rect = getRect()
@@ -837,7 +864,11 @@ export function MapCanvas({ loadedMap }: Props) {
         const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
         if (ctrl) {
           const offset = { x: mapPt.x - dragLabel.dx - ctrl.position.x, y: mapPt.y - dragLabel.dy - ctrl.position.y }
-          useStore.getState().moveCourseLabel(dragLabel.courseId, dragLabel.courseControlId, offset)
+          if (dragLabel.courseId && dragLabel.courseControlId) {
+            useStore.getState().moveCourseLabel(dragLabel.courseId, dragLabel.courseControlId, offset)
+          } else {
+            useStore.getState().moveControlLabel(dragLabel.controlId, offset)
+          }
         }
         return
       }

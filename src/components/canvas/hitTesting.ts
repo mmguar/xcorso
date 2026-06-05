@@ -338,42 +338,59 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
 }
 
 export interface LabelHit {
-  courseId: string
-  courseControlId: string
+  // courseId/courseControlId are null for the all-controls layout (no course
+  // selected) — the label offset lives on the Control itself, not a CourseControl.
+  courseId: string | null
+  courseControlId: string | null
   controlId: string
   labelX: number
   labelY: number
 }
 
 export function findLabelAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): LabelHit | null {
-  if (!selectedCourseId) return null
-  const course = project.courses.find(c => c.id === selectedCourseId)
-  if (!course) return null
+  const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
+  if (selectedCourseId && !course) return null
   const map = project.map
   const upm = unitsPerMm(map)
   const controlMap = controlsById(project.controls)
-  const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
+  const seqMap = course?.type === 'linear' ? buildSequenceMap(course, project.controls) : null
 
   let best: LabelHit | null = null
   let bestDist = Infinity
 
-  const labelSpec = resolveSpec(project.spec, course.spec)
+  const labelSpec = resolveSpec(project.spec, course?.spec)
   const labelDims = getSymbolDims(labelSpec)
+  const sf = symbolScaleFactor(labelSpec, project.map.scale)
+  const cr = labelDims.controlR * upm * controlScale * sf
+  const fontSize = mapToPx(cr * 1.1, vp)
 
-  const seenControlIds = new Set<string>()
-  for (const cc of course.controls) {
-    if (seenControlIds.has(cc.controlId)) continue
-    seenControlIds.add(cc.controlId)
-    const ctrl = controlMap.get(cc.controlId)
-    if (!ctrl) continue
-    const offset = cc.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)
+  // In a course, one label per distinct control (the first course-control).
+  // In the all-controls layout (no course), every control gets a label whose
+  // offset lives on the Control itself.
+  type Candidate = { ctrl: typeof project.controls[number]; ccId: string | null; offset: { x: number; y: number } }
+  const candidates: Candidate[] = []
+  if (course) {
+    const seen = new Set<string>()
+    for (const cc of course.controls) {
+      if (seen.has(cc.controlId)) continue
+      seen.add(cc.controlId)
+      const ctrl = controlMap.get(cc.controlId)
+      if (!ctrl) continue
+      const offset = cc.labelOffset ?? ctrl.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)
+      candidates.push({ ctrl, ccId: cc.id, offset })
+    }
+  } else {
+    for (const ctrl of project.controls) {
+      const offset = ctrl.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)
+      candidates.push({ ctrl, ccId: null, offset })
+    }
+  }
+
+  for (const { ctrl, ccId, offset } of candidates) {
     const labelMapX = ctrl.position.x + offset.x
     const labelMapY = ctrl.position.y + offset.y
     const { x: labelScreenX, y: labelScreenY } = mapToScreen({ x: labelMapX, y: labelMapY }, vp)
 
-    const sf = symbolScaleFactor(labelSpec, project.map.scale)
-    const cr = labelDims.controlR * upm * controlScale * sf
-    const fontSize = mapToPx(cr * 1.1, vp)
     let labelText: string
     if (seqMap && ctrl.type === 'control') {
       const seqs = seqMap.get(ctrl.id)
@@ -390,7 +407,7 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
       const cy = labelScreenY - textH / 2
       const d = Math.hypot(screenX - cx, screenY - cy)
       if (d < bestDist) {
-        best = { courseId: selectedCourseId, courseControlId: cc.id, controlId: cc.controlId, labelX: labelMapX, labelY: labelMapY }
+        best = { courseId: course ? course.id : null, courseControlId: ccId, controlId: ctrl.id, labelX: labelMapX, labelY: labelMapY }
         bestDist = d
       }
     }
