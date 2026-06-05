@@ -69,6 +69,7 @@ export const useStore = create<Store>((set, get) => {
         textLabels: [],
         imageOverlays: [],
         overprint: 1,
+        overprintMode: 'simulated',
       }
       set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
     },
@@ -191,6 +192,10 @@ export const useStore = create<Store>((set, get) => {
     setOverprint: (overprint) => {
       const v = Math.max(0, Math.min(1, overprint))
       mutateProjectSilent(p => { p.overprint = v })
+    },
+
+    setOverprintMode: (mode) => {
+      mutateProjectSilent(p => { p.overprintMode = mode })
     },
 
     setGapSize: (size) => {

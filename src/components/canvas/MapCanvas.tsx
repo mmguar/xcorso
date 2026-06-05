@@ -1443,6 +1443,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const overprint = useStore(s => s.project?.overprint ?? 1)
+  const overprintMode = useStore(s => s.project?.overprintMode ?? 'simulated')
   const gapSize = useStore(s => s.editor.gapSize)
   const gapRebuild = useStore(s => s.editor.gapRebuild)
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
@@ -1473,7 +1474,10 @@ export function MapCanvas({ loadedMap }: Props) {
   // The multiply pass lives in its own sibling <svg> (a direct child of the
   // container) so its backdrop is the map — putting mix-blend-mode inside the
   // transformed group would blend against an empty backdrop instead.
-  const overprintT = Math.max(0, Math.min(1, overprint))
+  // 'none' → solid ink on top (no multiply). 'simulated' and 'below' both use the
+  // multiply pass on the raster screen ('below' gets its true stacking in HD/export,
+  // commit 3); intensity comes from the overprint slider.
+  const overprintT = overprintMode === 'none' ? 0 : Math.max(0, Math.min(1, overprint))
   const annBase = {
     annotations,
     pendingPoints: pendingAnnotationPoints,
