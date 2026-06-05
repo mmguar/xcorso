@@ -76,6 +76,15 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     if (scalePar?.[0]?.m) detectedScale = scalePar[0].m
   }
 
+  // OCAD parameter-string values are strings (e.g. "4000.000000"). Coerce to a
+  // finite positive number so map.scale is never persisted as a string — a
+  // string scale survives the editing session (JS coerces it in arithmetic) but
+  // is silently discarded by validateProject on reopen.
+  if (detectedScale != null) {
+    const n = Number(detectedScale)
+    detectedScale = Number.isFinite(n) && n > 0 ? Math.round(n) : undefined
+  }
+
   let detectedGeoref: MapGeorefInfo | undefined
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const crs = (ocadFile as any).getCrs?.()
