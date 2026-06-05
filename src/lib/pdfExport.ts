@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation } from '../types'
 import type { LoadedMap } from './mapLoader'
+import { applyMapOverprint } from './overprint'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances } from './distance'
@@ -90,6 +91,8 @@ export interface PdfExportOptions {
   mapOpacity?: number
   mapRendering?: 'vector' | 'raster'
   rasterDpi?: number
+  /** Simulate spot-ink overprint on the base map. Forces the raster path. */
+  mapOverprint?: boolean
   /** Annotation overprint level: 0 = solid knockout, 1 = full multiply overprint. Default 1. */
   overprint?: number
 }
@@ -160,12 +163,14 @@ async function rasterizeSvgRegion(
   canvasW: number,
   canvasH: number,
   opacity: number,
+  overprint = false,
 ): Promise<string> {
   const clone = svgEl.cloneNode(true) as SVGElement
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   clone.setAttribute('viewBox', `${crop.minX} ${crop.minY} ${crop.width} ${crop.height}`)
   clone.setAttribute('width', String(canvasW))
   clone.setAttribute('height', String(canvasH))
+  if (overprint) applyMapOverprint(clone, crop)
 
   const svgString = new XMLSerializer().serializeToString(clone)
   const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
@@ -1178,6 +1183,7 @@ export async function exportCoursePdf(
 
   const rasterDpi = options.rasterDpi ?? 300
   const mapOpacity = options.mapOpacity ?? 1
+  const mapOverprint = !!options.mapOverprint
 
   /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */
   function prepareSvgForPdfEmbed(): SVGElement {
@@ -1244,7 +1250,7 @@ export async function exportCoursePdf(
       }
       try {
         const svgEl = loadedMap.content as SVGElement
-        const dataUrl = await rasterizeSvgRegion(svgEl, { minX: cropMinX, minY: cropMinY, width: cropW, height: cropH }, capW, capH, mapOpacity)
+        const dataUrl = await rasterizeSvgRegion(svgEl, { minX: cropMinX, minY: cropMinY, width: cropW, height: cropH }, capW, capH, mapOpacity, mapOverprint)
         doc.addImage(dataUrl, 'JPEG', 0, 0, pageMmW, pageMmH)
         return
       } catch { /* fall through */ }

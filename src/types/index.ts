@@ -183,6 +183,8 @@ export interface LayoutDefaults {
   mapOpacity: number
   mapRendering: 'vector' | 'raster'
   rasterDpi: number
+  /** Simulate spot-ink overprint on the base map (raster mode only; ignored in HD/vector). */
+  mapOverprint?: boolean
   mapBorder?: MapBorder
 }
 

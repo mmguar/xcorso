@@ -8,6 +8,7 @@
  */
 
 import { Buffer } from 'buffer'
+import { applyMapOverprint } from './overprint'
 
 export interface MapBounds {
   minX: number
@@ -160,6 +161,52 @@ async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<strin
           const blobUrl = URL.createObjectURL(blob)
           previousRasterUrl = blobUrl
           resolve(blobUrl)
+        }, 'image/png')
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(svgUrl)
+        resolve(undefined)
+      }
+      img.src = svgUrl
+    })
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Rasterise an OCAD map SVG with spot-ink overprint simulation baked in
+ * (see {@link applyMapOverprint}). Used for the on-screen overprint preview when
+ * the map is in raster mode. The caller owns the returned blob URL and must
+ * revoke it; unlike {@link rasterizeSvg} this keeps no module-level slot.
+ */
+export async function rasterizeSvgOverprint(svgEl: SVGElement, bounds: MapBounds): Promise<string | undefined> {
+  try {
+    const clone = svgEl.cloneNode(true) as SVGElement
+    clone.setAttribute('width', String(bounds.width))
+    clone.setAttribute('height', String(bounds.height))
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    applyMapOverprint(clone, bounds)
+
+    const xml = new XMLSerializer().serializeToString(clone)
+    const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
+    const svgUrl = URL.createObjectURL(svgBlob)
+
+    const scale = Math.min(1, MAX_RASTER_DIM / Math.max(bounds.width, bounds.height))
+    const w = Math.round(bounds.width * scale)
+    const h = Math.round(bounds.height * scale)
+
+    return await new Promise<string | undefined>((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, w, h)
+        URL.revokeObjectURL(svgUrl)
+        canvas.toBlob(blob => {
+          resolve(blob ? URL.createObjectURL(blob) : undefined)
         }, 'image/png')
       }
       img.onerror = () => {

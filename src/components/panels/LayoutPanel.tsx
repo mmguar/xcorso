@@ -238,6 +238,23 @@ function GeneralSection() {
             </div>
           )}
 
+          {/* Map overprint — multiply the map's own colours (raster mode only) */}
+          {isSvgMap && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!defaults.mapOverprint}
+                disabled={defaults.mapRendering === 'vector'}
+                onChange={e => updateLayoutDefaults({ mapOverprint: e.target.checked })}
+                className="accent-orange-600 disabled:opacity-40"
+              />
+              <span className="text-[11px] text-gray-500">
+                Simulate map overprint
+                {defaults.mapRendering === 'vector' && <span className="text-gray-400"> — raster only</span>}
+              </span>
+            </label>
+          )}
+
           {/* Map border */}
           {(() => {
             const base = PAGE_SIZES[defaults.pageSize] ?? PAGE_SIZES.a4
@@ -893,6 +910,7 @@ export function LayoutPanel() {
         mapOpacity: defaults.mapOpacity,
         mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
         rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
+        mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
         overprint: currentProject.overprint ?? 1,
       }
 

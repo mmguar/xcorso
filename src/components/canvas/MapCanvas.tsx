@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
@@ -13,6 +13,7 @@ import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../.
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
+import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
@@ -213,6 +214,22 @@ export function MapCanvas({ loadedMap }: Props) {
   })
 
   const [useRaster, setUseRaster] = useState(true)
+  const mapOverprint = useStore(s => s.project?.layoutDefaults?.mapOverprint ?? false)
+  // Overprint-simulated raster, generated lazily when the option is enabled.
+  // Only meaningful for OCAD (svg) maps in raster mode; HD/vector shows as usual.
+  // The render gates on `mapOverprint` too, so a stale url here is never shown.
+  const [overprintRasterUrl, setOverprintRasterUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!mapOverprint || loadedMap.type !== 'svg') return
+    let cancelled = false
+    let url: string | undefined
+    rasterizeSvgOverprint(loadedMap.content as SVGElement, loadedMap.bounds).then(u => {
+      if (cancelled) { if (u) URL.revokeObjectURL(u); return }
+      url = u
+      setOverprintRasterUrl(u ?? null)
+    })
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
+  }, [mapOverprint, loadedMap])
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
@@ -1488,7 +1505,7 @@ export function MapCanvas({ loadedMap }: Props) {
           pointerEvents: 'none',
         }}
       >
-        <MapCanvasLayer loadedMap={loadedMap} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
+        <MapCanvasLayer loadedMap={loadedMap} srcOverride={mapOverprint && useRaster && overprintRasterUrl ? overprintRasterUrl : undefined} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
       </div>
       {/* HD SVG overlay — true vector quality at rest (OCAD HD mode only) */}
       {!useRaster && loadedMap.type === 'svg' && (
