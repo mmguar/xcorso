@@ -678,13 +678,20 @@ export function MapCanvas({ loadedMap }: Props) {
             return
           }
 
-          // Annotations and overlays take priority over controls
+          // Annotations and overlays take priority over controls.
+          // Out-of-bounds areas are large fills, so they only drag once selected
+          // (a plain click selects them); crossing points and north arrows are
+          // small handle-like objects and drag directly.
           const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-          if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow' || annHit.type === 'out_of_bounds') && annHit.points[0]) {
-            const mapPt2 = screenToMap(sx, sy, vpRef.current)
-            dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
-            dragAnnotationStarted = false
-            return
+          if (annHit && annHit.points[0]) {
+            const draggable = annHit.type === 'crossing_point' || annHit.type === 'north_arrow'
+              || (annHit.type === 'out_of_bounds' && annHit.id === state.editor.selectedAnnotationId)
+            if (draggable) {
+              const mapPt2 = screenToMap(sx, sy, vpRef.current)
+              dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
+              dragAnnotationStarted = false
+              return
+            }
           }
 
           const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
