@@ -393,9 +393,18 @@ export function MapCanvas({ loadedMap }: Props) {
       const ratio = ns / v.scale
       vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
       startPanning()
-      syncTransform()
+      // Coalesce the DOM write into a single rAF — trackpad pinch / momentum
+      // scroll fire many wheel events per frame, and one syncTransform per frame
+      // is enough. (Shares pendingRaf with the pointer-move path.)
+      if (!pendingRaf) pendingRaf = requestAnimationFrame(() => { pendingRaf = 0; syncTransform() })
       if (wheelTimer) clearTimeout(wheelTimer)
-      wheelTimer = setTimeout(() => { wheelTimer = null; setVpState(vpRef.current); stopPanning() }, 150)
+      wheelTimer = setTimeout(() => {
+        wheelTimer = null
+        if (pendingRaf) { cancelAnimationFrame(pendingRaf); pendingRaf = 0 }
+        syncTransform()
+        setVpState(vpRef.current)
+        stopPanning()
+      }, 150)
     }
 
     // ── Pointer down ─────────────────────────────────────────────────────────
