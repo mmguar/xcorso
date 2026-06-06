@@ -1654,7 +1654,7 @@ export function MapCanvas({ loadedMap }: Props) {
           top of the course ink so the purple sits beneath them in the stack. */}
       {belowHD && (
         <svg key="top-overprint" width="100%" height="100%"
-          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined }}>
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined }}>
           <g ref={topOverlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
             <MapLayer loadedMap={loadedMap} useRaster={false} keepColors={topOverprintColors} transparent />
           </g>

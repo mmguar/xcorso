@@ -65,7 +65,7 @@ function extractTopOverprintColors(colors: unknown): string[] {
     if (!c || typeof c.rgb !== 'string') continue
     const name = typeof c.name === 'string' ? c.name.toLowerCase() : ''
     const cmyk = Array.isArray(c.cmyk) ? c.cmyk.map(Number) : [0, 0, 0, 0]
-    const isBlack = name.includes('black') || (cmyk[0] === 0 && cmyk[1] === 0 && cmyk[2] === 0 && cmyk[3] >= 100)
+    const isBlack = (name.includes('black') && fullShade(name)) || (cmyk[0] === 0 && cmyk[1] === 0 && cmyk[2] === 0 && cmyk[3] >= 100)
     const isBrown = name.includes('brown') && fullShade(name)
     const isBlue = name.includes('blue') && fullShade(name)
     if ((isBlack || isBrown || isBlue) && !out.includes(c.rgb)) out.push(c.rgb)

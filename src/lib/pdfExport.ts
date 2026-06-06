@@ -1294,7 +1294,11 @@ export async function exportCoursePdf(
         keepColors: belowColors,
         transparent: true,
       })
+      // Multiply so white knockout pixels inside black/brown/blue symbols drop
+      // out (white × ink = ink) instead of painting solid over the course purple.
+      doc.setGState(doc.GState({ blendMode: 'Multiply' }))
       doc.addImage(dataUrl, 'PNG', 0, 0, pageMmW, pageMmH)
+      doc.setGState(doc.GState({ blendMode: 'Normal' }))
     } catch { /* overlay is best-effort */ }
   }
 
