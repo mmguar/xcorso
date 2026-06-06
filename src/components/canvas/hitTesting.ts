@@ -1,5 +1,5 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
-import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById } from '../../lib/courseUtils'
+import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById, computeSubmaps } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../../lib/symbolGeometry'
 
@@ -51,10 +51,30 @@ export function controlHitRadius(control: Control, vp: Viewport, project: Projec
   return mapToPx(symbolR, vp)
 }
 
-export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, extraPx = 0): Control | null {
+/** Control IDs that are hidden from the canvas because a submap is selected and
+ *  they belong to a different submap segment. Mirrors the visibility rule in
+ *  ControlsLayer — controls in the course but outside the active submap are not
+ *  drawn, so they must not be hittable/draggable either. */
+export function hiddenSubmapControlIds(project: Project, selectedCourseId: string | null, selectedSubmapIndex: number | null): Set<string> | null {
+  if (selectedCourseId == null || selectedSubmapIndex == null) return null
+  const course = project.courses.find(c => c.id === selectedCourseId)
+  if (!course) return null
+  const submaps = computeSubmaps(course, project.controls)
+  if (selectedSubmapIndex >= submaps.length) return null
+  const visible = new Set(submaps[selectedSubmapIndex].controls.map(cc => cc.controlId))
+  const hidden = new Set<string>()
+  for (const cc of course.controls) {
+    if (!visible.has(cc.controlId)) hidden.add(cc.controlId)
+  }
+  return hidden
+}
+
+export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, extraPx = 0, selectedSubmapIndex: number | null = null): Control | null {
+  const hidden = hiddenSubmapControlIds(project, selectedCourseId, selectedSubmapIndex)
   let best: Control | null = null
   let bestDist = Infinity
   for (const c of project.controls) {
+    if (hidden?.has(c.id)) continue
     const s = controlToScreen(c, vp)
     const d = Math.hypot(screenX - s.x, screenY - s.y)
     const hitR = controlHitRadius(c, vp, project, selectedCourseId, controlScale) + extraPx
@@ -347,9 +367,10 @@ export interface LabelHit {
   labelY: number
 }
 
-export function findLabelAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): LabelHit | null {
+export function findLabelAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, selectedSubmapIndex: number | null = null): LabelHit | null {
   const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
   if (selectedCourseId && !course) return null
+  const hidden = hiddenSubmapControlIds(project, selectedCourseId, selectedSubmapIndex)
   const map = project.map
   const upm = unitsPerMm(map)
   const controlMap = controlsById(project.controls)
@@ -374,6 +395,7 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     for (const cc of course.controls) {
       if (seen.has(cc.controlId)) continue
       seen.add(cc.controlId)
+      if (hidden?.has(cc.controlId)) continue
       const ctrl = controlMap.get(cc.controlId)
       if (!ctrl) continue
       const offset = cc.labelOffset ?? ctrl.labelOffset ?? defaultLabelOffset(ctrl.type, upm, controlScale, labelSpec, project.map.scale)

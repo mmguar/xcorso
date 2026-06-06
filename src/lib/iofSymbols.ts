@@ -453,9 +453,9 @@ function makeSideSymbols(): SymbolDef[] {
 
 function makeEdgeSymbols(): SymbolDef[] {
   const dirs: [string, string, number, number, number, number][] = [
-    ['N', 'North', 0, 35, 0, 75], ['NE', 'North-east', 19,19,59,59], ['E', 'East', 35,0,75, 0],
-    ['SE', 'South-east', 19,-19,59,-59], ['S', 'South', 0, -35, 0, -75], ['SW', 'South-west', -19,-19,-59,-59],
-    ['W', 'West', -75, 0, -35, 0], ['NW', 'North-west', -19, 19, -59,59]
+    ['N', 'North', 0, -35, 0, -75], ['NE', 'North-east', 19,-19,59,-59], ['E', 'East', 35,0,75, 0],
+    ['SE', 'South-east', 19,19,59,59], ['S', 'South', 0, 35, 0, 75], ['SW', 'South-west', -19,19,-59,59],
+    ['W', 'West', -75, 0, -35, 0], ['NW', 'North-west', -19, -19, -59,-59]
   ]
   return dirs.map(([d, name, x0, y0, x1, y1]) => ({
     code: `11.2${d}`, name: `${name} edge`, column: 'G' as IofColumn,
