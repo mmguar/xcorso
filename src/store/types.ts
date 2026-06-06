@@ -2,7 +2,7 @@ import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   Annotation, AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, ImageOverlay, EventSpec, FinishType,
-  CourseLayout, LayoutElementPosition, LayoutDefaults, MapGeoref, OverprintMode,
+  CourseLayout, SubmapLayout, LayoutElementPosition, LayoutDefaults, MapGeoref, OverprintMode,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -23,6 +23,7 @@ export interface EditorState {
   selectedSubmapIndex: number | null
   layoutMode: boolean
   layoutCourseId: string | null
+  layoutSubmapIndex: number
   layoutSnapRequest: number
   gapRebuild: boolean
 }
@@ -159,17 +160,18 @@ export interface AppActions {
 
   enterLayoutMode: (courseId: string) => void
   exitLayoutMode: () => void
-  updateCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
-  moveCourseLayout: (courseId: string, updates: Partial<CourseLayout>) => void
+  setLayoutSubmap: (index: number) => void
+  updateCourseLayout: (courseId: string, updates: Partial<SubmapLayout & Pick<CourseLayout, 'included' | 'descMode'>>, submapIndex?: number) => void
+  moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex?: number) => void
   updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => void
   ensureAllCourseLayouts: () => void
   beginLayoutDrag: () => void
-  setLayoutMapCenter: (courseId: string, center: MapPoint) => void
-  updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>) => void
-  addClueSheetBreak: (courseId: string, controlIndex: number) => void
-  removeClueSheetBreak: (courseId: string, breakIndex: number) => void
+  setLayoutMapCenter: (courseId: string, center: MapPoint, submapIndex?: number) => void
+  updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>, submapIndex?: number) => void
+  addClueSheetBreak: (courseId: string, controlIndex: number, submapIndex?: number) => void
+  removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex?: number) => void
   requestLayoutSnap: () => void
-  setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint) => void
+  setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
 
   clearSession: () => void
 
@@ -214,6 +216,7 @@ export const defaultEditor: EditorState = {
   selectedSubmapIndex: null,
   layoutMode: false,
   layoutCourseId: null,
+  layoutSubmapIndex: 0,
   layoutSnapRequest: 0,
   gapRebuild: false,
 }
