@@ -4,7 +4,7 @@ import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById } from './courseUtils'
-import { computeCourseDistances } from './distance'
+import { computeCourseDistances, resolveCourseLength } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
 import { walkPath, clipPolyline, distance } from './geometry'
@@ -1564,7 +1564,8 @@ export async function exportCoursePdf(
           }
 
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
-            const dist = computeCourseDistances(pageCourse, project.controls, project.map)
+            const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
+            const sheetTotal = hasSubmaps ? dist.total : resolveCourseLength(course, dist)
             const breaks = sLayout?.clueSheetBreaks
             if (breaks && breaks.length > 0) {
               const partPositions = [sLayout!.clueSheet, ...(sLayout!.clueSheetParts ?? [])]
@@ -1575,12 +1576,12 @@ export async function exportCoursePdf(
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
-                drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, partPos.x, partPos.y, pi, breaks, dist.total, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
+                drawDescriptionSheetOverlayPart(doc, pageCourse, project.controls, partPos.x, partPos.y, pi, breaks, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? sLayout?.clueSheet ?? { x: MARGIN, y: MARGIN }
               if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
-                drawDescriptionSheetOverlay(doc, pageCourse, project.controls, sheetPos.x, sheetPos.y, dist.total, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
+                drawDescriptionSheetOverlay(doc, pageCourse, project.controls, sheetPos.x, sheetPos.y, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
               }
             }
           }
@@ -1591,8 +1592,9 @@ export async function exportCoursePdf(
       if ((descMode === 'separate' || descMode === 'both') && pageCourse.controls.length > 0) {
         doc.addPage([cpw, cph], cOrientFlag)
         pageIndex++
-        const dist = computeCourseDistances(pageCourse, project.controls, project.map)
-        drawDescriptionSheet(doc, pageCourse, project.controls, cpw, cph, dist.total, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
+        const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
+        const sheetTotal = hasSubmaps ? dist.total : resolveCourseLength(course, dist)
+        drawDescriptionSheet(doc, pageCourse, project.controls, cpw, cph, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name)
       }
     }
   }

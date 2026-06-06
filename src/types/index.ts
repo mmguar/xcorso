@@ -132,6 +132,7 @@ export interface Course {
   controls: CourseControl[]  // ordered for linear; unordered for score
   scoreTimeLimit?: number    // minutes, score-O only
   climb?: number             // metres, manually set
+  manualLength?: number      // metres — manual override of computed length (wins over measured/straight)
   finishType?: FinishType    // IOF 16.1/16.2/16.3 — defaults to 'taped'
   color: string              // overprint color, default '#a626ff' (CMYK 35/85/0/0)
   showPoints?: boolean       // display [points] next to controls on map
@@ -273,6 +274,13 @@ export interface Project {
   scaleBars: ScaleBar[]
   textLabels: TextLabel[]
   imageOverlays: ImageOverlay[]
+  /**
+   * Measured route polylines, keyed by leg = `${fromControlId}__${toControlId}`
+   * (direction-specific). Value = intermediate waypoints between the two control
+   * centres (endpoints excluded). Used only to compute actual route length —
+   * never changes how legs are drawn. Shared by any course containing that leg.
+   */
+  measuredLegs?: Record<string, MapPoint[]>
   layoutDefaults?: LayoutDefaults
   /** Overprint level for course/annotation ink: 0 = solid knockout, 1 = full multiply overprint. Default 1. */
   overprint?: number

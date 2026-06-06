@@ -11,7 +11,7 @@
  */
 
 import type { Project, Course, Control, ControlType, MapConfig } from '../types'
-import { computeCourseDistances } from './distance'
+import { computeCourseDistances, resolveCourseLength } from './distance'
 import { resolveVariation } from './courseUtils'
 import { ocadToLatLng } from './utm'
 
@@ -125,7 +125,8 @@ export function exportIofXml(project: Project): string {
 
     if (resolvedControls.length < 2) return ''
 
-    const distances = computeCourseDistances(course, project.controls, project.map)
+    const distances = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
+    const totalLength = resolveCourseLength(course, distances)
     const isScore = course.type === 'score'
 
     const courseControlsXml = course.controls.map((cc, idx) => {
@@ -165,8 +166,8 @@ export function exportIofXml(project: Project): string {
     if (family) {
       courseChildren.push(`      <CourseFamily>${xmlEscape(family)}</CourseFamily>`)
     }
-    if (distances.total > 0) {
-      courseChildren.push(`      <Length>${Math.round(distances.total)}</Length>`)
+    if (totalLength > 0) {
+      courseChildren.push(`      <Length>${Math.round(totalLength)}</Length>`)
     }
 
     return [

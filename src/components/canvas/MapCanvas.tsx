@@ -9,6 +9,7 @@ import { LegsLayer } from './LegsLayer'
 import { DragLegsLayer } from './DragLegsLayer'
 import type { DragLegsHandle } from './DragLegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
+import { MeasureLayer } from './MeasureLayer'
 import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../../lib/symbolGeometry'
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
@@ -16,17 +17,20 @@ import type { LoadedMap } from '../../lib/mapLoader'
 import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
-import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
+import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec, Course } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap, pxToMap,
   findControlAt, findBendPointAt,
+  findMeasureLegAt, findMeasurePointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
 } from './hitTesting'
+import type { MeasurePointHit } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
+import { computeCourseDistances, resolveCourseLength, formatDistance } from '../../lib/distance'
 
 const TAP_PX    = 8
 const MIN_SCALE = 0.05
@@ -62,6 +66,73 @@ function LayoutScaleInput({ courseId, printScale }: { courseId: string; printSca
         className="w-14 px-1 py-0.5 text-[11px] border border-gray-200 rounded focus:border-orange-400 focus:outline-none bg-white tabular-nums"
       />
     </>
+  )
+}
+
+function MeasureLegPanel({ course, controls }: { course: Course; controls: Control[] }) {
+  const hidden = useStore(s => s.editor.measureHiddenLegs)
+  const toggleMeasureLeg = useStore(s => s.toggleMeasureLeg)
+  const setMeasureHiddenLegs = useStore(s => s.setMeasureHiddenLegs)
+  const hiddenSet = new Set(hidden)
+
+  const seqMap = course.type === 'linear' ? buildSequenceMap(course, controls) : null
+  const cm = new Map(controls.map(c => [c.id, c]))
+  const label = (id: string): string => {
+    const c = cm.get(id)
+    if (!c) return '?'
+    if (seqMap && c.type === 'control') {
+      const s = seqMap.get(id)
+      return s ? formatSequenceLabel(s) : defaultControlLabel(c)
+    }
+    return defaultControlLabel(c)
+  }
+
+  // One row per distinct leg (repeated legs in a loop share a checkbox).
+  const legs: { key: string; from: string; to: string }[] = []
+  const seen = new Set<string>()
+  for (let i = 1; i < course.controls.length; i++) {
+    const fromId = course.controls[i - 1].controlId
+    const toId = course.controls[i].controlId
+    const key = `${fromId}__${toId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    legs.push({ key, from: label(fromId), to: label(toId) })
+  }
+  if (legs.length === 0) return null
+
+  const allKeys = legs.map(l => l.key)
+  const allShown = hidden.length === 0
+
+  return (
+    <div className="absolute top-12 right-2 sm:top-2 w-40 max-h-[60vh] flex flex-col bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-200 z-10 overflow-hidden">
+      <div className="flex items-center justify-between px-2 py-1 border-b border-gray-100">
+        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Legs</span>
+        <button
+          onClick={() => setMeasureHiddenLegs(allShown ? allKeys : [])}
+          className="text-[10px] font-medium text-teal-700 hover:text-teal-900"
+        >
+          {allShown ? 'Hide all' : 'Show all'}
+        </button>
+      </div>
+      <div className="overflow-y-auto panel-scroll py-1">
+        {legs.map(l => (
+          <div
+            key={l.key}
+            onClick={() => toggleMeasureLeg(l.key)}
+            className="flex items-center gap-2 px-2 py-0.5 text-xs text-gray-600 cursor-pointer hover:bg-gray-50 select-none"
+          >
+            <input
+              type="checkbox"
+              checked={!hiddenSet.has(l.key)}
+              readOnly
+              tabIndex={-1}
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400 pointer-events-none"
+            />
+            <span className="tabular-nums">{l.from} → {l.to}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -207,6 +278,10 @@ export function MapCanvas({ loadedMap }: Props) {
   const appearance = useStore(s => s.editor.appearance)
   const pendingAnnotationPoints = useStore(s => s.editor.pendingAnnotationPoints)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
+  const measureMode = useStore(s => s.editor.measureMode)
+  const measureCourseId = useStore(s => s.editor.measureCourseId)
+  const measureHiddenLegs = useStore(s => s.editor.measureHiddenLegs)
+  const measuredLegs = useStore(s => s.project!.measuredLegs)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
@@ -344,6 +419,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
     let dragBendStarted = false
 
+    let dragMeasure: MeasurePointHit | null = null
+    let dragMeasureStarted = false
+
     let dragOverlay: { id: string; kind: 'scalebar' | 'text' | 'image'; dx: number; dy: number } | null = null
     let dragOverlayStarted = false
 
@@ -445,7 +523,7 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       longPressFired = false
-      if (e.pointerType === 'touch' && pos.size === 1 && !useStore.getState().editor.layoutMode) {
+      if (e.pointerType === 'touch' && pos.size === 1 && !useStore.getState().editor.layoutMode && !useStore.getState().editor.measureMode) {
         const state = useStore.getState()
         const cid = state.editor.selectedCourseId
         if (cid) {
@@ -596,6 +674,30 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool } = state.editor
       const proj = state.project
       if (!proj) return
+
+      // Measure mode: grab a route handle if hit; otherwise fall through to pan.
+      if (state.editor.measureMode) {
+        if (pos.size === 1) {
+          const rect = getRect()
+          const hidden = new Set(state.editor.measureHiddenLegs)
+          const ptHit = findMeasurePointAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, state.editor.measureCourseId, hidden)
+          if (ptHit) {
+            dragMeasure = ptHit
+            dragMeasureStarted = false
+            // Touch has no right-click — long-press removes the handle.
+            if (e.pointerType === 'touch') {
+              longPressTimer = setTimeout(() => {
+                longPressTimer = null
+                longPressFired = true
+                useStore.getState().removeMeasurePoint(ptHit.fromControlId, ptHit.toControlId, ptHit.index)
+                dragMeasure = null
+                dragMeasureStarted = false
+              }, 500)
+            }
+          }
+        }
+        return
+      }
 
       if (activeTool === 'out-of-bounds' && pos.size === 1 && state.editor.pendingAnnotationPoints.length > 0) {
         const rect = getRect()
@@ -863,6 +965,19 @@ export function MapCanvas({ loadedMap }: Props) {
           const newY = dragLayoutEl.oy + dy
           st.updateLayoutElement(st.editor.layoutCourseId!, dragLayoutEl.element, { x: newX, y: newY }, smIdx)
         }
+        return
+      }
+
+      if (dragMeasure && pos.size === 1) {
+        if (!dragMeasureStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveMeasurePoint()
+          dragMeasureStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        useStore.getState().moveMeasurePoint(dragMeasure.fromControlId, dragMeasure.toControlId, dragMeasure.index, mapPt)
         return
       }
 
@@ -1142,6 +1257,9 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragLabel && dragLabelStarted) { dragLabel = null; dragLabelStarted = false; return }
       dragLabel = null; dragLabelStarted = false
 
+      if (dragMeasure && dragMeasureStarted) { dragMeasure = null; dragMeasureStarted = false; return }
+      dragMeasure = null; dragMeasureStarted = false
+
       if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
       dragBend = null; dragBendStarted = false
 
@@ -1201,6 +1319,17 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool, selectedCourseId } = state.editor
       const proj = state.project
       if (!proj) return
+
+      // Measure mode: tap on a route segment inserts a handle there. Tapping an
+      // existing handle does nothing (it's a drag/long-press target).
+      if (state.editor.measureMode) {
+        const hidden = new Set(state.editor.measureHiddenLegs)
+        if (findMeasurePointAt(sx, sy, vpRef.current, proj, state.editor.measureCourseId, hidden)) return
+        const legHit = findMeasureLegAt(sx, sy, vpRef.current, proj, state.editor.measureCourseId, hidden)
+        if (legHit) state.addMeasurePoint(legHit.fromControlId, legHit.toControlId, mapPt, legHit.segmentIndex)
+        return
+      }
+
       const ms = measureStartRef.current
       const hitControl = findControlAt(sx, sy, vpRef.current, proj, selectedCourseId, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
 
@@ -1314,6 +1443,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
     function onCancel(e: PointerEvent) {
       clearLongPress()
+      dragMeasure = null; dragMeasureStarted = false
       dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
       dragAnnResize = null; dragAnnResizeStarted = false
@@ -1360,6 +1490,16 @@ export function MapCanvas({ loadedMap }: Props) {
       const rect = getRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
+
+      // Measure mode: right-click removes a handle, or clears the whole leg.
+      if (state.editor.measureMode) {
+        const hidden = new Set(state.editor.measureHiddenLegs)
+        const ptHit = findMeasurePointAt(sx, sy, vpRef.current, proj, state.editor.measureCourseId, hidden)
+        if (ptHit) { state.removeMeasurePoint(ptHit.fromControlId, ptHit.toControlId, ptHit.index); return }
+        const legHit = findMeasureLegAt(sx, sy, vpRef.current, proj, state.editor.measureCourseId, hidden)
+        if (legHit) state.clearMeasureLeg(legHit.fromControlId, legHit.toControlId)
+        return
+      }
 
       if (activeTool === 'gap') {
         handleGapRightClick(sx, sy, vpRef.current, proj, selectedCourseId)
@@ -1468,6 +1608,14 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [selectedCourseRaw, selectedVariationId])
   const isCourseMode = !!selectedCourseId
 
+  // Measure mode: the (master) course being measured + its live measured total.
+  const measureCourse = measureMode ? (courses.find(c => c.id === measureCourseId) ?? null) : null
+  const measureHiddenSet = useMemo(() => new Set(measureHiddenLegs), [measureHiddenLegs])
+  const measureDim = measureMode ? 0.25 : 1
+  const measureTotal = measureCourse
+    ? resolveCourseLength(measureCourse, computeCourseDistances(measureCourse, controls, map, measuredLegs))
+    : 0
+
   const layoutControls = useMemo(() => {
     if (!layoutMode || !selectedCourse) return controls
     const ids = new Set(selectedCourse.controls.map(cc => cc.controlId))
@@ -1475,6 +1623,7 @@ export function MapCanvas({ loadedMap }: Props) {
   }, [layoutMode, selectedCourse, controls])
 
   const cursor = layoutMode ? 'grab'
+    : measureMode ? 'crosshair'
     : activeTool === 'bend' ? 'crosshair'
     : activeTool === 'gap' ? 'none'
     : isCourseMode ? 'default'
@@ -1574,7 +1723,7 @@ export function MapCanvas({ loadedMap }: Props) {
       <svg key="course" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <g ref={courseGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           {overprintT < 1 && (
-            <g opacity={1 - overprintT}>
+            <g opacity={(1 - overprintT) * measureDim}>
               <LegsLayer
                 course={selectedCourse}
                 controls={controls}
@@ -1588,6 +1737,16 @@ export function MapCanvas({ loadedMap }: Props) {
                 course={selectedCourse}
               />
             </g>
+          )}
+          {/* Measure-mode route polylines + handles (chrome, full strength). */}
+          {measureMode && (
+            <MeasureLayer
+              course={measureCourse}
+              controls={controls}
+              map={map}
+              measuredLegs={measuredLegs}
+              hiddenLegs={measureHiddenSet}
+            />
           )}
           {/* Drag preview — chrome, always solid so it stays visible mid-drag. */}
           <DragLegsLayer
@@ -1641,7 +1800,7 @@ export function MapCanvas({ loadedMap }: Props) {
       {/* Course overprint (multiply) pass — legs + controls + labels blend with the map */}
       {overprintT > 0 && (
         <svg key="course-mult" width="100%" height="100%"
-          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', opacity: overprintT }}>
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', opacity: overprintT * measureDim }}>
           <g ref={courseMultGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
             <LegsLayer
               course={selectedCourse}
@@ -1845,6 +2004,23 @@ export function MapCanvas({ loadedMap }: Props) {
         <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-3 py-1 rounded-full pointer-events-none">
           Click second point, then enter real distance
         </div>
+      )}
+
+      {measureMode && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-teal-700/90 text-white text-sm px-3 py-1.5 rounded-full shadow z-10">
+          <span className="font-medium">{formatDistance(measureTotal)}</span>
+          <span className="text-teal-100 text-xs hidden sm:inline">Tap a leg to add a point · drag to shape · right-click to remove</span>
+          <button
+            onClick={() => useStore.getState().exitMeasureMode()}
+            className="bg-white/20 hover:bg-white/30 transition-colors rounded-full px-2.5 py-0.5 text-xs font-semibold"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
+      {measureMode && measureCourse && (
+        <MeasureLegPanel course={measureCourse} controls={controls} />
       )}
 
       {scaleDialogPoints && (

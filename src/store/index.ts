@@ -9,6 +9,7 @@ import { createControlsSlice } from './controlsSlice'
 import { createCoursesSlice } from './coursesSlice'
 import { createGapsSlice } from './gapsSlice'
 import { createLegsSlice } from './legsSlice'
+import { createMeasureSlice } from './measureSlice'
 import { createAnnotationsSlice } from './annotationsSlice'
 import { createOverlaysSlice } from './overlaysSlice'
 import { createLayoutSlice } from './layoutSlice'
@@ -131,6 +132,7 @@ export const useStore = create<Store>((set, get) => {
     ...createCoursesSlice(set, get, h),
     ...createGapsSlice(set, get, h),
     ...createLegsSlice(set, get, h),
+    ...createMeasureSlice(set, get, h),
     ...createAnnotationsSlice(set, get, h),
     ...createOverlaysSlice(set, get, h),
     ...createLayoutSlice(set, get, h),
@@ -177,6 +179,40 @@ export const useStore = create<Store>((set, get) => {
 
     setSelectedSubmap: (index) => {
       set(state => ({ editor: { ...state.editor, selectedSubmapIndex: index } }))
+    },
+
+    enterMeasureMode: (courseId) => {
+      set(state => ({
+        editor: {
+          ...state.editor,
+          measureMode: true,
+          measureCourseId: courseId,
+          measureHiddenLegs: [],
+          layoutMode: false,
+          layoutCourseId: null,
+          selectedCourseId: courseId,
+          activeTool: 'select',
+          selectedControlId: null,
+          selectedAnnotationId: null,
+          selectedOverlayId: null,
+        },
+      }))
+    },
+
+    exitMeasureMode: () => {
+      set(state => ({ editor: { ...state.editor, measureMode: false, measureCourseId: null } }))
+    },
+
+    toggleMeasureLeg: (legKey) => {
+      set(state => {
+        const hidden = state.editor.measureHiddenLegs
+        const next = hidden.includes(legKey) ? hidden.filter(k => k !== legKey) : [...hidden, legKey]
+        return { editor: { ...state.editor, measureHiddenLegs: next } }
+      })
+    },
+
+    setMeasureHiddenLegs: (legKeys) => {
+      set(state => ({ editor: { ...state.editor, measureHiddenLegs: legKeys } }))
     },
 
     setSelectedOverlay: (id) => {
