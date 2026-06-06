@@ -197,7 +197,8 @@ export interface MapBorder {
   height: number       // mm
 }
 
-export interface CourseLayout {
+/** Per-submap layout. For a course without exchanges/flips this is the whole course. */
+export interface SubmapLayout {
   pageSize: PageSizeKey
   orientation: 'portrait' | 'landscape'
   printScale: number
@@ -206,10 +207,19 @@ export interface CourseLayout {
   clueSheetBreaks?: number[]
   clueSheetParts?: LayoutElementPosition[]
   overlayPositions?: Record<string, MapPoint>
-  included?: boolean
-  descMode?: DescMode
   tiling?: boolean
   mapBorder?: MapBorder
+}
+
+export interface CourseLayout extends SubmapLayout {
+  included?: boolean
+  descMode?: DescMode
+  /**
+   * Layouts for the *additional* submaps (index 1..N-1) of an exchange/flip course.
+   * Submap 0's layout is the CourseLayout itself (the inherited SubmapLayout fields).
+   * Absent for single-map courses, so existing projects need no migration.
+   */
+  submapLayouts?: SubmapLayout[]
 }
 
 // ─── Overlays ───────────────────────────────────────────────────────────────

@@ -3,9 +3,9 @@ import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../../store'
 import {
   PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
-  checkFitForCourse, checkTilingForCourse, suggestFitScaleForCourse,
+  checkFitForCourseObj, checkTilingForCourseObj, suggestFitScaleForCourseObj,
 } from '../../lib/pdfExport'
-import { defaultControlLabel, controlsById } from '../../lib/courseUtils'
+import { defaultControlLabel, controlsById, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
 import { getLayoutDefaults } from '../../store/layoutSlice'
 import type { PageSizeKey, Control, DescMode } from '../../types'
@@ -372,12 +372,13 @@ function CourseCard({ courseId }: { courseId: string }) {
   }
 
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
+  const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
+  const setLayoutSubmap = useStore(s => s.setLayoutSubmap)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
   const requestLayoutSnap = useStore(s => s.requestLayoutSnap)
-  const updateLayoutElement = useStore(s => s.updateLayoutElement)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
 
@@ -385,42 +386,54 @@ function CourseCard({ courseId }: { courseId: string }) {
   const included = layout?.included !== false
   const descMode = layout?.descMode ?? 'none'
 
-  const effectivePageSize = layout?.pageSize ?? defaults.pageSize
-  const effectiveOrientation = layout?.orientation ?? defaults.orientation
-  const effectivePrintScale = layout?.printScale ?? defaults.printScale
+  // Per-submap layout scoping. The expanded controls edit the submap selected in
+  // layout mode (submap 0 when the course has no exchanges/flips).
+  const submaps = useMemo(() => computeSubmaps(course), [course])
+  const hasSubmaps = submaps.length > 1
+  const activeSubmap = isActive ? Math.min(layoutSubmapIndex, submaps.length - 1) : 0
+  const sub = layout ? (submapLayoutView(layout, activeSubmap) ?? layout) : undefined
+  // Course sliced to the active submap's controls — for fit checks and clue sheets.
+  const submapCourse = useMemo(
+    () => (hasSubmaps && submaps[activeSubmap] ? { ...course, controls: submaps[activeSubmap].controls } : course),
+    [course, hasSubmaps, submaps, activeSubmap],
+  )
 
-  const isPageSizeOverride = layout != null && layout.pageSize !== defaults.pageSize
-  const isOrientationOverride = layout != null && layout.orientation !== defaults.orientation
-  const isScaleOverride = layout != null && layout.printScale !== defaults.printScale
-  const isBorderOverride = layout != null && (
-    (!!layout.mapBorder !== !!defaults.mapBorder) ||
-    (layout.mapBorder && defaults.mapBorder && (
-      layout.mapBorder.x !== defaults.mapBorder.x ||
-      layout.mapBorder.y !== defaults.mapBorder.y ||
-      layout.mapBorder.color !== defaults.mapBorder.color ||
-      layout.mapBorder.strokeWidth !== defaults.mapBorder.strokeWidth
+  const effectivePageSize = sub?.pageSize ?? defaults.pageSize
+  const effectiveOrientation = sub?.orientation ?? defaults.orientation
+  const effectivePrintScale = sub?.printScale ?? defaults.printScale
+
+  const isPageSizeOverride = sub != null && sub.pageSize !== defaults.pageSize
+  const isOrientationOverride = sub != null && sub.orientation !== defaults.orientation
+  const isScaleOverride = sub != null && sub.printScale !== defaults.printScale
+  const isBorderOverride = sub != null && (
+    (!!sub.mapBorder !== !!defaults.mapBorder) ||
+    (sub.mapBorder && defaults.mapBorder && (
+      sub.mapBorder.x !== defaults.mapBorder.x ||
+      sub.mapBorder.y !== defaults.mapBorder.y ||
+      sub.mapBorder.color !== defaults.mapBorder.color ||
+      sub.mapBorder.strokeWidth !== defaults.mapBorder.strokeWidth
     ))
   )
 
-  const effectiveBorder = layout?.mapBorder
+  const effectiveBorder = sub?.mapBorder
 
   const fitInfo = useMemo(() =>
-    checkFitForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder),
-    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder],
+    checkFitForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder),
+    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder],
   )
 
   const tileInfo = useMemo(() =>
     fitInfo && !fitInfo.fits
-      ? checkTilingForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder)
+      ? checkTilingForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder)
       : null,
-    [project, courseId, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, fitInfo],
+    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, fitInfo],
   )
 
   const suggestedScale = useMemo(() =>
     fitInfo && !fitInfo.fits
-      ? suggestFitScaleForCourse(project, courseId, effectivePageSize, effectiveOrientation, effectiveBorder)
+      ? suggestFitScaleForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder)
       : null,
-    [project, courseId, effectivePageSize, effectiveOrientation, effectiveBorder, fitInfo],
+    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder, fitInfo],
   )
 
   function toggleIncluded() {
@@ -477,9 +490,7 @@ function CourseCard({ courseId }: { courseId: string }) {
             value={descMode}
             onClick={e => e.stopPropagation()}
             onChange={e => {
-              const mode = e.target.value as DescMode
-              updateCourseLayout(courseId, { descMode: mode })
-              updateLayoutElement(courseId, 'clueSheet', { visible: mode === 'on-map' || mode === 'both' })
+              updateCourseLayout(courseId, { descMode: e.target.value as DescMode })
             }}
             className="text-[10px] border border-gray-200 rounded px-1 py-0.5 text-gray-500 bg-white focus:outline-none focus:border-orange-400 shrink-0"
           >
@@ -507,8 +518,30 @@ function CourseCard({ courseId }: { courseId: string }) {
       )}
 
       {/* Expanded section (active course) */}
-      {isActive && layout && included && (
+      {isActive && layout && sub && included && (
         <div className="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100 bg-orange-50/30">
+          {/* Submap selector (exchange/flip courses) */}
+          {hasSubmaps && (
+            <div>
+              <SectionLabel>Maps</SectionLabel>
+              <div className="flex gap-1 mt-1 flex-wrap">
+                {submaps.map(sm => (
+                  <button
+                    key={sm.index}
+                    onClick={() => setLayoutSubmap(sm.index)}
+                    className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                      activeSubmap === sm.index
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                    }`}
+                  >
+                    {sm.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Page size */}
           <div>
             <SectionLabel>Page size{isPageSizeOverride && <OverrideTag />}</SectionLabel>
@@ -516,9 +549,9 @@ function CourseCard({ courseId }: { courseId: string }) {
               {PAGE_SIZE_KEYS.map(key => (
                 <button
                   key={key}
-                  onClick={() => updateCourseLayout(courseId, { pageSize: key })}
+                  onClick={() => updateCourseLayout(courseId, { pageSize: key }, activeSubmap)}
                   className={`px-2 py-1 text-[11px] rounded transition-colors ${
-                    layout.pageSize === key
+                    sub.pageSize === key
                       ? 'bg-orange-600 text-white'
                       : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
                   }`}
@@ -528,7 +561,7 @@ function CourseCard({ courseId }: { courseId: string }) {
               ))}
               {isPageSizeOverride && (
                 <button
-                  onClick={() => updateCourseLayout(courseId, { pageSize: defaults.pageSize })}
+                  onClick={() => updateCourseLayout(courseId, { pageSize: defaults.pageSize }, activeSubmap)}
                   className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
                 >
                   Reset
@@ -544,9 +577,9 @@ function CourseCard({ courseId }: { courseId: string }) {
               {(['portrait', 'landscape'] as const).map(o => (
                 <button
                   key={o}
-                  onClick={() => updateCourseLayout(courseId, { orientation: o })}
+                  onClick={() => updateCourseLayout(courseId, { orientation: o }, activeSubmap)}
                   className={`px-2 py-1 text-[11px] rounded capitalize transition-colors ${
-                    layout.orientation === o
+                    sub.orientation === o
                       ? 'bg-orange-600 text-white'
                       : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
                   }`}
@@ -556,7 +589,7 @@ function CourseCard({ courseId }: { courseId: string }) {
               ))}
               {isOrientationOverride && (
                 <button
-                  onClick={() => updateCourseLayout(courseId, { orientation: defaults.orientation })}
+                  onClick={() => updateCourseLayout(courseId, { orientation: defaults.orientation }, activeSubmap)}
                   className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
                 >
                   Reset
@@ -570,12 +603,12 @@ function CourseCard({ courseId }: { courseId: string }) {
             <SectionLabel>Print scale{isScaleOverride && <OverrideTag />}</SectionLabel>
             <div className="flex items-center gap-2 mt-1">
               <ScaleInput
-                value={layout.printScale}
-                onChange={v => updateCourseLayout(courseId, { printScale: v })}
+                value={sub.printScale}
+                onChange={v => updateCourseLayout(courseId, { printScale: v }, activeSubmap)}
               />
               {isScaleOverride && (
                 <button
-                  onClick={() => updateCourseLayout(courseId, { printScale: defaults.printScale })}
+                  onClick={() => updateCourseLayout(courseId, { printScale: defaults.printScale }, activeSubmap)}
                   className="text-[10px] text-orange-600 hover:text-orange-800"
                 >
                   Reset
@@ -592,7 +625,7 @@ function CourseCard({ courseId }: { courseId: string }) {
               </p>
               {suggestedScale && (
                 <button
-                  onClick={() => updateCourseLayout(courseId, { printScale: suggestedScale })}
+                  onClick={() => updateCourseLayout(courseId, { printScale: suggestedScale }, activeSubmap)}
                   className="text-[11px] text-orange-600 hover:text-orange-800 font-medium"
                 >
                   Fit at 1:{suggestedScale.toLocaleString()}
@@ -601,8 +634,8 @@ function CourseCard({ courseId }: { courseId: string }) {
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={layout.tiling === true}
-                  onChange={e => updateCourseLayout(courseId, { tiling: e.target.checked })}
+                  checked={sub.tiling === true}
+                  onChange={e => updateCourseLayout(courseId, { tiling: e.target.checked }, activeSubmap)}
                   className="accent-orange-600"
                 />
                 <span className="text-[11px] text-amber-700">
@@ -622,11 +655,7 @@ function CourseCard({ courseId }: { courseId: string }) {
               {DESC_OPTIONS.map(o => (
                 <button
                   key={o.value}
-                  onClick={() => {
-                    const showOnMap = o.value === 'on-map' || o.value === 'both'
-                    updateCourseLayout(courseId, { descMode: o.value })
-                    updateLayoutElement(courseId, 'clueSheet', { visible: showOnMap })
-                  }}
+                  onClick={() => updateCourseLayout(courseId, { descMode: o.value })}
                   className={`px-2 py-1 text-[11px] rounded transition-colors ${
                     descMode === o.value
                       ? 'bg-orange-600 text-white'
@@ -639,15 +668,15 @@ function CourseCard({ courseId }: { courseId: string }) {
             </div>
           </div>
 
-          {/* Clue sheet breaks (when on-map or both) */}
+          {/* Clue sheet breaks (when on-map or both) — scoped to the active submap */}
           {(descMode === 'on-map' || descMode === 'both') && (() => {
             const controlMap = new Map(controls.map((c: Control) => [c.id, c]))
-            const resolved = course.controls
+            const resolved = submapCourse.controls
               .map(cc => controlMap.get(cc.controlId))
               .filter((c): c is Control => c != null)
             if (resolved.length < 3) return null
 
-            const breaks = layout.clueSheetBreaks ?? []
+            const breaks = sub.clueSheetBreaks ?? []
             const breakSet = new Set(breaks)
             const eligible = resolved
               .map((ctrl, i) => ({ ctrl, i }))
@@ -670,7 +699,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                           <span className="text-gray-400">{startLabel} &rarr; {endLabel}</span>
                           {p > 0 && (
                             <button
-                              onClick={() => removeClueSheetBreak(courseId, p - 1)}
+                              onClick={() => removeClueSheetBreak(courseId, p - 1, activeSubmap)}
                               className="ml-auto w-4 h-4 rounded-full bg-gray-200 hover:bg-red-400 text-gray-500 hover:text-white flex items-center justify-center"
                             >
                               <X size={8} />
@@ -686,7 +715,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                     value=""
                     onChange={e => {
                       const idx = parseInt(e.target.value)
-                      if (!isNaN(idx)) addClueSheetBreak(courseId, idx)
+                      if (!isNaN(idx)) addClueSheetBreak(courseId, idx, activeSubmap)
                     }}
                     className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:border-orange-400 w-full"
                   >
@@ -707,7 +736,7 @@ function CourseCard({ courseId }: { courseId: string }) {
             const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
             const pw = effectiveOrientation === 'landscape' ? base.h : base.w
             const ph = effectiveOrientation === 'landscape' ? base.w : base.h
-            const cb = layout.mapBorder
+            const cb = sub.mapBorder
             return (
               <div>
                 <SectionLabel>Map border{isBorderOverride && <OverrideTag />}</SectionLabel>
@@ -723,9 +752,9 @@ function CourseCard({ courseId }: { courseId: string }) {
                             mapBorder: db
                               ? { ...db }
                               : { color: course.color, strokeWidth: 0.35, x: MARGIN, y: MARGIN, width: pw - 2 * MARGIN, height: ph - 2 * MARGIN },
-                          })
+                          }, activeSubmap)
                         } else {
-                          updateCourseLayout(courseId, { mapBorder: undefined })
+                          updateCourseLayout(courseId, { mapBorder: undefined }, activeSubmap)
                         }
                       }}
                       className="accent-orange-600"
@@ -739,14 +768,14 @@ function CourseCard({ courseId }: { courseId: string }) {
                         value={cb.color}
                         onChange={e => updateCourseLayout(courseId, {
                           mapBorder: { ...cb, color: e.target.value },
-                        })}
+                        }, activeSubmap)}
                         className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
                       />
                       <MmInput
                         value={cb.strokeWidth}
                         onChange={v => updateCourseLayout(courseId, {
                           mapBorder: { ...cb, strokeWidth: v },
-                        })}
+                        }, activeSubmap)}
                         max={20}
                       />
                     </>
@@ -757,9 +786,9 @@ function CourseCard({ courseId }: { courseId: string }) {
                         if (defaults.mapBorder) {
                           updateCourseLayout(courseId, {
                             mapBorder: { ...defaults.mapBorder },
-                          })
+                          }, activeSubmap)
                         } else {
-                          updateCourseLayout(courseId, { mapBorder: undefined })
+                          updateCourseLayout(courseId, { mapBorder: undefined }, activeSubmap)
                         }
                       }}
                       className="text-[10px] text-orange-600 hover:text-orange-800 ml-auto"
@@ -776,7 +805,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                         value={cb.x}
                         onChange={v => updateCourseLayout(courseId, {
                           mapBorder: { ...cb, x: v, width: pw - v - (pw - cb.x - cb.width) },
-                        })}
+                        }, activeSubmap)}
                         max={pw - 20 - (pw - cb.x - cb.width)}
                       />
                       <span className="text-[10px] text-gray-500 w-10 text-right">Right</span>
@@ -784,7 +813,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                         value={Math.round((pw - cb.x - cb.width) * 10) / 10}
                         onChange={v => updateCourseLayout(courseId, {
                           mapBorder: { ...cb, width: pw - cb.x - v },
-                        })}
+                        }, activeSubmap)}
                         max={pw - 20 - cb.x}
                       />
                     </div>
@@ -794,7 +823,7 @@ function CourseCard({ courseId }: { courseId: string }) {
                         value={cb.y}
                         onChange={v => updateCourseLayout(courseId, {
                           mapBorder: { ...cb, y: v, height: ph - v - (ph - cb.y - cb.height) },
-                        })}
+                        }, activeSubmap)}
                         max={ph - 20 - (ph - cb.y - cb.height)}
                       />
                       <span className="text-[10px] text-gray-500 w-10 text-right">Bottom</span>
@@ -802,14 +831,14 @@ function CourseCard({ courseId }: { courseId: string }) {
                         value={Math.round((ph - cb.y - cb.height) * 10) / 10}
                         onChange={v => updateCourseLayout(courseId, {
                           mapBorder: { ...cb, height: ph - cb.y - v },
-                        })}
+                        }, activeSubmap)}
                         max={ph - 20 - cb.y}
                       />
                     </div>
                     <button
                       onClick={() => updateCourseLayout(courseId, {
                         mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
-                      })}
+                      }, activeSubmap)}
                       className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
                     >
                       Re-center
@@ -820,13 +849,13 @@ function CourseCard({ courseId }: { courseId: string }) {
             )
           })()}
 
-          {/* Reset to course center */}
+          {/* Reset to (sub)map center */}
           <button
             onClick={() => {
               const proj = useStore.getState().project
               if (!proj) return
               const controlMap = controlsById(proj.controls)
-              const positions = course.controls
+              const positions = submapCourse.controls
                 .map(cc => controlMap.get(cc.controlId))
                 .filter(Boolean)
                 .map(c => c!.position)
@@ -838,13 +867,13 @@ function CourseCard({ courseId }: { courseId: string }) {
                     x: (Math.min(...xs) + Math.max(...xs)) / 2,
                     y: (Math.min(...ys) + Math.max(...ys)) / 2,
                   },
-                })
+                }, activeSubmap)
                 requestLayoutSnap()
               }
             }}
             className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
           >
-            Reset to course center
+            {hasSubmaps ? 'Reset to map center' : 'Reset to course center'}
           </button>
         </div>
       )}
@@ -875,38 +904,22 @@ export function LayoutPanel() {
       const defaults = getLayoutDefaults(useStore.getState)
       const includedCourses = currentProject.courses.filter(c => c.layout?.included !== false)
 
-      const scaleOverrides: Record<string, number> = {}
+      // Scale, clue-sheet positions, page size, border and centring are all read
+      // per-submap directly from each course's layout inside exportCoursePdf, so
+      // only the course-level description mode needs to be threaded through here.
       const descModes: Record<string, DescMode> = {}
-      const sheetPositions: Record<string, { x: number; y: number }> = {}
-
       for (const c of includedCourses) {
         if (!c.layout) continue
-        if (c.layout.printScale !== defaults.printScale) {
-          scaleOverrides[c.id] = c.layout.printScale
-        }
         descModes[c.id] = c.layout.descMode ?? 'none'
-        if (c.layout.clueSheet.visible) {
-          sheetPositions[c.id] = { x: c.layout.clueSheet.x, y: c.layout.clueSheet.y }
-          if (c.layout.clueSheetBreaks && c.layout.clueSheetParts) {
-            for (let i = 0; i < c.layout.clueSheetParts.length; i++) {
-              sheetPositions[`${c.id}:part${i + 1}`] = {
-                x: c.layout.clueSheetParts[i].x,
-                y: c.layout.clueSheetParts[i].y,
-              }
-            }
-          }
-        }
       }
 
       const options: PdfExportOptions = {
         pageSize: defaults.pageSize,
         orientation: defaults.orientation,
         printScale: defaults.printScale,
-        scaleOverrides,
         courseIds: includedCourses.map(c => c.id),
         allControls,
         descModes,
-        sheetPositions,
         mapOpacity: defaults.mapOpacity,
         mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
         rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,

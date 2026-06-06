@@ -1,9 +1,9 @@
-import type { CourseLayout, MapConfig, Viewport, Course, Control } from '../../types'
+import type { SubmapLayout, MapConfig, Viewport, Course, Control } from '../../types'
 import { PAGE_SIZES, MARGIN, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 
 interface Props {
-  layout: CourseLayout
+  layout: SubmapLayout
   map: MapConfig
   viewport: Viewport
   canvasW: number
