@@ -168,6 +168,13 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       })
     },
 
+    setManualCourseLength: (id: string, metres: number | undefined) => {
+      h.mutateProject(p => {
+        const c = p.courses.find(c => c.id === id)
+        if (c) c.manualLength = metres
+      })
+    },
+
     updateCourseFinishType: (id: string, finishType: FinishType) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)

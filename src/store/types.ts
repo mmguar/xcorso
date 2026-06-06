@@ -21,6 +21,9 @@ export interface EditorState {
   pendingAnnotationPoints: MapPoint[]
   pendingImage: { dataUrl: string; filename: string; naturalWidth: number; naturalHeight: number } | null
   selectedSubmapIndex: number | null
+  measureMode: boolean
+  measureCourseId: string | null
+  measureHiddenLegs: string[]   // legKeys hidden on screen in measure mode (empty = all shown)
   layoutMode: boolean
   layoutCourseId: string | null
   layoutSubmapIndex: number
@@ -72,6 +75,7 @@ export interface AppActions {
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
   updateCourseClimb: (id: string, climb: number | undefined) => void
+  setManualCourseLength: (id: string, metres: number | undefined) => void
   updateCourseFinishType: (id: string, finishType: FinishType) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
@@ -80,6 +84,16 @@ export interface AppActions {
   setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
   toggleExchangeControl: (courseId: string, courseControlId: string) => void
   setSelectedSubmap: (index: number | null) => void
+
+  enterMeasureMode: (courseId: string) => void
+  exitMeasureMode: () => void
+  toggleMeasureLeg: (legKey: string) => void
+  setMeasureHiddenLegs: (legKeys: string[]) => void
+  addMeasurePoint: (fromControlId: string, toControlId: string, point: MapPoint, index?: number) => void
+  beginMoveMeasurePoint: () => void
+  moveMeasurePoint: (fromControlId: string, toControlId: string, index: number, position: MapPoint) => void
+  removeMeasurePoint: (fromControlId: string, toControlId: string, index: number) => void
+  clearMeasureLeg: (fromControlId: string, toControlId: string) => void
 
   toggleCourseLoop: (courseId: string, forkControlId: string) => void
   removeCourseLoop: (courseId: string, loopId: string) => void
@@ -214,6 +228,9 @@ export const defaultEditor: EditorState = {
   pendingAnnotationPoints: [],
   pendingImage: null,
   selectedSubmapIndex: null,
+  measureMode: false,
+  measureCourseId: null,
+  measureHiddenLegs: [],
   layoutMode: false,
   layoutCourseId: null,
   layoutSubmapIndex: 0,
