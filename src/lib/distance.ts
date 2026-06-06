@@ -1,6 +1,11 @@
 import type { MapPoint, MapConfig, CourseDistances, Control, Course } from '../types'
 import { controlsById } from './courseUtils'
-import { distance } from './geometry'
+import { distance, polylineLength } from './geometry'
+
+/** Key for a measured leg polyline (direction-specific). */
+export function legKey(fromControlId: string, toControlId: string): string {
+  return `${fromControlId}__${toControlId}`
+}
 
 /**
  * Convert a distance in map-native units to metres, given the map config.
@@ -41,26 +46,49 @@ export function mapUnitsToMetres(units: number, map: MapConfig): number {
 /**
  * Compute per-leg and total distances for a course.
  * Resolves CourseControl → Control → MapPoint.
+ *
+ * When `measuredLegs` has a polyline for a leg (keyed by `from__to`), that leg's
+ * length follows the measured route (centre → waypoints → centre); otherwise it
+ * is the straight-line distance.
  */
 export function computeCourseDistances(
   course: Course,
   controls: Control[],
   map: MapConfig,
+  measuredLegs?: Record<string, MapPoint[]>,
 ): CourseDistances {
   const controlMap = controlsById(controls)
-  const positions = course.controls
-    .map(cc => controlMap.get(cc.controlId)?.position)
+  const resolved = course.controls.map(cc => ({
+    controlId: cc.controlId,
+    position: controlMap.get(cc.controlId)?.position,
+  }))
+  const positions = resolved
+    .map(r => r.position)
     .filter((p): p is MapPoint => p !== undefined)
 
   if (positions.length < 2) return { legs: [], total: 0 }
 
   const legs: number[] = []
-  for (let i = 0; i < positions.length - 1; i++) {
-    const units = distance(positions[i], positions[i + 1])
+  for (let i = 0; i < resolved.length - 1; i++) {
+    const from = resolved[i]
+    const to = resolved[i + 1]
+    if (!from.position || !to.position) continue
+    const waypoints = measuredLegs?.[legKey(from.controlId, to.controlId)]
+    const units = waypoints && waypoints.length > 0
+      ? polylineLength([from.position, ...waypoints, to.position])
+      : distance(from.position, to.position)
     legs.push(mapUnitsToMetres(units, map))
   }
 
   return { legs, total: legs.reduce((s, d) => s + d, 0) }
+}
+
+/**
+ * The length to display/export for a course: a manually-typed total overrides
+ * everything; otherwise the computed (measured-or-straight) total.
+ */
+export function resolveCourseLength(course: Course, distances: CourseDistances): number {
+  return course.manualLength != null ? course.manualLength : distances.total
 }
 
 export function formatDistance(metres: number): string {

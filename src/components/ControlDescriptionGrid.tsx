@@ -19,7 +19,7 @@ import { useStore } from '../store'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields, isDimensionText, getSymbol } from '../lib/iofSymbols'
 import { defaultControlLabel, computeSubmaps, controlsById } from '../lib/courseUtils'
-import { computeCourseDistances, formatDistance } from '../lib/distance'
+import { computeCourseDistances, formatDistance, resolveCourseLength } from '../lib/distance'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
 import type { Course, Control, CourseControl, FinishType } from '../types'
@@ -48,6 +48,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const controls = useStore(s => s.project!.controls)
   const projectName = useStore(s => s.project!.meta.name)
   const mapConfig = useStore(s => s.project!.map)
+  const measuredLegs = useStore(s => s.project!.measuredLegs)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
@@ -66,7 +67,8 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
     }
   }
 
-  const distances = computeCourseDistances(course, controls, mapConfig)
+  const distances = computeCourseDistances(course, controls, mapConfig, measuredLegs)
+  const totalLength = resolveCourseLength(course, distances)
   const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
 
   const showExtraCol = true
@@ -146,7 +148,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                   {course.name}
                 </td>
                 <td colSpan={2} className={`${BORDER} text-center py-1 bg-gray-50 text-gray-500`}>
-                  {distances.total > 0 ? formatDistance(distances.total) : ''}
+                  {totalLength > 0 ? formatDistance(totalLength) : ''}
                 </td>
                 <td colSpan={3} className={`${BORDER} text-center py-1 bg-gray-50 text-gray-500`}>
                   {course.climb != null && course.climb > 0 ? `${course.climb} m↑` : ''}

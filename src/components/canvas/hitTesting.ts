@@ -162,6 +162,72 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
   return null
 }
 
+// ── Measure mode (route polylines, keyed per leg in project.measuredLegs) ─────
+
+export interface MeasureLegHit {
+  fromControlId: string
+  toControlId: string
+  segmentIndex: number
+}
+
+export interface MeasurePointHit {
+  fromControlId: string
+  toControlId: string
+  index: number
+}
+
+/** Full point path of a measure leg: from-centre, waypoints, to-centre. */
+function measureLegPath(project: Project, fromControlId: string, toControlId: string): MapPoint[] | null {
+  const cm = controlsById(project.controls)
+  const a = cm.get(fromControlId)?.position
+  const b = cm.get(toControlId)?.position
+  if (!a || !b) return null
+  const waypoints = project.measuredLegs?.[`${fromControlId}__${toControlId}`] ?? []
+  return [a, ...waypoints, b]
+}
+
+export function findMeasureLegAt(screenX: number, screenY: number, vp: Viewport, project: Project, measureCourseId: string | null, hiddenLegs?: Set<string>): MeasureLegHit | null {
+  const course = measureCourseId ? project.courses.find(c => c.id === measureCourseId) : null
+  if (!course || course.type === 'score' || course.controls.length < 2) return null
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const hitR = pxToMap(HIT_PX, vp)
+
+  for (let i = 1; i < course.controls.length; i++) {
+    const fromId = course.controls[i - 1].controlId
+    const toId = course.controls[i].controlId
+    if (hiddenLegs?.has(`${fromId}__${toId}`)) continue
+    const pts = measureLegPath(project, fromId, toId)
+    if (!pts) continue
+    for (let j = 0; j < pts.length - 1; j++) {
+      if (distToSegment(mapPt, pts[j], pts[j + 1]) < hitR) {
+        return { fromControlId: fromId, toControlId: toId, segmentIndex: j }
+      }
+    }
+  }
+  return null
+}
+
+export function findMeasurePointAt(screenX: number, screenY: number, vp: Viewport, project: Project, measureCourseId: string | null, hiddenLegs?: Set<string>): MeasurePointHit | null {
+  const course = measureCourseId ? project.courses.find(c => c.id === measureCourseId) : null
+  if (!course || course.controls.length < 2) return null
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const hitR = pxToMap(HIT_PX, vp)
+
+  for (let i = 1; i < course.controls.length; i++) {
+    const fromId = course.controls[i - 1].controlId
+    const toId = course.controls[i].controlId
+    if (hiddenLegs?.has(`${fromId}__${toId}`)) continue
+    const waypoints = project.measuredLegs?.[`${fromId}__${toId}`]
+    if (!waypoints) continue
+    for (let j = 0; j < waypoints.length; j++) {
+      if (Math.hypot(mapPt.x - waypoints[j].x, mapPt.y - waypoints[j].y) < hitR) {
+        return { fromControlId: fromId, toControlId: toId, index: j }
+      }
+    }
+  }
+  return null
+}
+
 function pointInPolygon(pt: MapPoint, poly: MapPoint[]): boolean {
   let inside = false
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {

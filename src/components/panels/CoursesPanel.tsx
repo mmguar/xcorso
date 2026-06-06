@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import { useStore } from '../../store'
-import { computeCourseDistances } from '../../lib/distance'
+import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
@@ -13,6 +13,8 @@ function CourseEditor({ course }: { course: Course }) {
   const reorderCourseControls = useStore(s => s.reorderCourseControls)
   const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
+  const setManualCourseLength = useStore(s => s.setManualCourseLength)
+  const enterMeasureMode = useStore(s => s.enterMeasureMode)
   const updateCourseFinishType = useStore(s => s.updateCourseFinishType)
   const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
   const updateCourseTextDescriptions = useStore(s => s.updateCourseTextDescriptions)
@@ -21,7 +23,9 @@ function CourseEditor({ course }: { course: Course }) {
   const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
   const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
 
-  const distances = computeCourseDistances(course, project.controls, project.map)
+  const distances = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
+  const computedTotal = distances.total
+  const resolvedTotal = resolveCourseLength(course, distances)
 
   const handleRemove = useCallback((ccId: string) => removeControlFromCourse(course.id, ccId), [removeControlFromCourse, course.id])
   const handleReorder = useCallback((reordered: CourseControl[]) => reorderCourseControls(course.id, reordered), [reorderCourseControls, course.id])
@@ -115,6 +119,35 @@ function CourseEditor({ course }: { course: Course }) {
 
       {/* Variations */}
       <VariationsSection course={course} />
+
+      {/* Length: computed/measured total + manual override + measure mode */}
+      {computedTotal > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
+          <span className="text-xs text-gray-500">Length</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={course.manualLength ?? ''}
+            placeholder={String(Math.round(computedTotal))}
+            title={course.manualLength != null ? 'Manual override — clear to use measured/computed length' : 'Computed length (type to override)'}
+            onChange={e => {
+              const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+              setManualCourseLength(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
+            }}
+            className={`w-16 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 ${course.manualLength != null ? 'border-orange-400 text-orange-700 font-medium' : ''}`}
+          />
+          <span className="text-gray-400 text-xs">m</span>
+          <span className="text-[10px] text-gray-400">({formatDistance(resolvedTotal)})</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => enterMeasureMode(course.id)}
+            className="text-[11px] font-medium text-orange-600 hover:text-orange-800 transition-colors"
+            title="Trace the real route per leg to measure actual distance"
+          >
+            Measure…
+          </button>
+        </div>
+      )}
 
       {/* Climb & finish type */}
       {(distances.total > 0 || course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
