@@ -15,7 +15,7 @@ import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
+import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
@@ -209,6 +209,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
+  const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
   const layoutSnapRequest = useStore(s => s.editor.layoutSnapRequest)
   const layoutCourse = useStore(s => {
     if (!s.editor.layoutCourseId) return null
@@ -270,11 +271,11 @@ export function MapCanvas({ loadedMap }: Props) {
       prevLayoutRef.current = null
       return
     }
-    const layout = layoutCourse.layout
+    const layout = submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout
     // Re-fit/recenter only when the page or scale changes, or on an explicit snap
-    // request (entering layout mode, and after undo/redo — see store undo/redo).
-    // Plain map moves update mapCenter silently and keep the viewport in sync, so
-    // they intentionally don't re-trigger this.
+    // request (entering layout mode, switching submap, and after undo/redo — see
+    // store undo/redo). Plain map moves update mapCenter silently and keep the
+    // viewport in sync, so they intentionally don't re-trigger this.
     const key = { courseId: layoutCourseId, printScale: layout.printScale, pageSize: layout.pageSize, orientation: layout.orientation, snap: layoutSnapRequest }
     const prev = prevLayoutRef.current
     if (prev && prev.courseId === key.courseId && prev.printScale === key.printScale && prev.pageSize === key.pageSize && prev.orientation === key.orientation && prev.snap === key.snap) return
@@ -301,7 +302,7 @@ export function MapCanvas({ loadedMap }: Props) {
       y: height / 2 - layout.mapCenter.y * desiredScale,
       scale: desiredScale,
     })
-  }, [layoutMode, layoutCourseId, layoutCourse, map, layoutSnapRequest])
+  }, [layoutMode, layoutCourseId, layoutSubmapIndex, layoutCourse, map, layoutSnapRequest])
 
   // Keep <g> transforms in sync after any React re-render
   useLayoutEffect(syncTransform)
@@ -488,8 +489,13 @@ export function MapCanvas({ loadedMap }: Props) {
         const sy = e.clientY - rect.top
 
         const course = proj.courses.find(c => c.id === state.editor.layoutCourseId)
-        const layout = course?.layout
-        if (layout) {
+        const smIdx = state.editor.layoutSubmapIndex
+        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
+        // Course slice for this submap (for clue-sheet box sizing).
+        const submapCourse = course
+          ? (() => { const sm = computeSubmaps(course); return sm.length > 1 && sm[smIdx] ? { ...course, controls: sm[smIdx].controls } : course })()
+          : undefined
+        if (layout && course && submapCourse) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
           const pageH = layout.orientation === 'landscape' ? base.w : base.h
@@ -519,14 +525,14 @@ export function MapCanvas({ loadedMap }: Props) {
           const breaks = layout.clueSheetBreaks
           const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
           if (breaks && breaks.length > 0) {
-            const sizes = descriptionSheetPartSizes(course!, proj.controls, breaks)
+            const sizes = descriptionSheetPartSizes(submapCourse, proj.controls, breaks)
             const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
             for (let i = 0; i < sizes.length; i++) {
               const el = positions[i] ?? layout.clueSheet
               elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
             }
           } else {
-            const sheet = descriptionSheetSize(course!, proj.controls)
+            const sheet = descriptionSheetSize(submapCourse, proj.controls)
             elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
           }
           for (const { key, el, wMm, hMm } of elements) {
@@ -787,7 +793,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const st = useStore.getState()
         const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-        const layout = course?.layout
+        const smIdx = st.editor.layoutSubmapIndex
+        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
         if (layout?.mapBorder) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
@@ -807,7 +814,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const clampedY = Math.max(0, newY)
           st.moveCourseLayout(st.editor.layoutCourseId!, {
             mapBorder: { ...layout.mapBorder, x: clampedX, y: clampedY, width: Math.min(newW, pageW - clampedX), height: Math.min(newH, pageH - clampedY) },
-          })
+          }, smIdx)
         }
         return
       }
@@ -821,7 +828,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const st = useStore.getState()
         const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-        const layout = course?.layout
+        const smIdx = st.editor.layoutSubmapIndex
+        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
         if (layout?.mapBorder) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
@@ -838,7 +846,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const newY = Math.max(0, Math.min(pageH - bh, dragBorderTranslate.oy + dy))
           st.moveCourseLayout(st.editor.layoutCourseId!, {
             mapBorder: { ...layout.mapBorder, x: newX, y: newY, width: bw, height: bh },
-          })
+          }, smIdx)
         }
         return
       }
@@ -852,7 +860,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const st = useStore.getState()
         const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-        const layout = course?.layout
+        const smIdx = st.editor.layoutSubmapIndex
+        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
         if (layout) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
@@ -864,7 +873,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const dy = (e.clientY - dragLayoutEl.sy) / mmToPx
           const newX = dragLayoutEl.ox + dx
           const newY = dragLayoutEl.oy + dy
-          st.updateLayoutElement(st.editor.layoutCourseId!, dragLayoutEl.element, { x: newX, y: newY })
+          st.updateLayoutElement(st.editor.layoutCourseId!, dragLayoutEl.element, { x: newX, y: newY }, smIdx)
         }
         return
       }
@@ -1133,7 +1142,7 @@ export function MapCanvas({ loadedMap }: Props) {
           // mapCenter is still the pre-drag value here (only written below), so
           // snapshot now — undo then restores it and the snap effect re-centers.
           st.beginLayoutDrag()
-          st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY })
+          st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY }, st.editor.layoutSubmapIndex)
         }
       }
 
@@ -1697,17 +1706,24 @@ export function MapCanvas({ loadedMap }: Props) {
       )}
 
       {/* Layout mode page overlay (border mask) */}
-      {layoutMode && layoutCourse?.layout && (
-        <PageOverlay
-          layout={layoutCourse.layout}
-          map={map}
-          viewport={vp}
-          canvasW={rectCacheRef.current?.width ?? 800}
-          canvasH={rectCacheRef.current?.height ?? 600}
-          course={layoutCourse}
-          controls={controls}
-        />
-      )}
+      {layoutMode && layoutCourse?.layout && (() => {
+        const submaps = computeSubmaps(layoutCourse)
+        const submapLayout = submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout
+        const submapCourse = submaps.length > 1 && submaps[layoutSubmapIndex]
+          ? { ...layoutCourse, controls: submaps[layoutSubmapIndex].controls }
+          : layoutCourse
+        return (
+          <PageOverlay
+            layout={submapLayout}
+            map={map}
+            viewport={vp}
+            canvasW={rectCacheRef.current?.width ?? 800}
+            canvasH={rectCacheRef.current?.height ?? 600}
+            course={submapCourse}
+            controls={controls}
+          />
+        )
+      })()}
 
       {/* Overlays — above the border mask, always visible */}
       <svg key="above-border" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>

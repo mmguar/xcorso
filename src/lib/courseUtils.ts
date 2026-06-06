@@ -1,4 +1,4 @@
-import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec } from '../types'
+import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapConfig, MapPoint, ControlType, EventSpec, CourseLayout, SubmapLayout } from '../types'
 import { getSymbolDims, symbolScaleFactor, symbolLabelOffset } from './symbolSpec'
 import { distance } from './geometry'
 
@@ -85,6 +85,20 @@ export function computeSubmaps(course: Course, _controls?: Control[]): Submap[] 
     label: `Map ${submaps.length + 1}`,
   })
   return submaps
+}
+
+/** Number of submaps a course is split into (1 when it has no exchanges/flips). */
+export function submapCount(course: Course): number {
+  return computeSubmaps(course).length
+}
+
+/**
+ * The SubmapLayout for submap `index`. Submap 0 is the CourseLayout itself;
+ * submaps 1..N-1 live in `layout.submapLayouts`. Returns undefined if missing.
+ */
+export function submapLayoutView(layout: CourseLayout, index: number): SubmapLayout | undefined {
+  if (index <= 0) return layout
+  return layout.submapLayouts?.[index - 1]
 }
 
 // ─── Loop utilities ────────────────────────────────────────────────────────
