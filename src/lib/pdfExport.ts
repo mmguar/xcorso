@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
-import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation, OverprintMode } from '../types'
 import type { LoadedMap } from './mapLoader'
+import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances } from './distance'
@@ -90,8 +91,12 @@ export interface PdfExportOptions {
   mapOpacity?: number
   mapRendering?: 'vector' | 'raster'
   rasterDpi?: number
+  /** Simulate spot-ink overprint on the base map. Forces the raster path. */
+  mapOverprint?: boolean
   /** Annotation overprint level: 0 = solid knockout, 1 = full multiply overprint. Default 1. */
   overprint?: number
+  /** Course/control/annotation ink stacking. 'below' redraws black/brown/blue map colours on top. */
+  overprintMode?: OverprintMode
 }
 
 export interface CourseFitInfo {
@@ -160,12 +165,16 @@ async function rasterizeSvgRegion(
   canvasW: number,
   canvasH: number,
   opacity: number,
+  overprint = false,
+  extra: { keepColors?: string[]; transparent?: boolean } = {},
 ): Promise<string> {
   const clone = svgEl.cloneNode(true) as SVGElement
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   clone.setAttribute('viewBox', `${crop.minX} ${crop.minY} ${crop.width} ${crop.height}`)
   clone.setAttribute('width', String(canvasW))
   clone.setAttribute('height', String(canvasH))
+  if (overprint) applyMapOverprint(clone, crop)
+  if (extra.keepColors && extra.keepColors.length > 0) pruneSvgToColors(clone, extra.keepColors)
 
   const svgString = new XMLSerializer().serializeToString(clone)
   const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
@@ -178,11 +187,15 @@ async function rasterizeSvgRegion(
     canvas.width = canvasW
     canvas.height = canvasH
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = 'white'
-    ctx.fillRect(0, 0, canvasW, canvasH)
+    if (!extra.transparent) {
+      ctx.fillStyle = 'white'
+      ctx.fillRect(0, 0, canvasW, canvasH)
+    }
     ctx.globalAlpha = opacity
     ctx.drawImage(img, 0, 0, canvasW, canvasH)
-    return canvas.toDataURL('image/jpeg', 0.92)
+    // PNG preserves transparency for the top-colours overlay; JPEG is smaller
+    // for the opaque base map.
+    return extra.transparent ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.92)
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -1178,6 +1191,14 @@ export async function exportCoursePdf(
 
   const rasterDpi = options.rasterDpi ?? 300
   const mapOpacity = options.mapOpacity ?? 1
+  const mapOverprint = !!options.mapOverprint
+  // 'below' overprint: purple ink sits beneath the black/brown/blue map colours.
+  // Needs the vector map's colour separations, so it only applies to svg maps
+  // with identifiable top colours; otherwise the export falls back to the
+  // multiply intensity in options.overprint (the 'simulated' behaviour).
+  const belowColors = loadedMap?.type === 'svg' ? (loadedMap.topOverprintColors ?? []) : []
+  const belowActive = options.overprintMode === 'below' && belowColors.length > 0
+  const courseOverprint = belowActive ? 0 : (options.overprint ?? 1)
 
   /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */
   function prepareSvgForPdfEmbed(): SVGElement {
@@ -1207,6 +1228,34 @@ export async function exportCoursePdf(
     return root
   }
 
+  // Crop + capped pixel size for rasterising the visible page region of an SVG
+  // map at the target DPI (so a zoomed-in page gets a fresh high-res render
+  // instead of stretching one pre-rasterised image of the whole map).
+  function svgPageRegion(toPage: (pt: MapPoint) => Pos, pageMmW: number, pageMmH: number) {
+    const tl = toPage({ x: loadedMap!.bounds.minX, y: loadedMap!.bounds.minY })
+    const br = toPage({ x: loadedMap!.bounds.maxX, y: loadedMap!.bounds.maxY })
+    const w = br.x - tl.x
+    const h = br.y - tl.y
+    const mapBounds = loadedMap!.bounds
+    const scaleX = mapBounds.width / w
+    const scaleY = mapBounds.height / h
+    const crop: RasterCrop = {
+      minX: mapBounds.minX + (-tl.x) * scaleX,
+      minY: mapBounds.minY + (-tl.y) * scaleY,
+      width: pageMmW * scaleX,
+      height: pageMmH * scaleY,
+    }
+    let capW = Math.ceil(pageMmW / 25.4 * rasterDpi)
+    let capH = Math.ceil(pageMmH / 25.4 * rasterDpi)
+    const longest = Math.max(capW, capH)
+    if (longest > MAX_RASTER_PX) {
+      const k = MAX_RASTER_PX / longest
+      capW = Math.max(1, Math.round(capW * k))
+      capH = Math.max(1, Math.round(capH * k))
+    }
+    return { crop, capW, capH, tl, w, h }
+  }
+
   async function embedMap(toPage: (pt: MapPoint) => Pos, pageMmW: number, pageMmH: number) {
     if (!loadedMap) return
     const tl = toPage({ x: loadedMap.bounds.minX, y: loadedMap.bounds.minY })
@@ -1223,33 +1272,34 @@ export async function exportCoursePdf(
       }
     }
     if (loadedMap.type === 'svg') {
-      // Rasterize just the visible page region from the SVG at the target DPI,
-      // so a zoomed-in page gets a fresh, high-resolution render instead of
-      // stretching a single pre-rasterized image of the whole map.
-      const pxW = Math.ceil(pageMmW / 25.4 * rasterDpi)
-      const pxH = Math.ceil(pageMmH / 25.4 * rasterDpi)
-      const mapBounds = loadedMap.bounds
-      const scaleX = mapBounds.width / w
-      const scaleY = mapBounds.height / h
-      const cropMinX = mapBounds.minX + (-tl.x) * scaleX
-      const cropMinY = mapBounds.minY + (-tl.y) * scaleY
-      const cropW = pageMmW * scaleX
-      const cropH = pageMmH * scaleY
-      let capW = pxW, capH = pxH
-      const longest = Math.max(capW, capH)
-      if (longest > MAX_RASTER_PX) {
-        const k = MAX_RASTER_PX / longest
-        capW = Math.max(1, Math.round(capW * k))
-        capH = Math.max(1, Math.round(capH * k))
-      }
+      const { crop, capW, capH } = svgPageRegion(toPage, pageMmW, pageMmH)
       try {
         const svgEl = loadedMap.content as SVGElement
-        const dataUrl = await rasterizeSvgRegion(svgEl, { minX: cropMinX, minY: cropMinY, width: cropW, height: cropH }, capW, capH, mapOpacity)
+        const dataUrl = await rasterizeSvgRegion(svgEl, crop, capW, capH, mapOpacity, mapOverprint)
         doc.addImage(dataUrl, 'JPEG', 0, 0, pageMmW, pageMmH)
         return
       } catch { /* fall through */ }
     }
     if (bitmapDataUrl) doc.addImage(bitmapDataUrl, 'JPEG', tl.x, tl.y, w, h)
+  }
+
+  // 'Below' overprint: after the course ink is drawn, redraw only the
+  // black/brown/blue map layers on top so the purple sits beneath them.
+  async function embedTopColors(toPage: (pt: MapPoint) => Pos, pageMmW: number, pageMmH: number) {
+    if (!belowActive || loadedMap?.type !== 'svg') return
+    const { crop, capW, capH } = svgPageRegion(toPage, pageMmW, pageMmH)
+    try {
+      const svgEl = loadedMap.content as SVGElement
+      const dataUrl = await rasterizeSvgRegion(svgEl, crop, capW, capH, mapOpacity, false, {
+        keepColors: belowColors,
+        transparent: true,
+      })
+      // Multiply so white knockout pixels inside black/brown/blue symbols drop
+      // out (white × ink = ink) instead of painting solid over the course purple.
+      doc.setGState(doc.GState({ blendMode: 'Multiply' }))
+      doc.addImage(dataUrl, 'PNG', 0, 0, pageMmW, pageMmH)
+      doc.setGState(doc.GState({ blendMode: 'Normal' }))
+    } catch { /* overlay is best-effort */ }
   }
 
   let pageIndex = 0
@@ -1296,7 +1346,7 @@ export async function exportCoursePdf(
           const annColor = '#a626ff'
           const allCtrlSpec = resolveSpec(project.spec)
 
-          overprintPass(doc, options.overprint ?? 1, () => {
+          overprintPass(doc, courseOverprint, () => {
             setColor(doc, annColor)
             drawAnnotationInk(doc, project.annotations, toPage, mapScale, allCtrlSpec)
 
@@ -1308,6 +1358,7 @@ export async function exportCoursePdf(
               drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec, loMm)
             }
           })
+          await embedTopColors(toPage, pw, ph)
           drawNorthArrows(doc, project.annotations, toPage, mapScale, allCtrlSpec)
 
           // Overlays
@@ -1400,7 +1451,7 @@ export async function exportCoursePdf(
           const mapScale = courseScale
           const annColor = '#a626ff'
           const courseSpec = resolveSpec(project.spec, course.spec)
-          overprintPass(doc, options.overprint ?? 1, () => {
+          overprintPass(doc, courseOverprint, () => {
           setColor(doc, annColor)
           drawAnnotationInk(doc, project.annotations, toPage, mapScale, courseSpec)
 
@@ -1442,6 +1493,7 @@ export async function exportCoursePdf(
             }
           }
           })
+          await embedTopColors(toPage, cpw, cph)
           drawNorthArrows(doc, project.annotations, toPage, mapScale, courseSpec)
 
           if (layout?.mapBorder) {

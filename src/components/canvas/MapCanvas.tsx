@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
@@ -13,6 +13,7 @@ import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../.
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
+import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
@@ -159,6 +160,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const overlayMultGRef = useRef<SVGGElement>(null)
   const courseGRef = useRef<SVGGElement>(null)
   const courseMultGRef = useRef<SVGGElement>(null)
+  const topOverlayGRef = useRef<SVGGElement>(null)
   const aboveBorderGRef = useRef<SVGGElement>(null)
   const dragLegsRef = useRef<DragLegsHandle>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
@@ -178,6 +180,7 @@ export function MapCanvas({ loadedMap }: Props) {
     if (overlayMultGRef.current) overlayMultGRef.current.style.transform = t
     if (courseGRef.current) courseGRef.current.style.transform = t
     if (courseMultGRef.current) courseMultGRef.current.style.transform = t
+    if (topOverlayGRef.current) topOverlayGRef.current.style.transform = t
     // In layout mode during a map pan, overlays are page-relative — freeze them
     // so they don't slide with the map. setLayoutMapCenter shifts their map coords
     // on pointer-up, and the post-render syncTransform applies the final transform.
@@ -213,9 +216,30 @@ export function MapCanvas({ loadedMap }: Props) {
   })
 
   const [useRaster, setUseRaster] = useState(true)
+  const mapOverprint = useStore(s => s.project?.layoutDefaults?.mapOverprint ?? false)
+  // Overprint-simulated raster, generated lazily when the option is enabled.
+  // Only meaningful for OCAD (svg) maps in raster mode; HD/vector shows as usual.
+  // The render gates on `mapOverprint` too, so a stale url here is never shown.
+  const [overprintRasterUrl, setOverprintRasterUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!mapOverprint || loadedMap.type !== 'svg') return
+    let cancelled = false
+    let url: string | undefined
+    rasterizeSvgOverprint(loadedMap.content as SVGElement, loadedMap.bounds).then(u => {
+      if (cancelled) { if (u) URL.revokeObjectURL(u); return }
+      url = u
+      setOverprintRasterUrl(u ?? null)
+    })
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
+  }, [mapOverprint, loadedMap])
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
+  // After dropping a control that is shared across courses, offer to split it
+  // off into a new control for the selected course (see the drag-commit path).
+  const [splitPrompt, setSplitPrompt] = useState<
+    { controlId: string; courseId: string; courseName: string; courseCount: number; newPos: MapPoint; origPos: MapPoint; sx: number; sy: number } | null
+  >(null)
   const gapRingRef = useRef<SVGGElement>(null)
   const [oobCursorPoint, setOobCursorPoint] = useState<MapPoint | null>(null)
 
@@ -410,6 +434,9 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Pointer down ─────────────────────────────────────────────────────────
     function onDown(e: PointerEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return
+      // Any fresh gesture on the canvas dismisses a pending split offer. (Taps on
+      // the offer's own buttons are HTMLButtonElements, handled by the guard above.)
+      setSplitPrompt(null)
       // Refresh the cached rect at the start of every gesture. ResizeObserver only
       // fires on size changes and the scroll listener only on window scroll, so a
       // position-only shift of the canvas (header settling, layout reflow) would
@@ -722,9 +749,13 @@ export function MapCanvas({ loadedMap }: Props) {
             }
           }
 
-          // Controls
+          // Controls. When a course is selected, only its own controls are
+          // draggable — controls belonging solely to other courses are locked
+          // (the gesture falls through to a pan), matching label drag behaviour.
           const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
-          if (hit) {
+          const selCourse = state.editor.selectedCourseId ? proj.courses.find(c => c.id === state.editor.selectedCourseId) : null
+          const hitInCourse = hit && (!selCourse || selCourse.controls.some(cc => cc.controlId === hit.id))
+          if (hit && hitInCourse) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
             dragControlId = hit.id
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
@@ -1119,12 +1150,35 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (dragControlId && dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
+        const splitId = dragControlId
+        const splitNewPos = pendingControlPos
+        const splitOrigPos = dragOrigPos
         if (pendingControlPos) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
         if (dragControlEls.length) { for (const el of dragControlEls) el.style.transform = ''; dragControlEls = [] }
         dragLegsRef.current?.end()
         dragOrigPos = null
         useStore.getState().setDraggingControl(null)
-        dragControlId = null; dragOffset = null; dragStarted = false; return
+        dragControlId = null; dragOffset = null; dragStarted = false
+        // The drag above moved the control in *every* course it belongs to. If it
+        // is shared and the selected course holds it, offer to split it off into a
+        // new control for just that course (the move stays as the default).
+        if (splitNewPos && splitOrigPos) {
+          const st = useStore.getState()
+          const cid = st.editor.selectedCourseId
+          const proj = st.project
+          if (cid && proj) {
+            const containing = proj.courses.filter(c => c.controls.some(cc => cc.controlId === splitId))
+            const selCourse = containing.find(c => c.id === cid)
+            if (selCourse && containing.length >= 2) {
+              const rect = getRect()
+              setSplitPrompt({
+                controlId: splitId, courseId: cid, courseName: selCourse.name, courseCount: containing.length,
+                newPos: splitNewPos, origPos: splitOrigPos, sx: e.clientX - rect.left, sy: e.clientY - rect.top,
+              })
+            }
+          }
+        }
+        return
       }
       dragControlId = null; dragOffset = null; dragStarted = false
 
@@ -1426,6 +1480,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const overprint = useStore(s => s.project?.overprint ?? 1)
+  const overprintMode = useStore(s => s.project?.overprintMode ?? 'simulated')
   const gapSize = useStore(s => s.editor.gapSize)
   const gapRebuild = useStore(s => s.editor.gapRebuild)
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
@@ -1456,7 +1511,15 @@ export function MapCanvas({ loadedMap }: Props) {
   // The multiply pass lives in its own sibling <svg> (a direct child of the
   // container) so its backdrop is the map — putting mix-blend-mode inside the
   // transformed group would blend against an empty backdrop instead.
-  const overprintT = Math.max(0, Math.min(1, overprint))
+  //
+  // 'none'      → solid ink on top (no multiply).
+  // 'below'     → only achievable in HD (vector): draw ink solid, then redraw the
+  //               black/brown/blue map layers on top (see topOverlay below). On the
+  //               fast raster screen it falls back to 'simulated'.
+  // 'simulated' → multiply pass at the slider intensity.
+  const topOverprintColors = loadedMap.topOverprintColors ?? []
+  const belowHD = overprintMode === 'below' && !useRaster && loadedMap.type === 'svg' && topOverprintColors.length > 0
+  const overprintT = overprintMode === 'none' || belowHD ? 0 : Math.max(0, Math.min(1, overprint))
   const annBase = {
     annotations,
     pendingPoints: pendingAnnotationPoints,
@@ -1488,7 +1551,7 @@ export function MapCanvas({ loadedMap }: Props) {
           pointerEvents: 'none',
         }}
       >
-        <MapCanvasLayer loadedMap={loadedMap} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
+        <MapCanvasLayer loadedMap={loadedMap} srcOverride={mapOverprint && useRaster && overprintRasterUrl ? overprintRasterUrl : undefined} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
       </div>
       {/* HD SVG overlay — true vector quality at rest (OCAD HD mode only) */}
       {!useRaster && loadedMap.type === 'svg' && (
@@ -1618,6 +1681,17 @@ export function MapCanvas({ loadedMap }: Props) {
               controls={layoutControls}
               course={selectedCourse}
             />
+          </g>
+        </svg>
+      )}
+
+      {/* 'Below' overprint (HD only): redraw the black/brown/blue map layers on
+          top of the course ink so the purple sits beneath them in the stack. */}
+      {belowHD && (
+        <svg key="top-overprint" width="100%" height="100%"
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined }}>
+          <g ref={topOverlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
+            <MapLayer loadedMap={loadedMap} useRaster={false} keepColors={topOverprintColors} transparent />
           </g>
         </svg>
       )}
@@ -1808,6 +1882,35 @@ export function MapCanvas({ loadedMap }: Props) {
             useStore.getState().setActiveTool('select')
           }}
         />
+      )}
+
+      {splitPrompt && (
+        <div
+          className="absolute z-20 flex flex-col gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 p-2 text-xs"
+          style={{ left: splitPrompt.sx, top: splitPrompt.sy + 18, transform: 'translateX(-50%)', maxWidth: 260 }}
+        >
+          <div className="text-gray-600 px-1 leading-snug">
+            This control is in {splitPrompt.courseCount === 2 ? 'two' : splitPrompt.courseCount} courses
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              className="flex-1 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-left"
+              onClick={() => {
+                const nc = useStore.getState().splitControl(splitPrompt.controlId, splitPrompt.courseId, splitPrompt.newPos, splitPrompt.origPos)
+                useStore.getState().setSelectedControl(nc.id)
+                setSplitPrompt(null)
+              }}
+            >
+              Split in two controls
+            </button>
+            <button
+              className="px-2 py-1 rounded text-gray-500 hover:bg-gray-100 shrink-0"
+              onClick={() => setSplitPrompt(null)}
+            >
+              {splitPrompt.courseCount === 2 ? 'Move for both' : 'Move for all'}
+            </button>
+          </div>
+        </div>
       )}
 
       {import.meta.env.DEV && <FpsCounter />}

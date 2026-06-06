@@ -4,11 +4,13 @@ import type { LoadedMap } from '../../lib/mapLoader'
 interface Props {
   loadedMap: LoadedMap
   onPixelSize?: (w: number, h: number) => void
+  /** Overrides the default raster source (e.g. an overprint-simulated render). */
+  srcOverride?: string
 }
 
 const MAX_CANVAS_DIM = 8192
 
-export function MapCanvasLayer({ loadedMap, onPixelSize }: Props) {
+export function MapCanvasLayer({ loadedMap, onPixelSize, srcOverride }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const onPixelSizeRef = useRef(onPixelSize)
   onPixelSizeRef.current = onPixelSize
@@ -18,7 +20,9 @@ export function MapCanvasLayer({ loadedMap, onPixelSize }: Props) {
     const img = new Image()
 
     let src: string | undefined
-    if (loadedMap.type === 'svg') {
+    if (srcOverride) {
+      src = srcOverride
+    } else if (loadedMap.type === 'svg') {
       src = loadedMap.rasterUrl
     } else {
       src = loadedMap.content as string
@@ -45,7 +49,7 @@ export function MapCanvasLayer({ loadedMap, onPixelSize }: Props) {
     img.src = src
 
     return () => { cancelled = true }
-  }, [loadedMap])
+  }, [loadedMap, srcOverride])
 
   return (
     <canvas

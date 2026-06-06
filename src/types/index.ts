@@ -183,6 +183,8 @@ export interface LayoutDefaults {
   mapOpacity: number
   mapRendering: 'vector' | 'raster'
   rasterDpi: number
+  /** Simulate spot-ink overprint on the base map (raster mode only; ignored in HD/vector). */
+  mapOverprint?: boolean
   mapBorder?: MapBorder
 }
 
@@ -264,7 +266,17 @@ export interface Project {
   layoutDefaults?: LayoutDefaults
   /** Overprint level for course/annotation ink: 0 = solid knockout, 1 = full multiply overprint. Default 1. */
   overprint?: number
+  /**
+   * How course/control/annotation ink relates to the map:
+   *  - 'simulated' — multiply the purple ink over the map (intensity = `overprint`). Default.
+   *  - 'none'      — solid ink always drawn on top (knockout).
+   *  - 'below'     — purple sits below black/brown/blue-100% map colours (HD + export only;
+   *                  falls back to 'simulated' on the fast raster screen).
+   */
+  overprintMode?: OverprintMode
 }
+
+export type OverprintMode = 'simulated' | 'none' | 'below'
 
 // ─── Appearance ──────────���──────────────────────���───────────────────────────
 

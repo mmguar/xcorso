@@ -1,11 +1,20 @@
 import { RotateCcw } from 'lucide-react'
 import { useStore } from '../../store'
+import type { OverprintMode } from '../../types'
+
+const OVERPRINT_OPTIONS: { value: OverprintMode; label: string; hint: string }[] = [
+  { value: 'simulated', label: 'Simulated overprint', hint: 'Purple multiplies over the map' },
+  { value: 'none', label: 'No overprint', hint: 'Always printed on top' },
+  { value: 'below', label: 'Below black/brown/blue', hint: 'Purple under 100% map colours (HD & export)' },
+]
 
 export function AppearancePanel() {
   const appearance = useStore(s => s.editor.appearance)
   const setAppearance = useStore(s => s.setAppearance)
   const overprint = useStore(s => s.project?.overprint ?? 1)
   const setOverprint = useStore(s => s.setOverprint)
+  const overprintMode = useStore(s => s.project?.overprintMode ?? 'simulated')
+  const setOverprintMode = useStore(s => s.setOverprintMode)
 
   return (
     <div className="p-3 space-y-4 text-sm">
@@ -19,14 +28,36 @@ export function AppearancePanel() {
         />
       </Section>
 
-      {/* Overprint — multiply course & annotation ink with the map (0 = solid) */}
+      {/* Overprint — how course / control / annotation ink sits over the map */}
       <Section label="Overprint">
-        <SliderRow
-          value={overprint}
-          min={0} max={1} step={0.05}
-          format={v => `${Math.round(v * 100)}%`}
-          onChange={v => setOverprint(v)}
-        />
+        <div className="space-y-1">
+          {OVERPRINT_OPTIONS.map(opt => (
+            <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="overprint-mode"
+                checked={overprintMode === opt.value}
+                onChange={() => setOverprintMode(opt.value)}
+                className="accent-orange-600 mt-0.5"
+              />
+              <span className="text-xs text-gray-600 leading-tight">
+                {opt.label}
+                <span className="block text-[10px] text-gray-400">{opt.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {overprintMode !== 'none' && (
+          <div className="mt-2 pl-1">
+            <div className="text-[10px] text-gray-400 mb-1">Intensity</div>
+            <SliderRow
+              value={overprint}
+              min={0} max={1} step={0.05}
+              format={v => `${Math.round(v * 100)}%`}
+              onChange={v => setOverprint(v)}
+            />
+          </div>
+        )}
       </Section>
 
       {/* Line width */}
