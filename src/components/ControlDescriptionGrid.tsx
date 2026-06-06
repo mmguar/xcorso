@@ -48,7 +48,6 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const controls = useStore(s => s.project!.controls)
   const projectName = useStore(s => s.project!.meta.name)
   const mapConfig = useStore(s => s.project!.map)
-  const updateControlDescription = useStore(s => s.updateControlDescription)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
@@ -226,22 +225,6 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
           </table>
         </SortableContext>
       </DndContext>
-
-      {picker && (
-        <SymbolPicker
-          column={picker.column}
-          current={(controlMap.get(picker.controlId)?.description as any)?.[columnFields[picker.column]]}
-          onSelect={(code) => {
-            updateControlDescription(picker.controlId, columnFields[picker.column], code)
-            setPicker(null)
-          }}
-          onClear={() => {
-            updateControlDescription(picker.controlId, columnFields[picker.column], undefined)
-            setPicker(null)
-          }}
-          onClose={() => setPicker(null)}
-        />
-      )}
     </div>
   )
 })
@@ -288,6 +271,7 @@ function SortableDescRow({
   exchangeSeparator?: ExchangeSeparatorProps
 }) {
   const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
+  const updateControlDescription = useStore(s => s.updateControlDescription)
   const {
     attributes,
     listeners,
@@ -390,6 +374,25 @@ function SortableDescRow({
           </td>
         )}
       </tr>
+      {picker?.controlId === ctrl.id && (
+        <tr>
+          <td colSpan={colCount} className="p-0 border-0">
+            <SymbolPicker
+              column={picker.column}
+              current={ctrl.description?.[columnFields[picker.column]]}
+              onSelect={(code) => {
+                updateControlDescription(ctrl.id, columnFields[picker.column], code)
+                setPicker(null)
+              }}
+              onClear={() => {
+                updateControlDescription(ctrl.id, columnFields[picker.column], undefined)
+                setPicker(null)
+              }}
+              onClose={() => setPicker(null)}
+            />
+          </td>
+        </tr>
+      )}
       {forkEligible && (
         <tr>
           <td colSpan={colCount} className="py-0.5 px-1">
@@ -694,8 +697,12 @@ function SymbolPicker({
   const currentIsDimension = column === 'F' && current != null && isDimensionText(current)
   const [dimValue, setDimValue] = useState(currentIsDimension ? current : '')
 
+  // Match ignoring spaces/hyphens so "northeast", "north east" and
+  // "north-east" all find "North-east side".
+  const normalize = (s: string) => s.toLowerCase().replace(/[\s-]+/g, '')
+  const searchNorm = normalize(search)
   const filtered = search
-    ? symbols.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.code.includes(search))
+    ? symbols.filter(s => normalize(s.name).includes(searchNorm) || s.code.includes(search))
     : symbols
 
   const grouped = column === 'G' ? groupLocationSymbols(filtered)
