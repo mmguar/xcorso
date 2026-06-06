@@ -235,6 +235,11 @@ export function MapCanvas({ loadedMap }: Props) {
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
+  // After dropping a control that is shared across courses, offer to split it
+  // off into a new control for the selected course (see the drag-commit path).
+  const [splitPrompt, setSplitPrompt] = useState<
+    { controlId: string; courseId: string; courseName: string; courseCount: number; newPos: MapPoint; origPos: MapPoint; sx: number; sy: number } | null
+  >(null)
   const gapRingRef = useRef<SVGGElement>(null)
   const [oobCursorPoint, setOobCursorPoint] = useState<MapPoint | null>(null)
 
@@ -429,6 +434,9 @@ export function MapCanvas({ loadedMap }: Props) {
     // ── Pointer down ─────────────────────────────────────────────────────────
     function onDown(e: PointerEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return
+      // Any fresh gesture on the canvas dismisses a pending split offer. (Taps on
+      // the offer's own buttons are HTMLButtonElements, handled by the guard above.)
+      setSplitPrompt(null)
       // Refresh the cached rect at the start of every gesture. ResizeObserver only
       // fires on size changes and the scroll listener only on window scroll, so a
       // position-only shift of the canvas (header settling, layout reflow) would
@@ -741,9 +749,13 @@ export function MapCanvas({ loadedMap }: Props) {
             }
           }
 
-          // Controls
+          // Controls. When a course is selected, only its own controls are
+          // draggable — controls belonging solely to other courses are locked
+          // (the gesture falls through to a pan), matching label drag behaviour.
           const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
-          if (hit) {
+          const selCourse = state.editor.selectedCourseId ? proj.courses.find(c => c.id === state.editor.selectedCourseId) : null
+          const hitInCourse = hit && (!selCourse || selCourse.controls.some(cc => cc.controlId === hit.id))
+          if (hit && hitInCourse) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
             dragControlId = hit.id
             dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
@@ -1138,12 +1150,35 @@ export function MapCanvas({ loadedMap }: Props) {
 
       if (dragControlId && dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
+        const splitId = dragControlId
+        const splitNewPos = pendingControlPos
+        const splitOrigPos = dragOrigPos
         if (pendingControlPos) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
         if (dragControlEls.length) { for (const el of dragControlEls) el.style.transform = ''; dragControlEls = [] }
         dragLegsRef.current?.end()
         dragOrigPos = null
         useStore.getState().setDraggingControl(null)
-        dragControlId = null; dragOffset = null; dragStarted = false; return
+        dragControlId = null; dragOffset = null; dragStarted = false
+        // The drag above moved the control in *every* course it belongs to. If it
+        // is shared and the selected course holds it, offer to split it off into a
+        // new control for just that course (the move stays as the default).
+        if (splitNewPos && splitOrigPos) {
+          const st = useStore.getState()
+          const cid = st.editor.selectedCourseId
+          const proj = st.project
+          if (cid && proj) {
+            const containing = proj.courses.filter(c => c.controls.some(cc => cc.controlId === splitId))
+            const selCourse = containing.find(c => c.id === cid)
+            if (selCourse && containing.length >= 2) {
+              const rect = getRect()
+              setSplitPrompt({
+                controlId: splitId, courseId: cid, courseName: selCourse.name, courseCount: containing.length,
+                newPos: splitNewPos, origPos: splitOrigPos, sx: e.clientX - rect.left, sy: e.clientY - rect.top,
+              })
+            }
+          }
+        }
+        return
       }
       dragControlId = null; dragOffset = null; dragStarted = false
 
@@ -1847,6 +1882,35 @@ export function MapCanvas({ loadedMap }: Props) {
             useStore.getState().setActiveTool('select')
           }}
         />
+      )}
+
+      {splitPrompt && (
+        <div
+          className="absolute z-20 flex flex-col gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 p-2 text-xs"
+          style={{ left: splitPrompt.sx, top: splitPrompt.sy + 18, transform: 'translateX(-50%)', maxWidth: 260 }}
+        >
+          <div className="text-gray-600 px-1 leading-snug">
+            This control is in {splitPrompt.courseCount === 2 ? 'two' : splitPrompt.courseCount} courses
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              className="flex-1 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-left"
+              onClick={() => {
+                const nc = useStore.getState().splitControl(splitPrompt.controlId, splitPrompt.courseId, splitPrompt.newPos, splitPrompt.origPos)
+                useStore.getState().setSelectedControl(nc.id)
+                setSplitPrompt(null)
+              }}
+            >
+              Split in two controls
+            </button>
+            <button
+              className="px-2 py-1 rounded text-gray-500 hover:bg-gray-100 shrink-0"
+              onClick={() => setSplitPrompt(null)}
+            >
+              {splitPrompt.courseCount === 2 ? 'Move for both' : 'Move for all'}
+            </button>
+          </div>
+        </div>
       )}
 
       {import.meta.env.DEV && <FpsCounter />}
