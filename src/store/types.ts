@@ -51,6 +51,7 @@ export interface AppActions {
   addControl: (type: ControlType, position: MapPoint, code?: number) => Control
   beginMoveControl: () => void
   moveControl: (id: string, position: MapPoint) => void
+  splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint) => Control
   beginMoveControlLabel: () => void
   moveControlLabel: (id: string, offset: MapPoint) => void
   deleteControl: (id: string) => void

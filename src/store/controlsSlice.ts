@@ -38,6 +38,31 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       })
     },
 
+    // Split a control that is shared across courses: leave the original where it
+    // was (it stays in the other courses) and create a brand-new control at the
+    // drop position, repointing every reference in `courseId` to it. The new
+    // control inherits only its type — fresh code, no description/label/points.
+    splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint): Control => {
+      const { project } = get()
+      if (!project) throw new Error('No project')
+      const orig = project.controls.find(c => c.id === controlId)
+      if (!orig) throw new Error('Control not found')
+      const code = orig.type === 'control'
+        ? nextControlCode(project.controls)
+        : nextTypeCode(project.controls, orig.type)
+      const newControl: Control = { id: uuidv4(), type: orig.type, code, position: newPos }
+      h.mutateProject(p => {
+        const o = p.controls.find(c => c.id === controlId)
+        if (o) o.position = originPos
+        p.controls.push(newControl)
+        const course = p.courses.find(c => c.id === courseId)
+        if (course) {
+          course.controls.forEach(cc => { if (cc.controlId === controlId) cc.controlId = newControl.id })
+        }
+      })
+      return newControl
+    },
+
     beginMoveControlLabel: () => h.pushUndoSnapshot(),
 
     moveControlLabel: (id: string, offset: MapPoint) => {
