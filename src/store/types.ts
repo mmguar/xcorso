@@ -2,7 +2,7 @@ import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
   Annotation, AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, ImageOverlay, EventSpec, FinishType,
-  CourseLayout, LayoutElementPosition, LayoutDefaults, MapGeoref,
+  CourseLayout, LayoutElementPosition, LayoutDefaults, MapGeoref, OverprintMode,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 
@@ -151,6 +151,7 @@ export interface AppActions {
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setOverprint: (overprint: number) => void
+  setOverprintMode: (mode: OverprintMode) => void
   setGapSize: (size: number) => void
   setGapRebuild: (on: boolean) => void
   setAppearance: (settings: Partial<AppearanceSettings>) => void

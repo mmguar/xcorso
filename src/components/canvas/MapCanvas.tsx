@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
@@ -13,6 +13,7 @@ import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../.
 import { OverlaysLayer } from './OverlaysLayer'
 import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
+import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec } from '../../types'
@@ -159,6 +160,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const overlayMultGRef = useRef<SVGGElement>(null)
   const courseGRef = useRef<SVGGElement>(null)
   const courseMultGRef = useRef<SVGGElement>(null)
+  const topOverlayGRef = useRef<SVGGElement>(null)
   const aboveBorderGRef = useRef<SVGGElement>(null)
   const dragLegsRef = useRef<DragLegsHandle>(null)
   const rectCacheRef = useRef<DOMRect | null>(null)
@@ -178,6 +180,7 @@ export function MapCanvas({ loadedMap }: Props) {
     if (overlayMultGRef.current) overlayMultGRef.current.style.transform = t
     if (courseGRef.current) courseGRef.current.style.transform = t
     if (courseMultGRef.current) courseMultGRef.current.style.transform = t
+    if (topOverlayGRef.current) topOverlayGRef.current.style.transform = t
     // In layout mode during a map pan, overlays are page-relative — freeze them
     // so they don't slide with the map. setLayoutMapCenter shifts their map coords
     // on pointer-up, and the post-render syncTransform applies the final transform.
@@ -213,6 +216,22 @@ export function MapCanvas({ loadedMap }: Props) {
   })
 
   const [useRaster, setUseRaster] = useState(true)
+  const mapOverprint = useStore(s => s.project?.layoutDefaults?.mapOverprint ?? false)
+  // Overprint-simulated raster, generated lazily when the option is enabled.
+  // Only meaningful for OCAD (svg) maps in raster mode; HD/vector shows as usual.
+  // The render gates on `mapOverprint` too, so a stale url here is never shown.
+  const [overprintRasterUrl, setOverprintRasterUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!mapOverprint || loadedMap.type !== 'svg') return
+    let cancelled = false
+    let url: string | undefined
+    rasterizeSvgOverprint(loadedMap.content as SVGElement, loadedMap.bounds).then(u => {
+      if (cancelled) { if (u) URL.revokeObjectURL(u); return }
+      url = u
+      setOverprintRasterUrl(u ?? null)
+    })
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
+  }, [mapOverprint, loadedMap])
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
@@ -1426,6 +1445,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
   const mapSaturation = useStore(s => s.editor.mapSaturation)
   const overprint = useStore(s => s.project?.overprint ?? 1)
+  const overprintMode = useStore(s => s.project?.overprintMode ?? 'simulated')
   const gapSize = useStore(s => s.editor.gapSize)
   const gapRebuild = useStore(s => s.editor.gapRebuild)
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
@@ -1456,7 +1476,15 @@ export function MapCanvas({ loadedMap }: Props) {
   // The multiply pass lives in its own sibling <svg> (a direct child of the
   // container) so its backdrop is the map — putting mix-blend-mode inside the
   // transformed group would blend against an empty backdrop instead.
-  const overprintT = Math.max(0, Math.min(1, overprint))
+  //
+  // 'none'      → solid ink on top (no multiply).
+  // 'below'     → only achievable in HD (vector): draw ink solid, then redraw the
+  //               black/brown/blue map layers on top (see topOverlay below). On the
+  //               fast raster screen it falls back to 'simulated'.
+  // 'simulated' → multiply pass at the slider intensity.
+  const topOverprintColors = loadedMap.topOverprintColors ?? []
+  const belowHD = overprintMode === 'below' && !useRaster && loadedMap.type === 'svg' && topOverprintColors.length > 0
+  const overprintT = overprintMode === 'none' || belowHD ? 0 : Math.max(0, Math.min(1, overprint))
   const annBase = {
     annotations,
     pendingPoints: pendingAnnotationPoints,
@@ -1488,7 +1516,7 @@ export function MapCanvas({ loadedMap }: Props) {
           pointerEvents: 'none',
         }}
       >
-        <MapCanvasLayer loadedMap={loadedMap} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
+        <MapCanvasLayer loadedMap={loadedMap} srcOverride={mapOverprint && useRaster && overprintRasterUrl ? overprintRasterUrl : undefined} onPixelSize={(w, h) => { canvasPixelRef.current = [w, h]; syncTransform() }} />
       </div>
       {/* HD SVG overlay — true vector quality at rest (OCAD HD mode only) */}
       {!useRaster && loadedMap.type === 'svg' && (
@@ -1618,6 +1646,17 @@ export function MapCanvas({ loadedMap }: Props) {
               controls={layoutControls}
               course={selectedCourse}
             />
+          </g>
+        </svg>
+      )}
+
+      {/* 'Below' overprint (HD only): redraw the black/brown/blue map layers on
+          top of the course ink so the purple sits beneath them in the stack. */}
+      {belowHD && (
+        <svg key="top-overprint" width="100%" height="100%"
+          style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', filter: mapSaturation < 1 ? `saturate(${mapSaturation})` : undefined }}>
+          <g ref={topOverlayGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
+            <MapLayer loadedMap={loadedMap} useRaster={false} keepColors={topOverprintColors} transparent />
           </g>
         </svg>
       )}

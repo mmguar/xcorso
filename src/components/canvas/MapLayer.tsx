@@ -6,6 +6,7 @@
 
 import { memo, useEffect, useRef } from 'react'
 import type { LoadedMap } from '../../lib/mapLoader'
+import { pruneSvgToColors } from '../../lib/overprint'
 
 const DANGEROUS_TAGS = new Set(['script', 'foreignobject', 'iframe', 'object', 'embed'])
 
@@ -23,9 +24,13 @@ function sanitizeSvgNode(el: Element) {
 interface Props {
   loadedMap: LoadedMap
   useRaster?: boolean
+  /** Keep only elements painted in these rgb() colours (vector mode only). */
+  keepColors?: string[]
+  /** Omit the opaque white backing rect (for an overlay above other content). */
+  transparent?: boolean
 }
 
-export const MapLayer = memo(function MapLayer({ loadedMap, useRaster = true }: Props) {
+export const MapLayer = memo(function MapLayer({ loadedMap, useRaster = true, keepColors, transparent = false }: Props) {
   const gRef = useRef<SVGGElement>(null)
 
   useEffect(() => {
@@ -41,7 +46,8 @@ export const MapLayer = memo(function MapLayer({ loadedMap, useRaster = true }: 
       if (node instanceof Element) sanitizeSvgNode(node)
       g.appendChild(node)
     })
-  }, [loadedMap, useRaster])
+    if (keepColors && keepColors.length > 0) pruneSvgToColors(g, keepColors)
+  }, [loadedMap, useRaster, keepColors])
 
   const { bounds } = loadedMap
 
@@ -65,11 +71,13 @@ export const MapLayer = memo(function MapLayer({ loadedMap, useRaster = true }: 
     }
     return (
       <g style={{ pointerEvents: 'none' }}>
-        <rect
-          x={bounds.minX} y={bounds.minY}
-          width={bounds.width} height={bounds.height}
-          fill="white"
-        />
+        {!transparent && (
+          <rect
+            x={bounds.minX} y={bounds.minY}
+            width={bounds.width} height={bounds.height}
+            fill="white"
+          />
+        )}
         <g ref={gRef} fill="transparent" />
       </g>
     )

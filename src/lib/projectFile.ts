@@ -58,6 +58,10 @@ function validateProject(raw: unknown): Project {
   if (typeof obj.overprint !== 'number' || !isFinite(obj.overprint as number)) obj.overprint = 1
   else obj.overprint = Math.max(0, Math.min(1, obj.overprint as number))
 
+  if (obj.overprintMode !== 'simulated' && obj.overprintMode !== 'none' && obj.overprintMode !== 'below') {
+    obj.overprintMode = 'simulated'
+  }
+
   const mapScale = mc.scale as number
   for (const sb of obj.scaleBars as Record<string, unknown>[]) {
     const sbScale = Number(sb.scale)

@@ -8,6 +8,7 @@
  */
 
 import { Buffer } from 'buffer'
+import { applyMapOverprint } from './overprint'
 
 export interface MapBounds {
   minX: number
@@ -39,6 +40,37 @@ export interface LoadedMap {
   renderScale?: number
   /** For OCAD: pre-rasterized image URL for fast pan/zoom */
   rasterUrl?: string
+  /**
+   * For OCAD: rgb() strings of the "top" map colours (black, brown 100%, blue
+   * 100%) that should stay above course ink in the 'below' overprint mode.
+   * Empty/absent when the map has no identifiable such colours.
+   */
+  topOverprintColors?: string[]
+}
+
+/**
+ * Pick the OCAD colours that course ink should sit *below* — black, full brown,
+ * and full blue — matched by the standard ISOM/ISSprOM colour names (with a
+ * black-by-CMYK fallback). Returns their `rgb(r, g, b)` strings as used in the
+ * generated SVG's fill/stroke styles.
+ */
+function extractTopOverprintColors(colors: unknown): string[] {
+  if (!Array.isArray(colors)) return []
+  const fullShade = (n: string) => {
+    const m = n.match(/(\d+)\s*%/)
+    return !m || Number(m[1]) >= 100
+  }
+  const out: string[] = []
+  for (const c of colors) {
+    if (!c || typeof c.rgb !== 'string') continue
+    const name = typeof c.name === 'string' ? c.name.toLowerCase() : ''
+    const cmyk = Array.isArray(c.cmyk) ? c.cmyk.map(Number) : [0, 0, 0, 0]
+    const isBlack = (name.includes('black') && fullShade(name)) || (cmyk[0] === 0 && cmyk[1] === 0 && cmyk[2] === 0 && cmyk[3] >= 100)
+    const isBrown = name.includes('brown') && fullShade(name)
+    const isBlue = name.includes('blue') && fullShade(name)
+    if ((isBlack || isBrown || isBlue) && !out.includes(c.rgb)) out.push(c.rgb)
+  }
+  return out
 }
 
 export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
@@ -105,8 +137,10 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
   cleanupSvg(svgEl)
 
   const rasterUrl = await rasterizeSvg(svgEl, bounds)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const topOverprintColors = extractTopOverprintColors((ocadFile as any).colors)
 
-  return { type: 'svg', content: svgEl, bounds, detectedScale, detectedGeoref, rasterUrl }
+  return { type: 'svg', content: svgEl, bounds, detectedScale, detectedGeoref, rasterUrl, topOverprintColors }
 }
 
 function cleanupSvg(svgEl: SVGElement) {
@@ -160,6 +194,52 @@ async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<strin
           const blobUrl = URL.createObjectURL(blob)
           previousRasterUrl = blobUrl
           resolve(blobUrl)
+        }, 'image/png')
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(svgUrl)
+        resolve(undefined)
+      }
+      img.src = svgUrl
+    })
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Rasterise an OCAD map SVG with spot-ink overprint simulation baked in
+ * (see {@link applyMapOverprint}). Used for the on-screen overprint preview when
+ * the map is in raster mode. The caller owns the returned blob URL and must
+ * revoke it; unlike {@link rasterizeSvg} this keeps no module-level slot.
+ */
+export async function rasterizeSvgOverprint(svgEl: SVGElement, bounds: MapBounds): Promise<string | undefined> {
+  try {
+    const clone = svgEl.cloneNode(true) as SVGElement
+    clone.setAttribute('width', String(bounds.width))
+    clone.setAttribute('height', String(bounds.height))
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    applyMapOverprint(clone, bounds)
+
+    const xml = new XMLSerializer().serializeToString(clone)
+    const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
+    const svgUrl = URL.createObjectURL(svgBlob)
+
+    const scale = Math.min(1, MAX_RASTER_DIM / Math.max(bounds.width, bounds.height))
+    const w = Math.round(bounds.width * scale)
+    const h = Math.round(bounds.height * scale)
+
+    return await new Promise<string | undefined>((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, w, h)
+        URL.revokeObjectURL(svgUrl)
+        canvas.toBlob(blob => {
+          resolve(blob ? URL.createObjectURL(blob) : undefined)
         }, 'image/png')
       }
       img.onerror = () => {
