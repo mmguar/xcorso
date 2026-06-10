@@ -3,6 +3,7 @@ import type { Project } from '../types'
 import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
+import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
 import { distance } from '../lib/geometry'
 import { createControlsSlice } from './controlsSlice'
@@ -76,6 +77,10 @@ export const useStore = create<Store>((set, get) => {
     },
 
     loadProject: (project, mapData) => {
+      // Session restores need the same migrations/defaults as .oco loads.
+      // normalizeProject also validates; session data was written by us, so on
+      // an unexpected failure keep the project as-is rather than losing it.
+      try { project = normalizeProject(project) } catch { /* keep as-is */ }
       if (!project.scaleBars) project.scaleBars = []
       if (!project.textLabels) project.textLabels = []
       if (!project.imageOverlays) project.imageOverlays = []
@@ -161,9 +166,14 @@ export const useStore = create<Store>((set, get) => {
       set(state => {
         const tool = state.editor.activeTool
         const courseOnlyTool = tool === 'gap' || tool === 'bend'
+        // Measure mode is bound to one course (enterMeasureMode keeps them in
+        // sync); switching course must exit it or the measure overlay and
+        // hit-testing stay on the old course while the canvas shows the new one.
+        const leavingMeasure = state.editor.measureMode && id !== state.editor.measureCourseId
         return {
           editor: {
             ...state.editor,
+            ...(leavingMeasure ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] } : {}),
             selectedCourseId: id,
             selectedVariationId: null,
             selectedSubmapIndex: null,

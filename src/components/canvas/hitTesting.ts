@@ -1,7 +1,8 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById, computeSubmaps } from '../../lib/courseUtils'
+import { legKey } from '../../lib/distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { northArrowHeight, northArrowGeometry, crossingPointTotalHH } from '../../lib/symbolGeometry'
+import { northArrowHeight, northArrowGeometry, crossingPointTotalHH, rotateAround } from '../../lib/symbolGeometry'
 
 export const HIT_PX = 20
 
@@ -182,7 +183,7 @@ function measureLegPath(project: Project, fromControlId: string, toControlId: st
   const a = cm.get(fromControlId)?.position
   const b = cm.get(toControlId)?.position
   if (!a || !b) return null
-  const waypoints = project.measuredLegs?.[`${fromControlId}__${toControlId}`] ?? []
+  const waypoints = project.measuredLegs?.[legKey(fromControlId, toControlId)] ?? []
   return [a, ...waypoints, b]
 }
 
@@ -195,7 +196,7 @@ export function findMeasureLegAt(screenX: number, screenY: number, vp: Viewport,
   for (let i = 1; i < course.controls.length; i++) {
     const fromId = course.controls[i - 1].controlId
     const toId = course.controls[i].controlId
-    if (hiddenLegs?.has(`${fromId}__${toId}`)) continue
+    if (hiddenLegs?.has(legKey(fromId, toId))) continue
     const pts = measureLegPath(project, fromId, toId)
     if (!pts) continue
     for (let j = 0; j < pts.length - 1; j++) {
@@ -216,8 +217,8 @@ export function findMeasurePointAt(screenX: number, screenY: number, vp: Viewpor
   for (let i = 1; i < course.controls.length; i++) {
     const fromId = course.controls[i - 1].controlId
     const toId = course.controls[i].controlId
-    if (hiddenLegs?.has(`${fromId}__${toId}`)) continue
-    const waypoints = project.measuredLegs?.[`${fromId}__${toId}`]
+    if (hiddenLegs?.has(legKey(fromId, toId))) continue
+    const waypoints = project.measuredLegs?.[legKey(fromId, toId)]
     if (!waypoints) continue
     for (let j = 0; j < waypoints.length; j++) {
       if (Math.hypot(mapPt.x - waypoints[j].x, mapPt.y - waypoints[j].y) < hitR) {
@@ -334,12 +335,6 @@ export function findCrossingPointResizeHandle(screenX: number, screenY: number, 
   return null
 }
 
-function rotatePoint(localX: number, localY: number, cx: number, cy: number, angleDeg: number): { x: number; y: number } {
-  const rad = angleDeg * Math.PI / 180
-  const sin = Math.sin(rad), cos = Math.cos(rad)
-  return { x: cx + localX * cos - localY * sin, y: cy + localX * sin + localY * cos }
-}
-
 export function findNorthArrowRotationHandle(screenX: number, screenY: number, vp: Viewport, project: Project, selectedAnnotationId: string | null): Annotation | null {
   if (!selectedAnnotationId) return null
   const ann = project.annotations.find(a => a.id === selectedAnnotationId)
@@ -352,7 +347,7 @@ export function findNorthArrowRotationHandle(screenX: number, screenY: number, v
   const center = ann.points[0]
   const rotation = ann.rotation ?? 0
 
-  const handle = rotatePoint(geo.rotHandleLocalX, geo.rotHandleLocalY, center.x, center.y, rotation)
+  const handle = rotateAround({ x: center.x + geo.rotHandleLocalX, y: center.y + geo.rotHandleLocalY }, center, rotation)
   const mapPt = screenToMap(screenX, screenY, vp)
   if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < handleHitRadius(geo.handleR, vp)) return ann
   return null
@@ -370,7 +365,7 @@ export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp:
   const center = ann.points[0]
   const rotation = ann.rotation ?? 0
 
-  const handle = rotatePoint(geo.resizeHandleLocalX, geo.resizeHandleLocalY, center.x, center.y, rotation)
+  const handle = rotateAround({ x: center.x + geo.resizeHandleLocalX, y: center.y + geo.resizeHandleLocalY }, center, rotation)
   const mapPt = screenToMap(screenX, screenY, vp)
   if (Math.hypot(mapPt.x - handle.x, mapPt.y - handle.y) < handleHitRadius(geo.handleR, vp)) return ann
   return null

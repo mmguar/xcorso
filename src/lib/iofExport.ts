@@ -41,13 +41,13 @@ function controlCode(c: Control): string {
 }
 
 function toIofCoords(svgX: number, svgY: number, map: MapConfig): { x: number; y: number } {
+  const oy = map.originY ?? 0
+  // SVG uses Y-down; IOF uses Y-up. Flip Y (and for OCAD convert units, 1/100 mm → mm).
+  const yFlip = oy + oy + map.height
   if (map.type === 'ocad') {
-    const oy = map.originY ?? 0
-    // OCAD SVG uses Y-down; IOF uses Y-up. Flip Y and convert from OCAD units (1/100 mm) to mm.
-    const yFlip = oy + oy + map.height
     return { x: svgX / 100, y: (yFlip - svgY) / 100 }
   }
-  return { x: svgX, y: svgY }
+  return { x: svgX, y: yFlip - svgY }
 }
 
 export function exportIofXml(project: Project): string {
@@ -149,7 +149,7 @@ export function exportIofXml(project: Project): string {
       if (idx > 0 && distances.legs[idx - 1] > 0) {
         children.push(`        <LegLength>${Math.round(distances.legs[idx - 1])}</LegLength>`)
       }
-      if (isScore && cc.scorePoints !== undefined) {
+      if (isScore && typeof cc.scorePoints === 'number' && Number.isFinite(cc.scorePoints)) {
         children.push(`        <Score>${cc.scorePoints}</Score>`)
       }
 
@@ -168,6 +168,9 @@ export function exportIofXml(project: Project): string {
     }
     if (totalLength > 0) {
       courseChildren.push(`      <Length>${Math.round(totalLength)}</Length>`)
+    }
+    if (typeof course.climb === 'number' && Number.isFinite(course.climb) && course.climb > 0) {
+      courseChildren.push(`      <Climb>${Math.round(course.climb)}</Climb>`)
     }
 
     return [

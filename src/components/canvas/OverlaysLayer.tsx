@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { ScaleBar, TextLabel, ImageOverlay, MapConfig, MapPoint } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
+import { formatScaleBarDistance } from '../../lib/distance'
 
 interface Props {
   scaleBars: ScaleBar[]
@@ -42,8 +43,6 @@ function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; 
   const barY = y + pad + textH + tickH
 
   // Format distance label
-  const fmtDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
-
   return (
     <g>
       {/* Background */}
@@ -94,7 +93,7 @@ function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; 
                 fontFamily="Arial, sans-serif"
                 fill="#000000"
               >
-                {fmtDist(i * segRealM)}
+                {formatScaleBarDistance(i * segRealM)}
               </text>
             )}
           </g>

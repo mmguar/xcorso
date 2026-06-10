@@ -30,7 +30,7 @@ import {
 } from './hitTesting'
 import type { MeasurePointHit } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
-import { computeCourseDistances, resolveCourseLength, formatDistance } from '../../lib/distance'
+import { computeCourseDistances, resolveCourseLength, formatDistance, legKey } from '../../lib/distance'
 
 const TAP_PX    = 8
 const MIN_SCALE = 0.05
@@ -93,7 +93,7 @@ function MeasureLegPanel({ course, controls }: { course: Course; controls: Contr
   for (let i = 1; i < course.controls.length; i++) {
     const fromId = course.controls[i - 1].controlId
     const toId = course.controls[i].controlId
-    const key = `${fromId}__${toId}`
+    const key = legKey(fromId, toId)
     if (seen.has(key)) continue
     seen.add(key)
     legs.push({ key, from: label(fromId), to: label(toId) })
@@ -238,12 +238,19 @@ export function MapCanvas({ loadedMap }: Props) {
   const canvasPixelRef = useRef<[number, number]>([1, 1])
 
   const layoutPanningRef = useRef(false)
+  // The native-listener effect below runs with [] deps, so any handler it keeps
+  // alive sees the first render's closure. Route loadedMap through a ref so the
+  // captured syncTransform still uses the current bounds after "Replace map".
+  // (Updated in a layout effect declared before useLayoutEffect(syncTransform),
+  // so the post-render sync always sees the fresh bounds first.)
+  const loadedMapRef = useRef(loadedMap)
+  useLayoutEffect(() => { loadedMapRef.current = loadedMap }, [loadedMap])
   function syncTransform() {
     const v = vpRef.current
     const t = `translate(${v.x}px,${v.y}px) scale(${v.scale})`
     if (mapDivRef.current) {
       const [cpw, cph] = canvasPixelRef.current
-      const b = loadedMap.bounds
+      const b = loadedMapRef.current.bounds
       mapDivRef.current.style.transform = `translate(${v.x}px,${v.y}px) scale(${v.scale}) translate(${b.minX}px,${b.minY}px) scale(${b.width / cpw},${b.height / cph})`
     }
     if (hdMapGRef.current) hdMapGRef.current.style.transform = t
@@ -403,6 +410,9 @@ export function MapCanvas({ loadedMap }: Props) {
     const pos  = new Map<number, { x: number; y: number }>()
     const down = new Map<number, { x: number; y: number }>()
     let pinchDist = 0
+    // True from the moment a second pointer joins the gesture until every
+    // pointer lifts — suppresses tap actions for accidental multi-finger taps.
+    let multiTouch = false
     let vpDirty = false
     let wheelTimer: ReturnType<typeof setTimeout> | null = null
     let pendingRaf = 0
@@ -420,6 +430,30 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragControlEls: SVGGElement[] = []
     let pendingControlPos: { x: number; y: number } | null = null
     let pendingControlRaf = 0
+
+    // Non-control drags mutate the store on every pointermove; touch/Pencil can
+    // deliver 120 events/s and each set re-renders every canvas layer. Coalesce
+    // to one mutation per frame (latest wins), flushed on pointerup/cancel
+    // before drag state is reset.
+    let pendingDragMutation: (() => void) | null = null
+    let pendingDragMutationRaf = 0
+    function scheduleDragMutation(fn: () => void) {
+      pendingDragMutation = fn
+      if (!pendingDragMutationRaf) {
+        pendingDragMutationRaf = requestAnimationFrame(() => {
+          pendingDragMutationRaf = 0
+          const run = pendingDragMutation
+          pendingDragMutation = null
+          run?.()
+        })
+      }
+    }
+    function flushDragMutation() {
+      if (pendingDragMutationRaf) { cancelAnimationFrame(pendingDragMutationRaf); pendingDragMutationRaf = 0 }
+      const run = pendingDragMutation
+      pendingDragMutation = null
+      run?.()
+    }
 
     let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
     let dragBendStarted = false
@@ -529,6 +563,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const [a, b] = [...pos.values()]
         pinchDist = Math.hypot(b.x - a.x, b.y - a.y)
       }
+      if (pos.size >= 2) multiTouch = true
 
       longPressFired = false
       if (e.pointerType === 'touch' && pos.size === 1 && !useStore.getState().editor.layoutMode && !useStore.getState().editor.measureMode) {
@@ -914,9 +949,10 @@ export function MapCanvas({ loadedMap }: Props) {
           const newY = dragBorderResize.oy - (newH - dragBorderResize.oh) / 2
           const clampedX = Math.max(0, newX)
           const clampedY = Math.max(0, newY)
-          st.moveCourseLayout(st.editor.layoutCourseId!, {
-            mapBorder: { ...layout.mapBorder, x: clampedX, y: clampedY, width: Math.min(newW, pageW - clampedX), height: Math.min(newH, pageH - clampedY) },
-          }, smIdx)
+          const border = layout.mapBorder
+          scheduleDragMutation(() => st.moveCourseLayout(st.editor.layoutCourseId!, {
+            mapBorder: { ...border, x: clampedX, y: clampedY, width: Math.min(newW, pageW - clampedX), height: Math.min(newH, pageH - clampedY) },
+          }, smIdx))
         }
         return
       }
@@ -946,9 +982,10 @@ export function MapCanvas({ loadedMap }: Props) {
           const bh = layout.mapBorder.height
           const newX = Math.max(0, Math.min(pageW - bw, dragBorderTranslate.ox + dx))
           const newY = Math.max(0, Math.min(pageH - bh, dragBorderTranslate.oy + dy))
-          st.moveCourseLayout(st.editor.layoutCourseId!, {
-            mapBorder: { ...layout.mapBorder, x: newX, y: newY, width: bw, height: bh },
-          }, smIdx)
+          const border = layout.mapBorder
+          scheduleDragMutation(() => st.moveCourseLayout(st.editor.layoutCourseId!, {
+            mapBorder: { ...border, x: newX, y: newY, width: bw, height: bh },
+          }, smIdx))
         }
         return
       }
@@ -975,7 +1012,8 @@ export function MapCanvas({ loadedMap }: Props) {
           const dy = (e.clientY - dragLayoutEl.sy) / mmToPx
           const newX = dragLayoutEl.ox + dx
           const newY = dragLayoutEl.oy + dy
-          st.updateLayoutElement(st.editor.layoutCourseId!, dragLayoutEl.element, { x: newX, y: newY }, smIdx)
+          const element = dragLayoutEl.element
+          scheduleDragMutation(() => st.updateLayoutElement(st.editor.layoutCourseId!, element, { x: newX, y: newY }, smIdx))
         }
         return
       }
@@ -989,7 +1027,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        useStore.getState().moveMeasurePoint(dragMeasure.fromControlId, dragMeasure.toControlId, dragMeasure.index, mapPt)
+        const { fromControlId, toControlId, index } = dragMeasure
+        scheduleDragMutation(() => useStore.getState().moveMeasurePoint(fromControlId, toControlId, index, mapPt))
         return
       }
 
@@ -1002,7 +1041,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        useStore.getState().moveLegBendPoint(dragBend.courseId, dragBend.courseControlId, dragBend.bendIndex, mapPt)
+        const { courseId, courseControlId, bendIndex } = dragBend
+        scheduleDragMutation(() => useStore.getState().moveLegBendPoint(courseId, courseControlId, bendIndex, mapPt))
         return
       }
 
@@ -1019,11 +1059,14 @@ export function MapCanvas({ loadedMap }: Props) {
         const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
         if (ctrl) {
           const offset = { x: mapPt.x - dragLabel.dx - ctrl.position.x, y: mapPt.y - dragLabel.dy - ctrl.position.y }
-          if (dragLabel.courseId && dragLabel.courseControlId) {
-            useStore.getState().moveCourseLabel(dragLabel.courseId, dragLabel.courseControlId, offset)
-          } else {
-            useStore.getState().moveControlLabel(dragLabel.controlId, offset)
-          }
+          const { courseId, courseControlId, controlId } = dragLabel
+          scheduleDragMutation(() => {
+            if (courseId && courseControlId) {
+              useStore.getState().moveCourseLabel(courseId, courseControlId, offset)
+            } else {
+              useStore.getState().moveControlLabel(controlId, offset)
+            }
+          })
         }
         return
       }
@@ -1075,7 +1118,9 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        useStore.getState().moveAnnotation(dragAnnotation.annId, { x: mapPt.x - dragAnnotation.dx, y: mapPt.y - dragAnnotation.dy })
+        const annPos = { x: mapPt.x - dragAnnotation.dx, y: mapPt.y - dragAnnotation.dy }
+        const movedAnnId = dragAnnotation.annId
+        scheduleDragMutation(() => useStore.getState().moveAnnotation(movedAnnId, annPos))
         return
       }
 
@@ -1091,7 +1136,8 @@ export function MapCanvas({ loadedMap }: Props) {
         const dx = mapPt.x - dragRotation.center.x
         const dy = mapPt.y - dragRotation.center.y
         const angle = Math.atan2(dx, -dy) * 180 / Math.PI
-        useStore.getState().rotateAnnotation(dragRotation.annId, angle)
+        const rotAnnId = dragRotation.annId
+        scheduleDragMutation(() => useStore.getState().rotateAnnotation(rotAnnId, angle))
         return
       }
 
@@ -1106,7 +1152,8 @@ export function MapCanvas({ loadedMap }: Props) {
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const distFromCenter = Math.hypot(mapPt.x - dragAnnResize.centerX, mapPt.y - dragAnnResize.centerY)
         const newScale = Math.max(0.3, dragAnnResize.origScale * distFromCenter / dragAnnResize.origHandleDist)
-        useStore.getState().resizeAnnotation(dragAnnResize.annId, newScale)
+        const resizeAnnId = dragAnnResize.annId
+        scheduleDragMutation(() => useStore.getState().resizeAnnotation(resizeAnnId, newScale))
         return
       }
 
@@ -1126,7 +1173,8 @@ export function MapCanvas({ loadedMap }: Props) {
         const projectedDist = dx * (-Math.sin(rotation)) + dy * Math.cos(rotation)
         const upm = unitsPerMm(proj2.map)
         const newElongation = Math.max(0, (projectedDist - dragCrossElongate.baseHH) / upm)
-        useStore.getState().elongateAnnotation(dragCrossElongate.annId, newElongation)
+        const elongAnnId = dragCrossElongate.annId
+        scheduleDragMutation(() => useStore.getState().elongateAnnotation(elongAnnId, newElongation))
         return
       }
 
@@ -1138,7 +1186,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        useStore.getState().movePendingAnnotationPoint(dragPendingVertex.vertexIndex, mapPt)
+        const pendingVertexIndex = dragPendingVertex.vertexIndex
+        scheduleDragMutation(() => useStore.getState().movePendingAnnotationPoint(pendingVertexIndex, mapPt))
         return
       }
 
@@ -1151,7 +1200,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        useStore.getState().moveAnnotationVertex(dragOobVertex.annId, dragOobVertex.vertexIndex, mapPt)
+        const { annId: oobAnnId, vertexIndex: oobVertexIndex } = dragOobVertex
+        scheduleDragMutation(() => useStore.getState().moveAnnotationVertex(oobAnnId, oobVertexIndex, mapPt))
         return
       }
 
@@ -1178,7 +1228,8 @@ export function MapCanvas({ loadedMap }: Props) {
         const scale = clampedProj / diagLen
         const newW = wOrig * scale / upmVal
         const newH = hOrig * scale / upmVal
-        st.resizeImageOverlay(dragResize.id, newW, newH)
+        const resizeOverlayId = dragResize.id
+        scheduleDragMutation(() => st.resizeImageOverlay(resizeOverlayId, newW, newH))
         return
       }
 
@@ -1192,13 +1243,16 @@ export function MapCanvas({ loadedMap }: Props) {
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
-        if (dragOverlay.kind === 'scalebar') {
-          useStore.getState().moveScaleBar(dragOverlay.id, newPos)
-        } else if (dragOverlay.kind === 'text') {
-          useStore.getState().moveTextLabel(dragOverlay.id, newPos)
-        } else {
-          useStore.getState().moveImageOverlay(dragOverlay.id, newPos)
-        }
+        const { id: overlayId, kind: overlayKind } = dragOverlay
+        scheduleDragMutation(() => {
+          if (overlayKind === 'scalebar') {
+            useStore.getState().moveScaleBar(overlayId, newPos)
+          } else if (overlayKind === 'text') {
+            useStore.getState().moveTextLabel(overlayId, newPos)
+          } else {
+            useStore.getState().moveImageOverlay(overlayId, newPos)
+          }
+        })
         return
       }
 
@@ -1221,7 +1275,9 @@ export function MapCanvas({ loadedMap }: Props) {
         const cy = mid.y - rect.top
         const v = vpRef.current
         const minScale = Math.min(fitScaleRef.current, MIN_SCALE)
-        const ns = clamp(v.scale * (dist / pinchDist), minScale, MAX_SCALE)
+        // pinchDist is 0 when both touches landed on the same pixel — skip the
+        // zoom for that frame instead of dividing by zero.
+        const ns = pinchDist > 0 ? clamp(v.scale * (dist / pinchDist), minScale, MAX_SCALE) : v.scale
         const ratio = ns / v.scale
         vpRef.current = { scale: ns, x: cx - ratio * (cx - v.x), y: cy - ratio * (cy - v.y) }
         if (!vpDirty) startPanning()
@@ -1262,6 +1318,24 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       if (longPressFired) { longPressFired = false; return }
+
+      // Other pointers still down: this lift is part of a multi-touch gesture
+      // (or an accidental extra finger). Keep all drag state for the remaining
+      // pointer and defer commit/reset/tap to the last pointerup. Re-baseline
+      // the pinch distance when dropping from 3+ pointers to exactly 2.
+      if (pos.size > 0) {
+        if (pos.size === 2) {
+          const [a, b] = [...pos.values()]
+          pinchDist = Math.hypot(b.x - a.x, b.y - a.y)
+        }
+        return
+      }
+      const wasMultiTouch = multiTouch
+      multiTouch = false
+
+      // Apply the last coalesced drag mutation before the reset chain below
+      // clears the drag state it belongs to.
+      flushDragMutation()
 
       if (dragLayoutEl && dragLayoutElStarted) { dragLayoutEl = null; dragLayoutElStarted = false; return }
       dragLayoutEl = null; dragLayoutElStarted = false
@@ -1339,6 +1413,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
       dragOverlay = null; dragOverlayStarted = false
 
+      if (wasMultiTouch) return
       if (!start) return
       if (e.pointerType === 'mouse' && e.button !== 0) return
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_PX) return
@@ -1478,6 +1553,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
     function onCancel(e: PointerEvent) {
       clearLongPress()
+      flushDragMutation()
       dragMeasure = null; dragMeasureStarted = false
       dragLayoutEl = null; dragLayoutElStarted = false
       dragLabel = null; dragLabelStarted = false
@@ -1485,6 +1561,13 @@ export function MapCanvas({ loadedMap }: Props) {
       dragCrossElongate = null; dragCrossElongateStarted = false
       dragOobVertex = null; dragOobVertexStarted = false
       dragPendingVertex = null; dragPendingVertexStarted = false
+      dragBend = null; dragBendStarted = false
+      dragOverlay = null; dragOverlayStarted = false
+      dragResize = null; dragResizeStarted = false
+      dragRotation = null; dragRotationStarted = false
+      dragAnnotation = null; dragAnnotationStarted = false
+      dragBorderResize = null; dragBorderResizeStarted = false
+      dragBorderTranslate = null; dragBorderTranslateStarted = false
       if (dragStarted) {
         if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
         if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
@@ -1496,6 +1579,11 @@ export function MapCanvas({ loadedMap }: Props) {
       dragControlId = null; dragOffset = null; dragStarted = false
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
+      if (pos.size === 2) {
+        const [a, b] = [...pos.values()]
+        pinchDist = Math.hypot(b.x - a.x, b.y - a.y)
+      }
+      if (pos.size === 0) multiTouch = false
       if (vpDirty && pos.size === 0) {
         vpDirty = false
         layoutPanningRef.current = false
@@ -1887,15 +1975,26 @@ export function MapCanvas({ loadedMap }: Props) {
       {/* Overlays — above the border mask, always visible */}
       <svg key="above-border" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <g ref={aboveBorderGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
-          <OverlaysLayer
-            scaleBars={scaleBars}
-            textLabels={textLabels}
-            imageOverlays={imageOverlays}
-            map={map}
-            selectedOverlayId={selectedOverlayId}
-            positionOverrides={layoutCourse?.layout?.overlayPositions}
-            printScaleOverride={layoutCourse?.layout?.printScale}
-          />
+          {(() => {
+            // Drags write through submapLayoutView(layout, layoutSubmapIndex)
+            // (see layoutSlice), so render from the same view — reading the
+            // top-level layout here would show submap 0's positions while
+            // edits land invisibly on the active submap.
+            const layoutView = layoutCourse?.layout
+              ? submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout
+              : undefined
+            return (
+              <OverlaysLayer
+                scaleBars={scaleBars}
+                textLabels={textLabels}
+                imageOverlays={imageOverlays}
+                map={map}
+                selectedOverlayId={selectedOverlayId}
+                positionOverrides={layoutView?.overlayPositions}
+                printScaleOverride={layoutView?.printScale}
+              />
+            )
+          })()}
           {/* Handles layer — renders above everything so they're always clickable */}
           {(() => {
             const upm = unitsPerMm(map)

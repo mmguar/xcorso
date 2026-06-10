@@ -1,10 +1,13 @@
-import { jsPDF } from 'jspdf'
+// Type-only: jspdf (~350 KB) must not land in the startup chunk. Components and
+// the store statically import page-geometry helpers from this module, so the
+// runtime library is loaded on demand in exportCoursePdf instead.
+import type { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation, OverprintMode } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById } from './courseUtils'
-import { computeCourseDistances, resolveCourseLength } from './distance'
+import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
 import { walkPath, clipPolyline, distance } from './geometry'
@@ -328,100 +331,11 @@ function printableSize(pw: number, ph: number, border?: MapBorder): { w: number;
   }
 }
 
-export function checkFit(project: Project, options: PdfExportOptions): CourseFitInfo[] {
-  const { w: pw, h: ph } = pageDims(options)
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
-
-  const results: CourseFitInfo[] = []
-
-  if (options.allControls) {
-    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
-    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
-    results.push({
-      courseId: ALL_CONTROLS_ID,
-      courseName: 'All controls',
-      fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
-      widthMm: bounds?.width ?? 0,
-      heightMm: bounds?.height ?? 0,
-      printableW,
-      printableH,
-    })
-  }
-
-  for (const course of project.courses.filter(c => options.courseIds.includes(c.id))) {
-    const submaps = computeSubmaps(course, project.controls)
-    if (submaps.length > 1) {
-      for (const submap of submaps) {
-        const smKey = submapPreviewId(course.id, submap.index)
-        const courseScale = options.scaleOverrides?.[smKey] ?? options.scaleOverrides?.[course.id] ?? options.printScale
-        const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-        results.push({
-          courseId: smKey,
-          courseName: `${course.name} — ${submap.label}`,
-          fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
-          widthMm: bounds?.width ?? 0,
-          heightMm: bounds?.height ?? 0,
-          printableW,
-          printableH,
-        })
-      }
-    } else {
-      const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
-      const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-      results.push({
-        courseId: course.id,
-        courseName: course.name,
-        fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
-        widthMm: bounds?.width ?? 0,
-        heightMm: bounds?.height ?? 0,
-        printableW,
-        printableH,
-      })
-    }
-  }
-
-  return results
-}
-
 // ── Common scales ──────────────────────────────────────────────────────
 
 export const COMMON_SCALES = [
   15000, 10000, 7500, 5000, 4000, 3000, 2500, 2000, 1500, 1000,
 ]
-
-export function suggestFitScale(
-  project: Project,
-  courseIds: string[],
-  pageSize: string,
-  orientation: 'portrait' | 'landscape',
-  allControls?: boolean,
-): number | null {
-  const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
-  const { w: printableW, h: printableH } = printableSize(pw, ph)
-
-  const courses = project.courses.filter(c => courseIds.includes(c.id))
-  if (courses.length === 0 && !allControls) return null
-
-  const sorted = [...COMMON_SCALES].sort((a, b) => a - b)
-  for (const scale of sorted) {
-    let fits = true
-    if (allControls) {
-      const bounds = allControlsBoundsMm(project.controls, project.map, scale)
-      if (bounds && (bounds.width > printableW || bounds.height > printableH)) fits = false
-    }
-    if (fits) {
-      fits = courses.every(course => {
-        const bounds = courseBoundsMm(course, project.controls, project.map, scale)
-        if (!bounds) return true
-        return bounds.width <= printableW && bounds.height <= printableH
-      })
-    }
-    if (fits) return scale
-  }
-
-  return null
-}
 
 /** Smallest common scale at which the given course (any control slice) fits the page. */
 export function suggestFitScaleForCourseObj(
@@ -441,18 +355,6 @@ export function suggestFitScaleForCourseObj(
     if (bounds.width <= printableW && bounds.height <= printableH) return scale
   }
   return null
-}
-
-export function suggestFitScaleForCourse(
-  project: Project,
-  courseId: string,
-  pageSize: string,
-  orientation: 'portrait' | 'landscape',
-  border?: MapBorder,
-): number | null {
-  const course = project.courses.find(c => c.id === courseId)
-  if (!course) return null
-  return suggestFitScaleForCourseObj(course, project.controls, project.map, pageSize, orientation, border)
 }
 
 export function checkFitForCourseObj(
@@ -478,19 +380,6 @@ export function checkFitForCourseObj(
   }
 }
 
-export function checkFitForCourse(
-  project: Project,
-  courseId: string,
-  pageSize: string,
-  orientation: 'portrait' | 'landscape',
-  printScale: number,
-  border?: MapBorder,
-): CourseFitInfo | null {
-  const course = project.courses.find(c => c.id === courseId)
-  if (!course) return null
-  return checkFitForCourseObj(course, project.controls, project.map, pageSize, orientation, printScale, border)
-}
-
 export function checkTilingForCourseObj(
   course: Course,
   controls: Control[],
@@ -509,19 +398,6 @@ export function checkTilingForCourseObj(
   return { courseId: course.id, courseName: course.name, cols, rows, totalPages: cols * rows }
 }
 
-export function checkTilingForCourse(
-  project: Project,
-  courseId: string,
-  pageSize: string,
-  orientation: 'portrait' | 'landscape',
-  printScale: number,
-  border?: MapBorder,
-): CourseTileInfo | null {
-  const course = project.courses.find(c => c.id === courseId)
-  if (!course) return null
-  return checkTilingForCourseObj(course, project.controls, project.map, pageSize, orientation, printScale, border)
-}
-
 // ── Tiling ─────────────────────────────────────────────────────────────────
 
 function tileCount(courseDim: number, printableDim: number): number {
@@ -535,143 +411,6 @@ export interface CourseTileInfo {
   cols: number
   rows: number
   totalPages: number
-}
-
-export function checkTiling(project: Project, options: PdfExportOptions): CourseTileInfo[] {
-  const { w: pw, h: ph } = pageDims(options)
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
-
-  const results: CourseTileInfo[] = []
-
-  if (options.allControls) {
-    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
-    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
-    if (bounds) {
-      const cols = tileCount(bounds.width, printableW)
-      const rows = tileCount(bounds.height, printableH)
-      results.push({ courseId: ALL_CONTROLS_ID, courseName: 'All controls', cols, rows, totalPages: cols * rows })
-    } else {
-      results.push({ courseId: ALL_CONTROLS_ID, courseName: 'All controls', cols: 1, rows: 1, totalPages: 1 })
-    }
-  }
-
-  for (const course of project.courses.filter(c => options.courseIds.includes(c.id))) {
-    const submaps = computeSubmaps(course, project.controls)
-    if (submaps.length > 1) {
-      for (const submap of submaps) {
-        const smKey = submapPreviewId(course.id, submap.index)
-        const courseScale = options.scaleOverrides?.[smKey] ?? options.scaleOverrides?.[course.id] ?? options.printScale
-        const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-        const label = `${course.name} — ${submap.label}`
-        if (!bounds) { results.push({ courseId: smKey, courseName: label, cols: 1, rows: 1, totalPages: 1 }); continue }
-        const cols = tileCount(bounds.width, printableW)
-        const rows = tileCount(bounds.height, printableH)
-        results.push({ courseId: smKey, courseName: label, cols, rows, totalPages: cols * rows })
-      }
-    } else {
-      const courseScale = options.scaleOverrides?.[course.id] ?? options.printScale
-      const bounds = courseBoundsMm(course, project.controls, project.map, courseScale)
-      if (!bounds) { results.push({ courseId: course.id, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }); continue }
-      const cols = tileCount(bounds.width, printableW)
-      const rows = tileCount(bounds.height, printableH)
-      results.push({ courseId: course.id, courseName: course.name, cols, rows, totalPages: cols * rows })
-    }
-  }
-
-  return results
-}
-
-// ── Preview data ───────────────────────────────────────────────────────────
-
-export interface CoursePreview {
-  positions: Pos[]
-  fadedPositions?: Pos[]
-  centerX: number
-  centerY: number
-}
-
-export function coursePreviewMm(
-  project: Project,
-  courseId: string,
-  printScale: number,
-  locked?: boolean,
-): CoursePreview | null {
-  let positions: Pos[]
-  let fadedPositions: Pos[] | undefined
-
-  if (courseId === ALL_CONTROLS_ID) {
-    positions = project.controls.map(c => mapToMm(c.position, project.map, printScale))
-  } else {
-    const parsed = parseSubmapPreviewId(courseId)
-    const realCourseId = parsed ? parsed.courseId : courseId
-    const course = project.courses.find(c => c.id === realCourseId)
-    if (!course) return null
-
-    const controlMap = controlsById(project.controls)
-
-    if (parsed && locked) {
-      const submaps = computeSubmaps(course, project.controls)
-      const submap = submaps.find(s => s.index === parsed.submapIndex)
-      if (!submap) return null
-
-      const submapControlIds = new Set(submap.controls.map(cc => cc.controlId))
-
-      positions = []
-      fadedPositions = []
-      const seen = new Set<string>()
-      for (const cc of course.controls) {
-        if (seen.has(cc.controlId)) continue
-        seen.add(cc.controlId)
-        const ctrl = controlMap.get(cc.controlId)
-        if (!ctrl) continue
-        const pos = mapToMm(ctrl.position, project.map, printScale)
-        if (submapControlIds.has(cc.controlId)) {
-          positions.push(pos)
-        } else {
-          fadedPositions.push(pos)
-        }
-      }
-      for (const cc of course.controls) {
-        if (cc.legBendPoints) {
-          for (const bp of cc.legBendPoints) {
-            fadedPositions.push(mapToMm(bp, project.map, printScale))
-          }
-        }
-      }
-    } else {
-      let courseControls = course.controls
-      if (parsed) {
-        const submaps = computeSubmaps(course, project.controls)
-        const submap = submaps.find(s => s.index === parsed.submapIndex)
-        if (!submap) return null
-        courseControls = submap.controls
-      }
-
-      positions = courseControls
-        .map(cc => controlMap.get(cc.controlId))
-        .filter((c): c is Control => c != null)
-        .map(c => mapToMm(c.position, project.map, printScale))
-      for (const cc of courseControls) {
-        if (cc.legBendPoints) {
-          for (const bp of cc.legBendPoints) {
-            positions.push(mapToMm(bp, project.map, printScale))
-          }
-        }
-      }
-    }
-  }
-
-  const allPositions = fadedPositions ? [...positions, ...fadedPositions] : positions
-  const bounds = computeBounds(allPositions)
-  if (!bounds) return null
-
-  return {
-    positions,
-    fadedPositions,
-    centerX: bounds.centerX,
-    centerY: bounds.centerY,
-  }
 }
 
 // ── Color helpers ───────────────────────────────────────────────────────────
@@ -1099,8 +838,6 @@ function drawScaleBar(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(textH * 0.7 * MM_TO_PT)
 
-  const fmtDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
-
   for (let i = 0; i <= sb.segments; i++) {
     const tx = barX + i * segMm
     doc.setLineWidth(strokeW)
@@ -1108,7 +845,7 @@ function drawScaleBar(
     doc.line(tx, barY - tickH, tx, barY)
 
     if (i === 0 || i === 1 || i === sb.segments) {
-      const label = fmtDist(i * segRealM)
+      const label = formatScaleBarDistance(i * segRealM)
       doc.text(label, tx, barY - tickH - textH * 0.15, { align: 'center' })
     }
   }
@@ -1154,6 +891,10 @@ async function ensureJpegOrPng(dataUrl: string): Promise<{ url: string; format: 
   if (dataUrl.startsWith('data:image/png')) return { url: dataUrl, format: 'PNG' }
   if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg'))
     return { url: dataUrl, format: 'JPEG' }
+  // Only inline image payloads may reach img.src — a remote URL here would fire
+  // an outbound request during export (validateProject filters these on load;
+  // this guards overlays created before that check existed).
+  if (!/^data:image\//i.test(dataUrl)) throw new Error('Image overlay is not an inline data:image URL')
   const img = new Image()
   img.src = dataUrl
   await img.decode()
@@ -1208,8 +949,11 @@ export async function exportCoursePdf(
   const printableH = ph - 2 * MARGIN
 
   const useRaster = options.mapRendering === 'raster'
-  if (loadedMap?.type === 'svg' && !useRaster) await import('svg2pdf.js')
-  const doc = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] })
+  const [{ jsPDF: JsPdf }] = await Promise.all([
+    import('jspdf'),
+    loadedMap?.type === 'svg' && !useRaster ? import('svg2pdf.js') : Promise.resolve(),
+  ])
+  const doc = new JsPdf({ orientation: orient, unit: 'mm', format: [pw, ph] })
   const controlMap = controlsById(project.controls)
   const courses = expandVariations(project.courses.filter(c => options.courseIds.includes(c.id)))
 

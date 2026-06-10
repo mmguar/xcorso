@@ -10,7 +10,12 @@ import type { Project, MapType } from '../types'
 const VALID_MAP_TYPES: MapType[] = ['ocad', 'pdf', 'bitmap']
 const VALID_SPECS = ['isom-2017', 'issprm-2019']
 
-function validateProject(raw: unknown): Project {
+/**
+ * Validate and migrate a raw project object into the current Project shape.
+ * The single migration path: .oco loads AND session restores must both go
+ * through here, or defaults for new fields silently drift apart.
+ */
+export function normalizeProject(raw: unknown): Project {
   if (raw == null || typeof raw !== 'object') throw new Error('project.json is not an object')
   const obj = raw as Record<string, unknown>
 
@@ -30,7 +35,11 @@ function validateProject(raw: unknown): Project {
   const mc = map as Record<string, unknown>
   if (!VALID_MAP_TYPES.includes(mc.type as MapType)) throw new Error(`Invalid map.type: ${mc.type}`)
   if (typeof mc.filename !== 'string' || mc.filename.length === 0) throw new Error('Missing map.filename')
-  if (/[/\\]|\.\./.test(mc.filename as string)) throw new Error('Invalid map.filename')
+  // Block path traversal without rejecting legal names like "sprint..final.png":
+  // separators are forbidden, so ".." is only dangerous as the entire name.
+  if (/[/\\]/.test(mc.filename as string) || mc.filename === '..' || mc.filename === '.') {
+    throw new Error('Invalid map.filename')
+  }
   // Coerce numeric strings (older files saved map.scale as e.g. "4000.000000")
   // rather than discarding a recoverable value.
   const parsedScale = Number(mc.scale)
@@ -54,6 +63,12 @@ function validateProject(raw: unknown): Project {
   if (!Array.isArray(obj.scaleBars)) obj.scaleBars = []
   if (!Array.isArray(obj.textLabels)) obj.textLabels = []
   if (!Array.isArray(obj.imageOverlays)) obj.imageOverlays = []
+  // Image overlays are rendered as <image href> and fed to img.src on PDF
+  // export. Only inline data:image/* payloads are allowed — an http(s)/blob URL
+  // smuggled into a .oco would fire an outbound request on open/export.
+  obj.imageOverlays = (obj.imageOverlays as Record<string, unknown>[]).filter(
+    io => io != null && typeof io === 'object' && typeof io.dataUrl === 'string' && /^data:image\//i.test(io.dataUrl),
+  )
 
   if (typeof obj.overprint !== 'number' || !isFinite(obj.overprint as number)) obj.overprint = 1
   else obj.overprint = Math.max(0, Math.min(1, obj.overprint as number))
@@ -125,7 +140,7 @@ export async function loadProjectFile(file: File): Promise<LoadedProjectFile> {
   const projectJson = await zip.file('project.json')?.async('string')
   if (!projectJson) throw new Error('Invalid .oco file: missing project.json')
 
-  const project = validateProject(JSON.parse(projectJson))
+  const project = normalizeProject(JSON.parse(projectJson))
 
   let mapData: ArrayBuffer | null = null
   if (project.map.storage.mode === 'embedded') {
