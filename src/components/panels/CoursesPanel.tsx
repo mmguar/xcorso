@@ -99,12 +99,12 @@ function CourseEditor({ course }: { course: Course }) {
           onChange={e => setCodesInput(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter' && codesInput.trim()) {
-              const codes = codesInput.split(/[\s,;-]+/).map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+              const codes = codesInput.split(/[\s,;-]+/).map(s => s.trim()).filter(Boolean)
               if (codes.length > 0) addControlsToCourseByCode(course.id, codes)
               setCodesInput('')
             }
           }}
-          placeholder="Type codes: 31,32,33"
+          placeholder="Type codes: 31,32,S1"
           className="flex-1 min-w-0 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
         />
         <button

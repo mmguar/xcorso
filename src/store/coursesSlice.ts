@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
-import { generateAllPermutations } from '../lib/courseUtils'
+import { defaultControlLabel, generateAllPermutations } from '../lib/courseUtils'
 
 function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
   const getType = (id: string) => controls.find(c => c.id === id)?.type
@@ -111,6 +111,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       if (!project) return
       const course = project.courses.find(c => c.id === courseId)
       if (!course) return
+      if (get().editor.selectedCourseId !== courseId) get().setSelectedCourse(courseId)
       const alreadyInCourse = new Set(course.controls.map(cc => cc.controlId))
       const regularControls = project.controls
         .filter(c => c.type === 'control' && !alreadyInCourse.has(c.id))
@@ -123,18 +124,46 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       })
     },
 
-    addControlsToCourseByCode: (courseId: string, codes: number[]) => {
+    addControlsToCourseByCode: (courseId: string, codes: (number | string)[]) => {
       const { project } = get()
       if (!project) return
       const course = project.courses.find(c => c.id === courseId)
       if (!course) return
-      const controlsByCode = new Map(project.controls.map(c => [c.code, c]))
-      const validControls = codes.map(code => controlsByCode.get(code)).filter((c): c is Control => c != null)
-      if (validControls.length === 0) return
+      if (get().editor.selectedCourseId !== courseId) get().setSelectedCourse(courseId)
+      // Tokens match display labels ("31", "S1", "F2", custom labels). Starts
+      // and finishes are inserted first into the label map so a regular
+      // control with a colliding label wins.
+      const byLabel = new Map<string, Control>()
+      for (const c of project.controls) {
+        if (c.type !== 'control') byLabel.set(defaultControlLabel(c).toUpperCase(), c)
+      }
+      for (const c of project.controls) {
+        if (c.type === 'control') byLabel.set(defaultControlLabel(c).toUpperCase(), c)
+      }
+      const resolved = codes
+        .map(code => byLabel.get(String(code).trim().toUpperCase()))
+        .filter((c): c is Control => c != null)
+      if (resolved.length === 0) return
+      const start = resolved.filter(c => c.type === 'start').pop()
+      const finish = resolved.filter(c => c.type === 'finish').pop()
+      const regulars = resolved.filter(c => c.type === 'control')
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        insertBeforeFinish(c, p.controls, validControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
+        const typeOf = (id: string) => p.controls.find(ct => ct.id === id)?.type
+        // Same placement rules as addControlToCourse: one start at the front,
+        // one finish at the end, regular controls before the finish.
+        if (start && !c.controls.some(cc => cc.controlId === start.id)) {
+          c.controls = c.controls.filter(cc => typeOf(cc.controlId) !== 'start')
+          c.controls.unshift({ id: uuidv4(), controlId: start.id })
+        }
+        if (finish && !c.controls.some(cc => cc.controlId === finish.id)) {
+          c.controls = c.controls.filter(cc => typeOf(cc.controlId) !== 'finish')
+          c.controls.push({ id: uuidv4(), controlId: finish.id })
+        }
+        if (regulars.length > 0) {
+          insertBeforeFinish(c, p.controls, regulars.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
+        }
       })
     },
 

@@ -69,7 +69,7 @@ export interface AppActions {
   updateCourseColor: (id: string, color: string) => void
   addControlToCourse: (courseId: string, controlId: string) => void
   addAllControlsToCourse: (courseId: string) => void
-  addControlsToCourseByCode: (courseId: string, codes: number[]) => void
+  addControlsToCourseByCode: (courseId: string, codes: (number | string)[]) => void
   removeControlFromCourse: (courseId: string, courseControlId: string) => void
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void

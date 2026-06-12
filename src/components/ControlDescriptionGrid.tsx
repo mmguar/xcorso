@@ -53,10 +53,22 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const setExchangeMode = useStore(s => s.setExchangeMode)
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
   const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
+  const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
+  const isSelectedCourse = useStore(s => s.editor.selectedCourseId === course.id)
   const controlMap = controlsById(controls)
   const submaps = computeSubmaps(course)
   const hasSubmaps = submaps.length > 1
+
+  // The submap filter (selectedSubmapIndex) applies to the selected course, so
+  // picking a submap from another course's sheet must select that course first
+  // — and this grid's highlight only reflects the filter when its course is
+  // the selected one.
+  const shownSubmapIndex = isSelectedCourse ? selectedSubmapIndex : null
+  function selectSubmap(index: number | null) {
+    if (!isSelectedCourse) setSelectedCourse(course.id)
+    setSelectedSubmap(index)
+  }
 
   // Map exchange courseControl IDs to the submap they END (the next submap starts with same exchange)
   const exchangeCcSubmapEnd = new Map<string, number>()
@@ -157,9 +169,9 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                   <td className="pl-1.5 align-middle whitespace-nowrap">
                     {hasSubmaps && (
                       <button
-                        onClick={() => setSelectedSubmap(null)}
+                        onClick={() => selectSubmap(null)}
                         className={`text-[10px] font-medium px-1 py-0.5 rounded transition-colors ${
-                          selectedSubmapIndex === null
+                          shownSubmapIndex === null
                             ? 'bg-orange-500 text-white'
                             : 'text-orange-600 hover:bg-orange-50'
                         }`}
@@ -185,8 +197,8 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                   const startButton = i === 0 && hasSubmaps ? {
                     label: submaps[0].label,
                     index: 0,
-                    onSelect: setSelectedSubmap,
-                    selected: selectedSubmapIndex,
+                    onSelect: selectSubmap,
+                    selected: shownSubmapIndex,
                   } : undefined
                   return (
                     <SortableDescRow
@@ -206,8 +218,8 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                         nextSubmapLabel: submaps[submapEndIdx + 1]?.label ?? '',
                         exchangeMode: row.cc.exchangeMode ?? 'exchange',
                         onModeChange: (mode) => setExchangeMode(course.id, row.cc.id, mode),
-                        onSelectSubmap: setSelectedSubmap,
-                        selectedSubmapIndex,
+                        onSelectSubmap: selectSubmap,
+                        selectedSubmapIndex: shownSubmapIndex,
                       } : undefined}
                     />
                   )
