@@ -403,7 +403,7 @@ function SortableDescRow({
                 type="checkbox"
                 checked={isLoop ?? false}
                 onChange={() => onToggleLoop?.(courseId, ctrl.id)}
-                className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+                className="accent-orange-600"
               />
               Butterfly loop
             </label>

@@ -75,7 +75,7 @@ function CourseEditor({ course }: { course: Course }) {
               type="checkbox"
               checked={course.showPoints ?? false}
               onChange={e => updateCourseShowPoints(course.id, e.target.checked)}
-              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+              className="accent-orange-600"
             />
             Show points on map
           </label>
@@ -85,7 +85,7 @@ function CourseEditor({ course }: { course: Course }) {
             type="checkbox"
             checked={course.textDescriptions ?? false}
             onChange={e => updateCourseTextDescriptions(course.id, e.target.checked)}
-            className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
+            className="accent-orange-600"
           />
           Text descriptions
         </label>
