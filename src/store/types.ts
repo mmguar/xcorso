@@ -1,6 +1,6 @@
 import type {
   Project, Control, ControlType, Course, CourseType, CourseControl,
-  Annotation, AnnotationType, MapPoint, MapType, ActiveTool, Viewport, RaceClass,
+  Annotation, AnnotationType, MapPoint, MapType, ActiveTool, RaceClass,
   CircleGap, LegGap, AppearanceSettings, ScaleBar, TextLabel, ImageOverlay, EventSpec, FinishType,
   CourseLayout, SubmapLayout, LayoutElementPosition, LayoutDefaults, MapGeoref, OverprintMode,
 } from '../types'
@@ -14,7 +14,6 @@ export interface EditorState {
   selectedOverlayId: string | null
   selectedAnnotationId: string | null
   draggingControlId: string | null
-  viewport: Viewport
   mapSaturation: number
   gapSize: number
   appearance: AppearanceSettings
@@ -221,7 +220,6 @@ export const defaultEditor: EditorState = {
   selectedOverlayId: null,
   selectedAnnotationId: null,
   draggingControlId: null,
-  viewport: { x: 0, y: 0, scale: 1 },
   mapSaturation: 0.5,
   gapSize: 35,
   appearance: defaultAppearance,

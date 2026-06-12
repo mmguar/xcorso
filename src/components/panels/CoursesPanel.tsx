@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
@@ -9,7 +9,12 @@ import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
 
 function CourseEditor({ course }: { course: Course }) {
   useRenderTracker('CourseEditor')
-  const project = useStore(s => s.project!)
+  // Narrow selectors: subscribing to the whole project would re-render this
+  // editor (and the heavy ControlDescriptionGrid) on every store mutation,
+  // including per-pointermove drag updates elsewhere on the canvas.
+  const controls = useStore(s => s.project!.controls)
+  const map = useStore(s => s.project!.map)
+  const measuredLegs = useStore(s => s.project!.measuredLegs)
   const reorderCourseControls = useStore(s => s.reorderCourseControls)
   const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
@@ -23,7 +28,10 @@ function CourseEditor({ course }: { course: Course }) {
   const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
   const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
 
-  const distances = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
+  const distances = useMemo(
+    () => computeCourseDistances(course, controls, map, measuredLegs),
+    [course, controls, map, measuredLegs],
+  )
   const computedTotal = distances.total
   const resolvedTotal = resolveCourseLength(course, distances)
 
@@ -61,7 +69,7 @@ function CourseEditor({ course }: { course: Course }) {
 
       {/* Course toggles */}
       <div className="flex flex-col border-b border-gray-100">
-        {project.controls.some(c => c.points != null) && (
+        {controls.some(c => c.points != null) && (
           <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
             <input
               type="checkbox"
@@ -150,7 +158,7 @@ function CourseEditor({ course }: { course: Course }) {
       )}
 
       {/* Climb & finish type */}
-      {(distances.total > 0 || course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
+      {(distances.total > 0 || course.controls.some(cc => controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
         <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
           {distances.total > 0 && (
             <label className="flex items-center gap-1 text-xs text-gray-500">
@@ -169,7 +177,7 @@ function CourseEditor({ course }: { course: Course }) {
               <span className="text-gray-400">m</span>
             </label>
           )}
-          {course.controls.some(cc => project.controls.find(c => c.id === cc.controlId)?.type === 'finish') && (
+          {course.controls.some(cc => controls.find(c => c.id === cc.controlId)?.type === 'finish') && (
             <label className="flex items-center gap-1 text-xs text-gray-500">
               <span>Finish</span>
               <select
@@ -229,14 +237,15 @@ function VariationsSection({ course }: { course: Course }) {
 }
 
 function ClassesSection() {
-  const project = useStore(s => s.project!)
+  const classes = useStore(s => s.project!.classes)
+  const courses = useStore(s => s.project!.courses)
   const addClass = useStore(s => s.addClass)
   const deleteClass = useStore(s => s.deleteClass)
   const updateClassName = useStore(s => s.updateClassName)
   const updateClassCourse = useStore(s => s.updateClassCourse)
-  const [showClasses, setShowClasses] = useState(project.classes.length > 0)
+  const [showClasses, setShowClasses] = useState(classes.length > 0)
 
-  if (project.courses.length === 0) return null
+  if (courses.length === 0) return null
 
   if (!showClasses) {
     return (
@@ -254,19 +263,19 @@ function ClassesSection() {
       <div className="flex items-center justify-between px-3 py-1">
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Classes</span>
         <button
-          onClick={() => addClass(`Class ${project.classes.length + 1}`, project.courses[0].id)}
+          onClick={() => addClass(`Class ${classes.length + 1}`, courses[0].id)}
           className="text-xs text-orange-600 hover:text-orange-800 font-medium transition-colors"
         >
           + Add
         </button>
       </div>
       <div className="flex flex-col gap-1 px-2 pb-2">
-        {project.classes.length === 0 ? (
+        {classes.length === 0 ? (
           <div className="text-xs text-gray-400 px-1 py-1">
             No classes yet. Click "+ Add" above.
           </div>
         ) : (
-          project.classes.map(rc => (
+          classes.map(rc => (
             <div key={rc.id} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2 py-1.5">
               <input
                 type="text"
@@ -280,7 +289,7 @@ function ClassesSection() {
                 onChange={e => updateClassCourse(rc.id, e.target.value)}
                 className="text-xs border border-gray-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 max-w-[7rem]"
               >
-                {project.courses.map(c => (
+                {courses.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
@@ -374,7 +383,10 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
 
 export function CoursesPanel() {
   useRenderTracker('CoursesPanel')
-  const project = useStore(s => s.project!)
+  // Narrow selectors — the whole-project reference changes on every store
+  // mutation, including per-pointermove drag updates.
+  const courses = useStore(s => s.project!.courses)
+  const controlCount = useStore(s => s.project!.controls.length)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const addCourse = useStore(s => s.addCourse)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
@@ -394,13 +406,13 @@ export function CoursesPanel() {
     <div className="flex flex-col h-full">
       <div className="flex gap-2 p-2 border-b border-gray-100">
         <button
-          onClick={() => { const c = addCourse(`Course ${project.courses.length + 1}`); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
+          onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors"
         >
           <Plus size={13} /> Linear course
         </button>
         <button
-          onClick={() => { const c = addCourse(`Score ${project.courses.length + 1}`, 'score'); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
+          onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-500 text-white rounded-lg px-3 py-1.5 hover:bg-orange-600 transition-colors"
         >
           <Plus size={13} /> Score-O
@@ -409,7 +421,7 @@ export function CoursesPanel() {
 
       <div className="flex-1 overflow-y-auto panel-scroll p-2">
         {/* All controls view */}
-        {project.controls.length > 0 && (
+        {controlCount > 0 && (
           <div
             onClick={() => setSelectedCourse(null)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer mb-1 transition-colors ${
@@ -420,16 +432,16 @@ export function CoursesPanel() {
           >
             <div className="w-3 h-3 rounded-full bg-orange-600" />
             <span className="text-sm font-medium flex-1">All controls</span>
-            <span className="text-xs text-gray-400">{project.controls.length} controls</span>
+            <span className="text-xs text-gray-400">{controlCount} controls</span>
           </div>
         )}
 
-        {project.courses.length === 0 && project.controls.length === 0 ? (
+        {courses.length === 0 && controlCount === 0 ? (
           <div className="text-sm text-gray-400 text-center py-6">
             No courses yet. Create one above.
           </div>
         ) : (
-          project.courses.map(course => (
+          courses.map(course => (
             <CourseRow
               key={course.id}
               course={course}
