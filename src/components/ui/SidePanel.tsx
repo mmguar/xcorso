@@ -3,12 +3,14 @@
  * Contains Controls tab and Courses tab.
  */
 
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useState } from 'react'
 import { MapPin, Navigation, LayoutPanelLeft, PanelRightClose, PanelRight, Plus } from 'lucide-react'
 import { useStore } from '../../store'
+import { computeSubmaps } from '../../lib/courseUtils'
 import { ControlsPanel } from '../panels/ControlsPanel'
 import { CoursesPanel } from '../panels/CoursesPanel'
 import { LayoutPanel } from '../panels/LayoutPanel'
+import type { Course } from '../../types'
 
 type Tab = 'controls' | 'courses' | 'layout'
 
@@ -114,6 +116,44 @@ function courseChipLabel(name: string): string {
   return name.slice(0, 2).toUpperCase()
 }
 
+/** M1/M2… chips shown next to the active course chip for exchange/flip courses. */
+function SubmapChips({ course }: { course: Course }) {
+  const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
+  const layoutMode = useStore(s => s.editor.layoutMode)
+  const layoutCourseId = useStore(s => s.editor.layoutCourseId)
+  const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
+  const setLayoutSubmap = useStore(s => s.setLayoutSubmap)
+  const submaps = computeSubmaps(course)
+  if (submaps.length <= 1) return null
+  // In layout mode the chips switch the layout submap (which keeps the canvas
+  // filter in sync); otherwise they toggle the canvas submap filter.
+  const inLayout = layoutMode && layoutCourseId === course.id
+  return (
+    <>
+      {submaps.map(sm => {
+        const active = selectedSubmapIndex === sm.index
+        return (
+          <button
+            key={sm.index}
+            onClick={() => {
+              if (inLayout) setLayoutSubmap(sm.index)
+              else setSelectedSubmap(active ? null : sm.index)
+            }}
+            title={active && !inLayout ? `${sm.label} (click to show all)` : sm.label}
+            className={`w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
+              active
+                ? 'bg-orange-600 text-white'
+                : 'bg-white border border-gray-300 text-gray-500 hover:border-orange-400'
+            }`}
+          >
+            M{sm.index + 1}
+          </button>
+        )
+      })}
+    </>
+  )
+}
+
 function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onSelectTab: (t: Tab) => void }) {
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
@@ -122,40 +162,46 @@ function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onS
   const [showNewMenu, setShowNewMenu] = useState(false)
 
   return (
-    <div className="flex flex-col items-center pt-2 gap-3">
+    <div className="flex flex-col items-center pt-2 gap-3 flex-1 min-h-0">
       <button
         onClick={onExpand}
-        className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+        className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors shrink-0"
         title="Open Course Panel"
       >
         <PanelRight size={22} />
       </button>
 
       {courses.length > 0 && (
-        <div className="flex flex-col items-center gap-1.5 px-1">
-          {courses.map(course => {
-            const isActive = course.id === selectedCourseId
-            return (
-              <button
-                key={course.id}
-                onClick={() => {
-                  if (isActive) { setSelectedCourse(null) }
-                  else { setSelectedCourse(course.id); onSelectTab('courses'); onExpand() }
-                }}
-                title={isActive ? `${course.name} (click to deselect)` : course.name}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 ${
-                  isActive
-                    ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
-                    : 'hover:scale-105 opacity-70 hover:opacity-100'
-                }`}
-                style={{ background: course.color, color: 'white' }}
-              >
-                {courseChipLabel(course.name)}
-              </button>
-            )
-          })}
+        <>
+          {/* Scrollable course (+ submap) chips; the + menu stays outside so
+              its dropdown isn't clipped by the scroll container. */}
+          <div className="flex flex-col items-center gap-1.5 px-1 overflow-y-auto panel-scroll min-h-0">
+            {courses.map(course => {
+              const isActive = course.id === selectedCourseId
+              return (
+                <Fragment key={course.id}>
+                  <button
+                    onClick={() => {
+                      if (isActive) { setSelectedCourse(null) }
+                      else { setSelectedCourse(course.id); onSelectTab('courses'); onExpand() }
+                    }}
+                    title={isActive ? `${course.name} (click to deselect)` : course.name}
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 ${
+                      isActive
+                        ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
+                        : 'hover:scale-105 opacity-70 hover:opacity-100'
+                    }`}
+                    style={{ background: course.color, color: 'white' }}
+                  >
+                    {courseChipLabel(course.name)}
+                  </button>
+                  {isActive && <SubmapChips course={course} />}
+                </Fragment>
+              )
+            })}
+          </div>
           {/* Create new course button with dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0 pb-2">
             <button
               onClick={() => setShowNewMenu(m => !m)}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
@@ -163,7 +209,7 @@ function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onS
               <Plus size={13} />
             </button>
             {showNewMenu && (
-              <div className="absolute right-full top-0 mr-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-28 z-50">
+              <div className="absolute right-full bottom-0 mr-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-28 z-50">
                 <button
                   onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
@@ -179,7 +225,7 @@ function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onS
               </div>
             )}
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -219,26 +265,28 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
 
         {courses.length > 0 && (
           <>
-            <div className="w-px h-5 bg-gray-200 mx-0.5" />
-            <div className="flex items-center gap-1 py-0.5">
+            <div className="w-px h-5 bg-gray-200 mx-0.5 shrink-0" />
+            <div className="flex items-center gap-1 py-0.5 overflow-x-auto min-w-0">
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
-                  <button
-                    key={course.id}
-                    onClick={() => {
-                      if (isActive) { setSelectedCourse(null) }
-                      else { setSelectedCourse(course.id); if (expanded) setTab('courses') }
-                    }}
-                    className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
-                      isActive
-                        ? 'ring-2 ring-orange-500 ring-offset-1'
-                        : 'opacity-60 hover:opacity-100'
-                    }`}
-                    style={{ background: course.color, color: 'white' }}
-                  >
-                    {courseChipLabel(course.name)}
-                  </button>
+                  <Fragment key={course.id}>
+                    <button
+                      onClick={() => {
+                        if (isActive) { setSelectedCourse(null) }
+                        else { setSelectedCourse(course.id); if (expanded) setTab('courses') }
+                      }}
+                      className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
+                        isActive
+                          ? 'ring-2 ring-orange-500 ring-offset-1'
+                          : 'opacity-60 hover:opacity-100'
+                      }`}
+                      style={{ background: course.color, color: 'white' }}
+                    >
+                      {courseChipLabel(course.name)}
+                    </button>
+                    {isActive && <SubmapChips course={course} />}
+                  </Fragment>
                 )
               })}
             </div>

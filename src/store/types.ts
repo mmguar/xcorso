@@ -14,6 +14,7 @@ export interface EditorState {
   selectedOverlayId: string | null
   selectedAnnotationId: string | null
   draggingControlId: string | null
+  draggingLabelControlId: string | null
   mapSaturation: number
   gapSize: number
   appearance: AppearanceSettings
@@ -28,6 +29,8 @@ export interface EditorState {
   layoutSubmapIndex: number
   layoutSnapRequest: number
   gapRebuild: boolean
+  // Pan-to-point request (seq bumps so repeat clicks on the same control re-fire).
+  centerRequest: { point: MapPoint; seq: number } | null
 }
 
 export interface AppState {
@@ -64,12 +67,13 @@ export interface AppActions {
   updateControlDescription: (id: string, field: string, value: string | undefined) => void
 
   addCourse: (name: string, type?: CourseType) => Course
+  duplicateCourse: (id: string) => Course | null
   deleteCourse: (id: string) => void
   updateCourseName: (id: string, name: string) => void
   updateCourseColor: (id: string, color: string) => void
   addControlToCourse: (courseId: string, controlId: string) => void
   addAllControlsToCourse: (courseId: string) => void
-  addControlsToCourseByCode: (courseId: string, codes: number[]) => void
+  addControlsToCourseByCode: (courseId: string, codes: (number | string)[]) => void
   removeControlFromCourse: (courseId: string, courseControlId: string) => void
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
   updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
@@ -83,6 +87,8 @@ export interface AppActions {
   setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
   toggleExchangeControl: (courseId: string, courseControlId: string) => void
   setSelectedSubmap: (index: number | null) => void
+  requestCenterOnControl: (controlId: string) => void
+  setDraggingLabel: (controlId: string | null) => void
 
   enterMeasureMode: (courseId: string) => void
   exitMeasureMode: () => void
@@ -220,6 +226,7 @@ export const defaultEditor: EditorState = {
   selectedOverlayId: null,
   selectedAnnotationId: null,
   draggingControlId: null,
+  draggingLabelControlId: null,
   mapSaturation: 0.5,
   gapSize: 35,
   appearance: defaultAppearance,
@@ -234,4 +241,5 @@ export const defaultEditor: EditorState = {
   layoutSubmapIndex: 0,
   layoutSnapRequest: 0,
   gapRebuild: false,
+  centerRequest: null,
 }

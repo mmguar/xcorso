@@ -888,6 +888,7 @@ export function LayoutPanel() {
   const ensureAllCourseLayouts = useStore(s => s.ensureAllCourseLayouts)
   const scalable = canExportPdf(project.map)
   const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const [allControls, setAllControls] = useState(true)
 
   useEffect(() => {
@@ -899,6 +900,7 @@ export function LayoutPanel() {
 
   async function handleExport() {
     setExporting(true)
+    setExportError(null)
     try {
       const currentProject = useStore.getState().project!
       const defaults = getLayoutDefaults(useStore.getState)
@@ -931,6 +933,13 @@ export function LayoutPanel() {
       const currentMap = useStore.getState().loadedMap
       const blob = await exportCoursePdf(currentProject, options, currentMap)
       downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      // A stale dev/PWA page can fail to fetch the lazily-loaded pdf modules;
+      // only a reload picks up the fresh chunks.
+      setExportError(/dynamically imported module|outdated optimize dep|Importing a module script failed/i.test(msg)
+        ? 'Export to PDF failed. Reload the page and try again.'
+        : `Export failed: ${msg}`)
     } finally {
       setExporting(false)
     }
@@ -980,6 +989,9 @@ export function LayoutPanel() {
           <p className="text-[11px] text-amber-600 mb-2">
             Map has no scale calibration. Use the Measure Scale tool first.
           </p>
+        )}
+        {exportError && (
+          <p className="text-[11px] text-red-600 mb-2">{exportError}</p>
         )}
         <button
           onClick={handleExport}
