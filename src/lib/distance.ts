@@ -68,11 +68,14 @@ export function computeCourseDistances(
 
   if (positions.length < 2) return { legs: [], total: 0 }
 
+  // legs[i] is the distance from course control i to i+1. Consumers index this
+  // positionally (legs[idx - 1]), so a leg with an unresolvable control must
+  // still occupy its slot — push 0 ("unknown") instead of skipping it.
   const legs: number[] = []
   for (let i = 0; i < resolved.length - 1; i++) {
     const from = resolved[i]
     const to = resolved[i + 1]
-    if (!from.position || !to.position) continue
+    if (!from.position || !to.position) { legs.push(0); continue }
     const waypoints = measuredLegs?.[legKey(from.controlId, to.controlId)]
     const units = waypoints && waypoints.length > 0
       ? polylineLength([from.position, ...waypoints, to.position])
@@ -94,4 +97,10 @@ export function resolveCourseLength(course: Course, distances: CourseDistances):
 export function formatDistance(metres: number): string {
   if (metres < 1000) return `${Math.round(metres / 10) * 10} m`
   return `${(Math.round(metres / 10) * 10 / 1000).toFixed(1)} km`
+}
+
+/** Scale-bar tick label: exact metres (no rounding to 10 m), km past 1000 m.
+ *  Shared by the canvas scale bar and the PDF export so they always agree. */
+export function formatScaleBarDistance(metres: number): string {
+  return metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres)} m`
 }

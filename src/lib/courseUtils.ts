@@ -21,7 +21,9 @@ export function unitsPerMm(map: MapConfig): number {
     const { p1, p2, realWorldMeters } = map.scaleMeasurement
     const pixelDist = distance(p1, p2)
     if (pixelDist > 0 && map.scale > 0) {
-      const mmOnPaper = (realWorldMeters * 1000000) / map.scale
+      // realWorldMeters × 1000 = real-world mm; ÷ scale = mm on paper. Must stay
+      // consistent with mapToMm/mmToMap in pdfExport.ts (same ×1000 factor).
+      const mmOnPaper = (realWorldMeters * 1000) / map.scale
       return pixelDist / mmOnPaper
     }
   }
@@ -85,11 +87,6 @@ export function computeSubmaps(course: Course, _controls?: Control[]): Submap[] 
     label: `Map ${submaps.length + 1}`,
   })
   return submaps
-}
-
-/** Number of submaps a course is split into (1 when it has no exchanges/flips). */
-export function submapCount(course: Course): number {
-  return computeSubmaps(course).length
 }
 
 /**

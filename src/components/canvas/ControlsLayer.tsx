@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import type { Control, Course, CircleGap, AppearanceSettings, MapPoint } from '../../types'
+import type { Control, Course, CourseControl, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
@@ -217,6 +217,17 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     ? new Set(selectedCourse.controls.map(cc => cc.controlId))
     : null
 
+  // First CourseControl per control id (mirrors .find semantics for controls
+  // that repeat in loop courses) — avoids an O(courseControls) scan per control.
+  const ccByControlId = useMemo(() => {
+    if (!selectedCourse) return null
+    const m = new Map<string, CourseControl>()
+    for (const cc of selectedCourse.controls) {
+      if (!m.has(cc.controlId)) m.set(cc.controlId, cc)
+    }
+    return m
+  }, [selectedCourse])
+
   const sequenceMap = selectedCourse && selectedCourse.type === 'linear'
     ? buildSeqMap(selectedCourse, controls)
     : null
@@ -280,7 +291,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           label = defaultControlLabel(control)
         }
 
-        const cc = selectedCourse?.controls.find(cc => cc.controlId === control.id)
+        const cc = ccByControlId?.get(control.id)
 
         if (submapInfo && cc?.exchangeMode && control.id === submapInfo.firstCcId) {
           label = ''

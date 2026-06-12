@@ -16,14 +16,18 @@ interface Props { onGoHome: () => void }
 
 export function EditorScreen({ onGoHome }: Props) {
   useRenderTracker('EditorScreen')
-  const project = useStore(s => s.project!)
+  // Select primitives, not the project object — its reference changes on every
+  // mutation (including per-pointermove drag updates), which would re-render
+  // the entire app shell at pointer-event rate.
+  const mapFilename = useStore(s => s.project!.map.filename)
+  const mapStorageMode = useStore(s => s.project!.map.storage.mode)
   const mapFileData = useStore(s => s.mapFileData)
   const loadedMap = useStore(s => s.loadedMap)
   const setLoadedMap = useStore(s => s.setLoadedMap)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!mapFileData && project.map.storage.mode === 'reference') {
+    if (!mapFileData && mapStorageMode === 'reference') {
       setError('Map file not loaded. Open the .oco file from the same folder as your map.')
       return
     }
@@ -31,7 +35,7 @@ export function EditorScreen({ onGoHome }: Props) {
       setError('No map data available.')
       return
     }
-    loadMap(mapFileData, project.map.filename)
+    loadMap(mapFileData, mapFilename)
       .then((map) => {
         setLoadedMap(map)
         const { width, height, minX, minY } = map.bounds
@@ -45,7 +49,7 @@ export function EditorScreen({ onGoHome }: Props) {
         }
       })
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
-  }, [mapFileData, project.map.filename, setLoadedMap])
+  }, [mapFileData, mapFilename, mapStorageMode, setLoadedMap])
 
   if (error) {
     return (

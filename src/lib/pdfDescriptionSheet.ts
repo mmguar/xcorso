@@ -1,4 +1,4 @@
-import { jsPDF } from 'jspdf'
+import type { jsPDF } from 'jspdf'
 import type { Course, Control, ControlDescription, FinishType } from '../types'
 import { getSymbol, columnFields } from './iofSymbols'
 import type { SymbolDef, IofColumn } from './iofSymbols'
@@ -24,19 +24,6 @@ const HEADER_H = 2 * CELL
 
 function maxControlRows(pageH: number): number {
   return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - HEADER_H) / CELL)
-}
-
-export function descriptionSheetPageCount(
-  course: Course,
-  controls: Control[],
-  pageH: number,
-  trailingFlip?: boolean,
-): number {
-  const count = resolveControls(course, controls).length + (trailingFlip ? 1 : 0)
-  if (count === 0) return 0
-  const rows = maxControlRows(pageH)
-  if (rows <= 0) return 1
-  return Math.ceil(count / rows)
 }
 
 // ── SVG path parser (handles M, L, C, Z only) ──────────────────────────────

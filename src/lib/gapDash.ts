@@ -66,16 +66,17 @@ export function legGapDashArray(gaps: LegGap[], lineLen: number): number[] | nul
   for (const g of sorted) {
     const gapStart = g.start * lineLen
     const gapEnd = g.end * lineLen
+    // A gap fully inside an earlier one adds nothing; extending past `pos` by a
+    // negative amount (and rewinding pos) would corrupt the dash pattern.
+    if (gapEnd <= pos) continue
     if (gapStart > pos) {
       dashes.push(gapStart - pos)
       dashes.push(gapEnd - gapStart)
+    } else if (dashes.length > 0) {
+      dashes[dashes.length - 1] += gapEnd - pos
     } else {
-      if (dashes.length > 0) {
-        dashes[dashes.length - 1] += gapEnd - pos
-      } else {
-        dashes.push(0)
-        dashes.push(gapEnd - pos)
-      }
+      dashes.push(0)
+      dashes.push(gapEnd - pos)
     }
     pos = gapEnd
   }

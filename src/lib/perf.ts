@@ -1,5 +1,4 @@
-import { useRef, Profiler, createElement } from 'react'
-import type { ProfilerOnRenderCallback, ReactNode } from 'react'
+import { useRef } from 'react'
 
 const ENABLED = import.meta.env.DEV
 
@@ -33,44 +32,6 @@ export function useRenderTracker(name: string) {
   }
 }
 
-// ── Profiler wrapper ───────────────────────────────────────────────────────
-
-const slowRenders = new Map<string, { count: number; totalMs: number; maxMs: number }>()
-
-const onRender: ProfilerOnRenderCallback = (id, _phase, actualDuration) => {
-  if (!ENABLED) return
-
-  const entry = slowRenders.get(id) ?? { count: 0, totalMs: 0, maxMs: 0 }
-  entry.count++
-  entry.totalMs += actualDuration
-  if (actualDuration > entry.maxMs) entry.maxMs = actualDuration
-
-  if (actualDuration > 2) {
-    console.log(`[perf] ${id} render: ${actualDuration.toFixed(1)}ms`)
-  }
-
-  slowRenders.set(id, entry)
-}
-
-export function PerfProfiler({ id, children }: { id: string; children: ReactNode }) {
-  if (!ENABLED) return children
-  return createElement(Profiler, { id, onRender }, children)
-}
-
-// ── Zustand middleware ─────────────────────────────────────────────────────
-
-let lastMutationTime = 0
-
-export function logMutation(name: string) {
-  if (!ENABLED) return
-  const now = performance.now()
-  const delta = lastMutationTime ? now - lastMutationTime : 0
-  lastMutationTime = now
-  if (delta < 50) {
-    console.log(`[perf] mutation "${name}" (${delta.toFixed(1)}ms since last)`)
-  }
-}
-
 // ── structuredClone benchmark ──────────────────────────────────────────────
 
 export function timeClone<T>(label: string, obj: T): T {
@@ -97,12 +58,6 @@ export function perfReport() {
       ? (times.reduce((s, t) => s + t, 0) / times.length).toFixed(1)
       : 'n/a'
     console.log(`  ${name}: ${count} renders (avg interval: ${avgMs}ms)`)
-  }
-
-  console.log('--- Slow render profiles ---')
-  const profileSorted = [...slowRenders.entries()].sort((a, b) => b[1].totalMs - a[1].totalMs)
-  for (const [id, stats] of profileSorted) {
-    console.log(`  ${id}: ${stats.count} renders, total ${stats.totalMs.toFixed(0)}ms, max ${stats.maxMs.toFixed(1)}ms, avg ${(stats.totalMs / stats.count).toFixed(1)}ms`)
   }
 
   console.groupEnd()
