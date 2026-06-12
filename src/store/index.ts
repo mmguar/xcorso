@@ -162,6 +162,10 @@ export const useStore = create<Store>((set, get) => {
       set(state => ({ editor: { ...state.editor, draggingControlId: id } }))
     },
 
+    setDraggingLabel: (controlId) => {
+      set(state => ({ editor: { ...state.editor, draggingLabelControlId: controlId } }))
+    },
+
     setSelectedCourse: (id) => {
       set(state => {
         const tool = state.editor.activeTool
@@ -189,6 +193,17 @@ export const useStore = create<Store>((set, get) => {
 
     setSelectedSubmap: (index) => {
       set(state => ({ editor: { ...state.editor, selectedSubmapIndex: index } }))
+    },
+
+    requestCenterOnControl: (controlId) => {
+      const ctrl = get().project?.controls.find(c => c.id === controlId)
+      if (!ctrl) return
+      set(state => ({
+        editor: {
+          ...state.editor,
+          centerRequest: { point: { ...ctrl.position }, seq: (state.editor.centerRequest?.seq ?? 0) + 1 },
+        },
+      }))
     },
 
     enterMeasureMode: (courseId) => {

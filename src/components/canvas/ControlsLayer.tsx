@@ -204,6 +204,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const upm = unitsPerMm(map)
   const selectedId = useStore(s => s.editor.selectedControlId)
   const draggingControlId = useStore(s => s.editor.draggingControlId)
+  const draggingLabelControlId = useStore(s => s.editor.draggingLabelControlId)
   const appearance = useStore(s => s.editor.appearance)
   const projectSpec = useStore(s => s.project!.spec)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
@@ -327,8 +328,24 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId
 
+        // Thin leader line from control centre to label anchor while the
+        // label itself is being dragged (editor chrome — never exported).
+        const leaderLine = control.id === draggingLabelControlId ? (() => {
+          const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
+          return (
+            <line
+              x1={control.position.x} y1={control.position.y}
+              x2={control.position.x + off.x} y2={control.position.y + off.y}
+              stroke={color}
+              strokeWidth={dims.strokeW * upm * scaleFactor * 0.4}
+              opacity={0.7}
+            />
+          )
+        })() : null
+
         return (
           <g key={control.id} data-control-id={control.id} opacity={opacity}>
+            {leaderLine}
             <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} />
           </g>
         )

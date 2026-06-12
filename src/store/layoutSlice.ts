@@ -172,12 +172,17 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         })
       }
 
+      // Layout mode previews the PDF page, so the canvas must show only the
+      // active submap's legs/controls — selectedSubmapIndex drives that
+      // filtering in LegsLayer/ControlsLayer and stays in sync below.
+      const hasSubmaps = computeSubmaps(course).length > 1
       set(state => ({
         editor: {
           ...state.editor,
           layoutMode: true,
           layoutCourseId: courseId,
           layoutSubmapIndex: 0,
+          selectedSubmapIndex: hasSubmaps ? 0 : null,
           measureMode: false,
           measureCourseId: null,
           selectedCourseId: courseId,
@@ -196,6 +201,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           layoutMode: false,
           layoutCourseId: null,
           layoutSubmapIndex: 0,
+          selectedSubmapIndex: null,
         },
       }))
     },
@@ -205,6 +211,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         editor: {
           ...state.editor,
           layoutSubmapIndex: index,
+          selectedSubmapIndex: index,
           layoutSnapRequest: state.editor.layoutSnapRequest + 1,
         },
       }))
