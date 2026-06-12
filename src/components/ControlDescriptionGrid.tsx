@@ -286,6 +286,7 @@ function SortableDescRow({
 }) {
   const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
   const updateControlDescription = useStore(s => s.updateControlDescription)
+  const requestCenterOnControl = useStore(s => s.requestCenterOnControl)
   const {
     attributes,
     listeners,
@@ -329,7 +330,12 @@ function SortableDescRow({
             </button>
           )}
         </td>
-        <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }}>
+        <td
+          className={`${BORDER} text-center font-mono cursor-pointer hover:bg-orange-50`}
+          style={{ height: CELL }}
+          onClick={() => requestCenterOnControl(ctrl.id)}
+          title="Show on map"
+        >
           {defaultControlLabel(ctrl)}
         </td>
         {columns.map(col => {

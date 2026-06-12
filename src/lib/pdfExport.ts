@@ -1164,7 +1164,10 @@ export async function exportCoursePdf(
       // Per-submap layout: each submap of an exchange/flip course is placed independently.
       const sLayout = layout ? (submapLayoutView(layout, submap.index) ?? layout) : undefined
       const courseScale = sLayout?.printScale ?? options.scaleOverrides?.[smKey] ?? options.scaleOverrides?.[oKey] ?? options.printScale
-      const pageCourse = hasSubmaps ? { ...course, controls: submap.controls } : course
+      // Submap slices get "Course - Map N" so each clue sheet names its map.
+      const pageCourse = hasSubmaps
+        ? { ...course, controls: submap.controls, name: `${course.name} - ${submap.label}` }
+        : course
 
       const sPageBase = sLayout ? (PAGE_SIZES[sLayout.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
       const sOrient = sLayout?.orientation ?? options.orientation

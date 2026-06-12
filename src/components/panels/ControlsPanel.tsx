@@ -93,6 +93,7 @@ export function ControlsPanel() {
   const updateControlPoints = useStore(s => s.updateControlPoints)
   const addControlToCourse = useStore(s => s.addControlToCourse)
   const removeControlFromCourse = useStore(s => s.removeControlFromCourse)
+  const requestCenterOnControl = useStore(s => s.requestCenterOnControl)
 
   const [showPoints, setShowPoints] = useState(() =>
     project.controls.some(c => c.points != null)
@@ -162,7 +163,8 @@ export function ControlsPanel() {
             return (
               <div
                 key={control.id}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
+                onClick={() => requestCenterOnControl(control.id)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border cursor-pointer ${
                   count > 0
                     ? 'bg-orange-50 border-orange-200'
                     : 'border-transparent hover:bg-gray-50'
@@ -185,7 +187,7 @@ export function ControlsPanel() {
                 )}
                 <div className="ml-auto flex items-center gap-1">
                   <button
-                    onClick={() => addControlToCourse(selectedCourse.id, control.id)}
+                    onClick={e => { e.stopPropagation(); addControlToCourse(selectedCourse.id, control.id) }}
                     className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-orange-600 hover:bg-orange-100 transition-colors"
                     title="Add to course"
                   >
@@ -193,7 +195,8 @@ export function ControlsPanel() {
                   </button>
                   {count > 0 && (
                     <button
-                      onClick={() => {
+                      onClick={e => {
+                        e.stopPropagation()
                         for (let i = selectedCourse.controls.length - 1; i >= 0; i--) {
                           if (selectedCourse.controls[i].controlId === control.id) {
                             removeControlFromCourse(selectedCourse.id, selectedCourse.controls[i].id)
@@ -232,7 +235,11 @@ export function ControlsPanel() {
         {controls.map(control => (
           <div
             key={control.id}
-            onClick={() => setSelectedControl(control.id === selectedControlId ? null : control.id)}
+            onClick={() => {
+              const selecting = control.id !== selectedControlId
+              setSelectedControl(selecting ? control.id : null)
+              if (selecting) requestCenterOnControl(control.id)
+            }}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
               control.id === selectedControlId
                 ? 'bg-orange-100 border border-orange-300'

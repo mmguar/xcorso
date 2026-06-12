@@ -35,6 +35,39 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       return course
     },
 
+    duplicateCourse: (id: string): Course | null => {
+      const { project } = get()
+      if (!project) return null
+      const idx = project.courses.findIndex(c => c.id === id)
+      if (idx === -1) return null
+      const copy = structuredClone(project.courses[idx])
+      copy.id = uuidv4()
+      copy.name = `${copy.name} (copy)`
+      for (const cc of copy.controls) cc.id = uuidv4()
+      // Loops are referenced by id from variation permutations — remap both.
+      const loopIdMap = new Map<string, string>()
+      for (const loop of copy.loops ?? []) {
+        const nid = uuidv4()
+        loopIdMap.set(loop.id, nid)
+        loop.id = nid
+      }
+      for (const v of copy.variations ?? []) {
+        v.id = uuidv4()
+        for (const lo of v.loopOrders) lo.loopId = loopIdMap.get(lo.loopId) ?? lo.loopId
+      }
+      h.mutateProject(p => { p.courses.splice(idx + 1, 0, copy) })
+      set(state => ({
+        editor: {
+          ...state.editor,
+          selectedCourseId: copy.id,
+          selectedControlId: null,
+          activeTool: 'select',
+          pendingAnnotationPoints: [],
+        },
+      }))
+      return copy
+    },
+
     deleteCourse: (id: string) => {
       h.mutateProject(p => {
         p.courses = p.courses.filter(c => c.id !== id)

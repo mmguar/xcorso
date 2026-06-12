@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, Pencil } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Pencil, Copy } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
@@ -25,6 +25,7 @@ function CourseEditor({ course }: { course: Course }) {
   const updateCourseTextDescriptions = useStore(s => s.updateCourseTextDescriptions)
   const updateCourseSpec = useStore(s => s.updateCourseSpec)
   const deleteCourse = useStore(s => s.deleteCourse)
+  const duplicateCourse = useStore(s => s.duplicateCourse)
   const addAllControlsToCourse = useStore(s => s.addAllControlsToCourse)
   const addControlsToCourseByCode = useStore(s => s.addControlsToCourseByCode)
 
@@ -59,6 +60,13 @@ function CourseEditor({ course }: { course: Course }) {
           ))}
         </select>
         <div className="flex-1" />
+        <button
+          onClick={() => duplicateCourse(course.id)}
+          className="text-gray-300 hover:text-orange-600 transition-colors"
+          title="Duplicate course"
+        >
+          <Copy size={13} />
+        </button>
         <button
           onClick={() => deleteCourse(course.id)}
           className="text-gray-300 hover:text-red-500 transition-colors"

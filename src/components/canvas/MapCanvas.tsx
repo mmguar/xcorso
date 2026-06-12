@@ -386,6 +386,22 @@ export function MapCanvas({ loadedMap }: Props) {
     })
   }, [layoutMode, layoutCourseId, layoutSubmapIndex, layoutCourse, map, layoutSnapRequest])
 
+  // ── Pan to a requested control (sidebar / clue sheet click) ──────────────
+  const centerRequest = useStore(s => s.editor.centerRequest)
+  useLayoutEffect(() => {
+    if (!centerRequest) return
+    const el = divRef.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    // Pan only — keep the user's zoom level.
+    const v = vpRef.current
+    setVp({
+      ...v,
+      x: width / 2 - centerRequest.point.x * v.scale,
+      y: height / 2 - centerRequest.point.y * v.scale,
+    })
+  }, [centerRequest])
+
   // Keep <g> transforms in sync after any React re-render
   useLayoutEffect(syncTransform)
 
@@ -1053,6 +1069,7 @@ export function MapCanvas({ loadedMap }: Props) {
           if (dragLabel.courseId && dragLabel.courseControlId) useStore.getState().beginMoveCourseLabel()
           else useStore.getState().beginMoveControlLabel()
           dragLabelStarted = true
+          useStore.getState().setDraggingLabel(dragLabel.controlId)
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
@@ -1340,7 +1357,7 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragLayoutEl && dragLayoutElStarted) { dragLayoutEl = null; dragLayoutElStarted = false; return }
       dragLayoutEl = null; dragLayoutElStarted = false
 
-      if (dragLabel && dragLabelStarted) { dragLabel = null; dragLabelStarted = false; return }
+      if (dragLabel && dragLabelStarted) { useStore.getState().setDraggingLabel(null); dragLabel = null; dragLabelStarted = false; return }
       dragLabel = null; dragLabelStarted = false
 
       if (dragMeasure && dragMeasureStarted) { dragMeasure = null; dragMeasureStarted = false; return }
@@ -1556,6 +1573,7 @@ export function MapCanvas({ loadedMap }: Props) {
       flushDragMutation()
       dragMeasure = null; dragMeasureStarted = false
       dragLayoutEl = null; dragLayoutElStarted = false
+      if (dragLabelStarted) useStore.getState().setDraggingLabel(null)
       dragLabel = null; dragLabelStarted = false
       dragAnnResize = null; dragAnnResizeStarted = false
       dragCrossElongate = null; dragCrossElongateStarted = false
@@ -1869,6 +1887,8 @@ export function MapCanvas({ loadedMap }: Props) {
               map={map}
               measuredLegs={measuredLegs}
               hiddenLegs={measureHiddenSet}
+              spec={resolveSpec(projectSpec, measureCourse?.spec)}
+              controlScale={appearance.controlScale}
             />
           )}
           {/* Drag preview — chrome, always solid so it stays visible mid-drag. */}
