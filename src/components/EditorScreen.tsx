@@ -56,6 +56,12 @@ export function EditorScreen({ onGoHome }: Props) {
       <div className="flex flex-col h-full items-center justify-center gap-3 p-8 text-center">
         <p className="text-red-500 font-medium">Map loading error</p>
         <p className="text-gray-500 text-sm max-w-sm">{error}</p>
+        <button
+          className="mt-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+          onClick={onGoHome}
+        >
+          Back to home
+        </button>
       </div>
     )
   }
