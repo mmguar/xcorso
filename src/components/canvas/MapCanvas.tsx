@@ -104,7 +104,7 @@ function MeasureLegPanel({ course, controls }: { course: Course; controls: Contr
   const allShown = hidden.length === 0
 
   return (
-    <div className="absolute top-12 right-2 sm:top-2 w-40 max-h-[60vh] flex flex-col bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-200 z-10 overflow-hidden">
+    <div data-ui-panel className="absolute top-12 right-2 sm:top-2 w-40 max-h-[60vh] flex flex-col bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-200 z-10 overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 border-b border-gray-100">
         <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Legs</span>
         <button
@@ -126,7 +126,7 @@ function MeasureLegPanel({ course, controls }: { course: Course; controls: Contr
               checked={!hiddenSet.has(l.key)}
               readOnly
               tabIndex={-1}
-              className="rounded border-gray-300 text-orange-600 focus:ring-orange-400 pointer-events-none"
+              className="accent-orange-600 pointer-events-none"
             />
             <span className="tabular-nums">{l.from} → {l.to}</span>
           </div>
@@ -546,7 +546,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
     // ── Pointer down ─────────────────────────────────────────────────────────
     function onDown(e: PointerEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement || (e.target instanceof HTMLElement && e.target.closest('[data-ui-panel]'))) return
       // Any fresh gesture on the canvas dismisses a pending split offer. (Taps on
       // the offer's own buttons are HTMLButtonElements, handled by the guard above.)
       setSplitPrompt(null)
