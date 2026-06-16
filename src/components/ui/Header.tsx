@@ -121,7 +121,7 @@ export function Header({ onGoHome }: Props) {
         <input
           ref={mapInputRef}
           type="file"
-          accept=".ocd,.pdf,image/*"
+          accept=".ocd,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.tif,.tiff,.webp"
           className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) handleReplaceMap(f); e.target.value = '' }}
         />
