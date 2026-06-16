@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid'
 import type { Annotation, AnnotationType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
@@ -17,7 +16,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       const { editor } = get()
       const points = editor.pendingAnnotationPoints
       if (points.length === 0) return
-      const annotation: Annotation = { id: uuidv4(), type, points,
+      const annotation: Annotation = { id: crypto.randomUUID(), type, points,
         ...(type === 'north_arrow' ? { color: '#38bdf8' } : {}),
       }
       h.mutateProject(p => { p.annotations.push(annotation) })

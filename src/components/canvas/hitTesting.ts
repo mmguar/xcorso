@@ -4,7 +4,7 @@ import { legKey } from '../../lib/distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { northArrowHeight, northArrowGeometry, crossingPointTotalHH, rotateAround } from '../../lib/symbolGeometry'
 
-export const HIT_PX = 20
+const HIT_PX = 20
 
 // ── Viewport scaling ─────────────────────────────────────────────────────────
 // `vp.scale` is the single source of zoom: screen_px = map_units × vp.scale.
@@ -18,16 +18,16 @@ export function pxToMap(px: number, vp: Viewport): number {
 }
 
 /** Map-unit length → on-screen pixels at the current zoom. */
-export function mapToPx(units: number, vp: Viewport): number {
+function mapToPx(units: number, vp: Viewport): number {
   return units * vp.scale
 }
 
 /** Extra grab slop (screen px) around a draggable handle, beyond its drawn size. */
-export const HANDLE_GRAB_PX = 8
+const HANDLE_GRAB_PX = 8
 
 /** Grab radius for a handle: its drawn radius plus a constant screen-pixel slop,
  *  so handles stay comfortably grabbable at any zoom. */
-export function handleHitRadius(drawnR: number, vp: Viewport): number {
+function handleHitRadius(drawnR: number, vp: Viewport): number {
   return drawnR + pxToMap(HANDLE_GRAB_PX, vp)
 }
 
@@ -39,11 +39,11 @@ export function mapToScreen(p: MapPoint, vp: Viewport): { x: number; y: number }
   return { x: vp.x + p.x * vp.scale, y: vp.y + p.y * vp.scale }
 }
 
-export function controlToScreen(c: Control, vp: Viewport): { x: number; y: number } {
+function controlToScreen(c: Control, vp: Viewport): { x: number; y: number } {
   return mapToScreen(c.position, vp)
 }
 
-export function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): number {
+function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): number {
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec, project.courses.find(c => c.id === selectedCourseId)?.spec)
   const dims = getSymbolDims(spec)
@@ -56,7 +56,7 @@ export function controlHitRadius(control: Control, vp: Viewport, project: Projec
  *  they belong to a different submap segment. Mirrors the visibility rule in
  *  ControlsLayer — controls in the course but outside the active submap are not
  *  drawn, so they must not be hittable/draggable either. */
-export function hiddenSubmapControlIds(project: Project, selectedCourseId: string | null, selectedSubmapIndex: number | null): Set<string> | null {
+function hiddenSubmapControlIds(project: Project, selectedCourseId: string | null, selectedSubmapIndex: number | null): Set<string> | null {
   if (selectedCourseId == null || selectedSubmapIndex == null) return null
   const course = project.courses.find(c => c.id === selectedCourseId)
   if (!course) return null
@@ -84,7 +84,7 @@ export function findControlAt(screenX: number, screenY: number, vp: Viewport, pr
   return best
 }
 
-export function distToSegment(p: MapPoint, a: MapPoint, b: MapPoint): number {
+function distToSegment(p: MapPoint, a: MapPoint, b: MapPoint): number {
   const dx = b.x - a.x, dy = b.y - a.y
   const lenSq = dx * dx + dy * dy
   if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y)
@@ -92,7 +92,7 @@ export function distToSegment(p: MapPoint, a: MapPoint, b: MapPoint): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
 }
 
-export interface LegHit {
+interface LegHit {
   courseId: string
   courseControlId: string
   t: number
@@ -139,7 +139,7 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
   return null
 }
 
-export interface BendPointHit {
+interface BendPointHit {
   courseId: string
   courseControlId: string
   bendIndex: number
@@ -165,7 +165,7 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
 
 // ── Measure mode (route polylines, keyed per leg in project.measuredLegs) ─────
 
-export interface MeasureLegHit {
+interface MeasureLegHit {
   fromControlId: string
   toControlId: string
   segmentIndex: number
@@ -418,7 +418,7 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
   return null
 }
 
-export interface LabelHit {
+interface LabelHit {
   // courseId/courseControlId are null for the all-controls layout (no course
   // selected) — the label offset lives on the Control itself, not a CourseControl.
   courseId: string | null

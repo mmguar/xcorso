@@ -1,11 +1,74 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, Pencil, Copy } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Pencil, Copy, FileText } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
+
+function ClueSheetOptionsPanel() {
+  const clueSheetFontSize = useStore(s => s.project!.clueSheetFontSize)
+  const clueSheetHideSubmapRestart = useStore(s => s.project!.clueSheetHideSubmapRestart)
+  const updateClueSheetFontSize = useStore(s => s.updateClueSheetFontSize)
+  const updateClueSheetHideSubmapRestart = useStore(s => s.updateClueSheetHideSubmapRestart)
+
+  return (
+    <div className="px-3 py-2 flex flex-col gap-2">
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">Font size</span>
+        <select
+          value={clueSheetFontSize ?? 7}
+          onChange={e => updateClueSheetFontSize(Number(e.target.value))}
+          className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        >
+          <option value={5}>Small</option>
+          <option value={7}>Medium</option>
+          <option value={10}>Large</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-xs text-gray-600 select-none cursor-pointer">
+        <input
+          type="checkbox"
+          checked={clueSheetHideSubmapRestart ?? false}
+          onChange={e => updateClueSheetHideSubmapRestart(e.target.checked)}
+          className="accent-orange-600"
+        />
+        Hide first control on submaps
+      </label>
+    </div>
+  )
+}
+
+function ClueSheetPopover({ open, onClose, anchorRef }: { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLButtonElement | null> }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (panelRef.current?.contains(e.target as Node)) return
+      if (anchorRef.current?.contains(e.target as Node)) return
+      onClose()
+    }
+    document.addEventListener('pointerdown', onClick)
+    return () => document.removeEventListener('pointerdown', onClick)
+  }, [open, onClose, anchorRef])
+
+  if (!open) return null
+
+  return (
+    <div
+      ref={panelRef}
+      className="absolute bottom-full mb-2 right-0 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
+    >
+      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+        <span className="text-xs font-semibold text-gray-700">Clue sheet options</span>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
+      </div>
+      <ClueSheetOptionsPanel />
+    </div>
+  )
+}
 
 function CourseEditor({ course }: { course: Course }) {
   useRenderTracker('CourseEditor')
@@ -391,14 +454,14 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
 
 export function CoursesPanel() {
   useRenderTracker('CoursesPanel')
-  // Narrow selectors — the whole-project reference changes on every store
-  // mutation, including per-pointermove drag updates.
   const courses = useStore(s => s.project!.courses)
   const controlCount = useStore(s => s.project!.controls.length)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const addCourse = useStore(s => s.addCourse)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [showClueOpts, setShowClueOpts] = useState(false)
+  const clueOptsBtnRef = useRef<HTMLButtonElement>(null)
   const isAllControls = selectedCourseId === null
 
   useEffect(() => {
@@ -478,6 +541,22 @@ export function CoursesPanel() {
         )}
 
         <ClassesSection />
+      </div>
+
+      <div className="relative p-2 border-t border-gray-100">
+        <button
+          ref={clueOptsBtnRef}
+          onClick={() => setShowClueOpts(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-2 w-full rounded-lg text-xs font-medium transition-colors ${
+            showClueOpts
+              ? 'bg-orange-100 text-orange-700'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <FileText size={13} />
+          Clue sheet options
+        </button>
+        <ClueSheetPopover open={showClueOpts} onClose={() => setShowClueOpts(false)} anchorRef={clueOptsBtnRef} />
       </div>
     </div>
   )

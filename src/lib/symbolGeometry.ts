@@ -7,7 +7,7 @@
 import { getAnnotationDims, symbolScaleFactor } from './symbolSpec'
 import type { AnnotationDims, EventSpec } from './symbolSpec'
 
-export interface Pt { x: number; y: number }
+interface Pt { x: number; y: number }
 
 /** Rotate `p` around `center` by `deg` degrees (clockwise in screen coordinates). */
 export function rotateAround(p: Pt, center: Pt, deg: number): Pt {
@@ -50,7 +50,7 @@ export function routeXMarkSegments(
 
 // ── 710 Crossing point ───────────────────────────────────────────────────────
 
-export function crossingPointControlX(d: AnnotationDims): number {
+function crossingPointControlX(d: AnnotationDims): number {
   const halfGapCenter = (d.crossGap + d.crossW) / 2
   return 2 * halfGapCenter - d.crossHalf
 }
@@ -76,7 +76,7 @@ export function crossingPointCurve(
 
 // ── North arrow ──────────────────────────────────────────────────────────────
 
-export const TAN_22_5 = Math.tan(Math.PI / 8) // half of the 45° apex
+const TAN_22_5 = Math.tan(Math.PI / 8)
 
 export function northArrowGeometry(h: number, upm: number) {
   const halfBase = h * TAN_22_5

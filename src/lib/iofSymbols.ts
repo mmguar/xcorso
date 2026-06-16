@@ -592,7 +592,7 @@ const colH: SymbolDef[] = [
 
 // ─── Combined catalog ───────────────────────────────────────────────
 
-export const allSymbols: SymbolDef[] = [
+const allSymbols: SymbolDef[] = [
   ...colC, ...colD, ...colE, ...colF, ...colG, ...colH,
 ]
 

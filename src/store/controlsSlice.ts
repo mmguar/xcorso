@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid'
 import type { Control, ControlType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
@@ -23,7 +22,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       if (type === 'control' && !code) finalCode = nextControlCode(project.controls)
       if (type === 'start' && !code) finalCode = nextTypeCode(project.controls, 'start')
       if (type === 'finish' && !code) finalCode = nextTypeCode(project.controls, 'finish')
-      const control: Control = { id: uuidv4(), type, code: finalCode, position }
+      const control: Control = { id: crypto.randomUUID(), type, code: finalCode, position }
       h.mutateProject(p => { p.controls.push(control) })
       return control
     },
@@ -50,7 +49,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       const code = orig.type === 'control'
         ? nextControlCode(project.controls)
         : nextTypeCode(project.controls, orig.type)
-      const newControl: Control = { id: uuidv4(), type: orig.type, code, position: newPos }
+      const newControl: Control = { id: crypto.randomUUID(), type: orig.type, code, position: newPos }
       h.mutateProject(p => {
         const o = p.controls.find(c => c.id === controlId)
         if (o) o.position = originPos

@@ -82,6 +82,8 @@ export interface AppActions {
   updateCourseFinishType: (id: string, finishType: FinishType) => void
   updateCourseShowPoints: (id: string, showPoints: boolean) => void
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
+  updateClueSheetFontSize: (size: number | undefined) => void
+  updateClueSheetHideSubmapRestart: (hide: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
   setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
