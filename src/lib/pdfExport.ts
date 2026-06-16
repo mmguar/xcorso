@@ -162,6 +162,79 @@ interface RasterCrop {
   minX: number; minY: number; width: number; height: number
 }
 
+async function canvasToImageBytes(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Uint8Array> {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), type, quality)
+  })
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+// ponytail: render full SVG once, crop per page — avoids N re-renders
+interface SvgRasterCache {
+  img: HTMLImageElement
+  bounds: RasterCrop
+  pxW: number
+  pxH: number
+  opacity: number
+}
+
+const SVG_CACHE_MAX_PX = 8000
+
+async function prepareSvgRasterCache(
+  svgEl: SVGElement,
+  bounds: RasterCrop,
+  opacity: number,
+  overprint: boolean,
+  extra: { keepColors?: string[]; transparent?: boolean } = {},
+): Promise<SvgRasterCache> {
+  const clone = svgEl.cloneNode(true) as SVGElement
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('viewBox', `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`)
+  const aspect = bounds.width / bounds.height
+  const pxW = aspect >= 1 ? SVG_CACHE_MAX_PX : Math.max(1, Math.round(SVG_CACHE_MAX_PX * aspect))
+  const pxH = aspect >= 1 ? Math.max(1, Math.round(SVG_CACHE_MAX_PX / aspect)) : SVG_CACHE_MAX_PX
+  clone.setAttribute('width', String(pxW))
+  clone.setAttribute('height', String(pxH))
+  if (overprint) applyMapOverprint(clone, bounds)
+  if (extra.keepColors?.length) pruneSvgToColors(clone, extra.keepColors)
+  const svgString = new XMLSerializer().serializeToString(clone)
+  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    return { img, bounds, pxW, pxH, opacity }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function cropFromSvgCache(
+  cache: SvgRasterCache,
+  crop: RasterCrop,
+  outW: number,
+  outH: number,
+  transparent: boolean,
+): Promise<Uint8Array> {
+  const { img, bounds, pxW, pxH, opacity } = cache
+  const sx = (crop.minX - bounds.minX) / bounds.width * pxW
+  const sy = (crop.minY - bounds.minY) / bounds.height * pxH
+  const sw = crop.width / bounds.width * pxW
+  const sh = crop.height / bounds.height * pxH
+  const canvas = document.createElement('canvas')
+  canvas.width = outW
+  canvas.height = outH
+  const ctx = canvas.getContext('2d')!
+  if (!transparent) {
+    ctx.fillStyle = 'white'
+    ctx.fillRect(0, 0, outW, outH)
+  }
+  ctx.globalAlpha = opacity
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH)
+  return canvasToImageBytes(canvas, transparent ? 'image/png' : 'image/jpeg', transparent ? undefined : 0.85)
+}
+
 async function rasterizeSvgRegion(
   svgEl: SVGElement,
   crop: RasterCrop,
@@ -977,6 +1050,17 @@ export async function exportCoursePdf(
   const belowActive = options.overprintMode === 'below' && belowColors.length > 0
   const courseOverprint = belowActive ? 0 : (options.overprint ?? 1)
 
+  let svgBaseCache: SvgRasterCache | null = null
+  let svgTopCache: SvgRasterCache | null = null
+  if (loadedMap?.type === 'svg' && svgEmbedDisabled) {
+    const svgEl = loadedMap.content as SVGElement
+    const b = loadedMap.bounds
+    try { svgBaseCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, mapOverprint) } catch {}
+    if (belowActive) {
+      try { svgTopCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, false, { keepColors: belowColors, transparent: true }) } catch {}
+    }
+  }
+
   /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */
   function prepareSvgForPdfEmbed(): SVGElement {
     const svgEl = loadedMap!.content as SVGElement
@@ -1050,6 +1134,13 @@ export async function exportCoursePdf(
     }
     if (loadedMap.type === 'svg') {
       const { crop, capW, capH } = svgPageRegion(toPage, pageMmW, pageMmH)
+      if (svgBaseCache) {
+        try {
+          const bytes = await cropFromSvgCache(svgBaseCache, crop, capW, capH, false)
+          doc.addImage(bytes, 'JPEG', 0, 0, pageMmW, pageMmH)
+          return
+        } catch { /* fall through to per-page */ }
+      }
       try {
         const svgEl = loadedMap.content as SVGElement
         const dataUrl = await rasterizeSvgRegion(svgEl, crop, capW, capH, mapOpacity, mapOverprint)
@@ -1065,14 +1156,21 @@ export async function exportCoursePdf(
   async function embedTopColors(toPage: (pt: MapPoint) => Pos, pageMmW: number, pageMmH: number) {
     if (!belowActive || loadedMap?.type !== 'svg') return
     const { crop, capW, capH } = svgPageRegion(toPage, pageMmW, pageMmH)
+    if (svgTopCache) {
+      try {
+        const bytes = await cropFromSvgCache(svgTopCache, crop, capW, capH, true)
+        doc.setGState(doc.GState({ blendMode: 'Multiply' }))
+        doc.addImage(bytes, 'PNG', 0, 0, pageMmW, pageMmH)
+        doc.setGState(doc.GState({ blendMode: 'Normal' }))
+        return
+      } catch { /* fall through to per-page */ }
+    }
     try {
       const svgEl = loadedMap.content as SVGElement
       const dataUrl = await rasterizeSvgRegion(svgEl, crop, capW, capH, mapOpacity, false, {
         keepColors: belowColors,
         transparent: true,
       })
-      // Multiply so white knockout pixels inside black/brown/blue symbols drop
-      // out (white × ink = ink) instead of painting solid over the course purple.
       doc.setGState(doc.GState({ blendMode: 'Multiply' }))
       doc.addImage(dataUrl, 'PNG', 0, 0, pageMmW, pageMmH)
       doc.setGState(doc.GState({ blendMode: 'Normal' }))
