@@ -215,7 +215,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
           <input
             ref={mapFileRef}
             type="file"
-            accept=".ocd,.pdf,image/*,*/*"
+            accept=".ocd,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.tif,.tiff,.webp"
             className="hidden"
             onChange={e => {
               const selectedFile = e.target.files?.[0] ?? null

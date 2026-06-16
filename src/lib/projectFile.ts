@@ -152,6 +152,12 @@ export async function loadProjectFile(file: File): Promise<LoadedProjectFile> {
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
+  // ponytail: share API gives iOS proper filenames; anchor fallback for desktop
+  const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' })
+  if (navigator.canShare?.({ files: [file] })) {
+    navigator.share({ files: [file] }).catch(() => {})
+    return
+  }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

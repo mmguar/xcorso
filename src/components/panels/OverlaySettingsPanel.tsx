@@ -272,7 +272,7 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
       <input
         ref={replaceInputRef}
         type="file"
-        accept="image/*"
+        accept=".jpg,.jpeg,.png,.gif,.bmp,.tif,.tiff,.webp"
         className="hidden"
         onChange={e => {
           const file = e.target.files?.[0]
