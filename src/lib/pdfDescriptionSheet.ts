@@ -5,25 +5,33 @@ import type { SymbolDef, IofColumn } from './iofSymbols'
 import { defaultControlLabel, controlsById } from './courseUtils'
 import { formatDistance } from './distance'
 
-const CELL = 7
+const DEFAULT_CELL = 7
+let CELL = DEFAULT_CELL
 const COLS = 8
-const GRID_W = COLS * CELL
 const LINE_W = 0.25
 const MARGIN_TOP = 15
 const MARGIN_BOTTOM = 15
 
 const COL_IDS: IofColumn[] = ['C', 'D', 'E', 'F', 'G', 'H']
 
-// Stroke widths scaled from SVG viewBox (200 units) to cell size
-const PATH_SW = (12.5 / 200) * CELL
-const CIRCLE_SW = (10 / 200) * CELL
-const FILL_SW = (1 / 200) * CELL
 const INSET = 0.82
 
-const HEADER_H = 2 * CELL
+function GRID_W() { return COLS * CELL }
+function HEADER_H() { return 2 * CELL }
+function PATH_SW() { return (12.5 / 200) * CELL }
+function CIRCLE_SW() { return (10 / 200) * CELL }
+function FILL_SW() { return (1 / 200) * CELL }
+
+function setCellSize(fontSize?: number) {
+  CELL = fontSize ?? DEFAULT_CELL
+}
+
+function scaledFont(basePt: number): number {
+  return basePt * CELL / DEFAULT_CELL
+}
 
 function maxControlRows(pageH: number): number {
-  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - HEADER_H) / CELL)
+  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - HEADER_H()) / CELL)
 }
 
 // ── SVG path parser (handles M, L, C, Z only) ──────────────────────────────
@@ -117,7 +125,7 @@ function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
   // Filled paths
   if (sym.fills) {
     for (const d of sym.fills) {
-      doc.setLineWidth(FILL_SW)
+      doc.setLineWidth(FILL_SW())
       const cmds = parseSvgPath(d)
       for (const c of cmds) {
         switch (c.cmd) {
@@ -137,7 +145,7 @@ function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
 
   // Stroked paths
   if (sym.paths) {
-    doc.setLineWidth(PATH_SW)
+    doc.setLineWidth(PATH_SW())
     doc.setLineCap(1)
     doc.setLineJoin(1)
     for (const d of sym.paths) {
@@ -160,7 +168,7 @@ function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
 
   // Stroked circles
   if (sym.circles) {
-    doc.setLineWidth(CIRCLE_SW)
+    doc.setLineWidth(CIRCLE_SW())
     for (const [scx, scy, sr] of sym.circles) {
       doc.circle(sv(scx, cx), sv(scy, cy), sr / 100 * (CELL / 2) * INSET, 'S')
     }
@@ -175,7 +183,7 @@ function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
 
   // Lines
   if (sym.lines) {
-    doc.setLineWidth(PATH_SW)
+    doc.setLineWidth(PATH_SW())
     doc.setLineCap(1)
     for (const [x1, y1, x2, y2] of sym.lines) {
       doc.line(sv(x1, cx), sv(y1, cy), sv(x2, cx), sv(y2, cy))
@@ -187,7 +195,7 @@ function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
 
 function drawDimensionText(doc: jsPDF, text: string, cx: number, cy: number) {
   doc.setFont('helvetica', 'bold')
-  const fontSize = text.length > 5 ? 4.5 : 5.5
+  const fontSize = scaledFont(text.length > 5 ? 4.5 : 5.5)
   doc.setFontSize(fontSize)
   doc.setTextColor(0, 0, 0)
   doc.text(text, cx, cy + fontSize * 0.12, { align: 'center' })
@@ -232,10 +240,11 @@ function estimateDescColumnWidth(course: Course, controls: Control[]): number {
 function drawMergedDescriptionText(doc: jsPDF, text: string, x: number, y: number, w: number, h: number) {
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(0, 0, 0)
-  doc.setFontSize(DESC_FONT_SIZE)
+  const fs = scaledFont(DESC_FONT_SIZE)
+  doc.setFontSize(fs)
   const maxW = w - DESC_PADDING * 2
   const lines = doc.splitTextToSize(text, maxW) as string[]
-  const lineH = DESC_FONT_SIZE * 0.38
+  const lineH = fs * 0.38
   const blockH = lines.length * lineH
   const cy = y + h / 2
   const startY = cy - blockH / 2 + lineH * 0.7
@@ -247,7 +256,7 @@ function drawMergedDescriptionText(doc: jsPDF, text: string, x: number, y: numbe
 // ── Draw a small start triangle in column A ─────────────────────────────────
 
 function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
-  const s = CELL * 0.3
+  const s = CELL * 0.45
   const h = s * Math.sqrt(3) / 2
   doc.setLineWidth(0.2)
   doc.setDrawColor(0, 0, 0)
@@ -269,12 +278,12 @@ function drawFinishIofRow(
 ) {
   doc.setDrawColor(0, 0, 0)
   doc.setLineWidth(LINE_W)
-  doc.rect(gridX, y, GRID_W, CELL, 'S')
+  doc.rect(gridX, y, GRID_W(), CELL, 'S')
 
   const cy = y + CELL / 2
   const circleX = gridX + CELL * 0.55
-  const finishCx = gridX + GRID_W - CELL * 0.55
-  const midX = gridX + GRID_W / 2
+  const finishCx = gridX + GRID_W() - CELL * 0.55
+  const midX = gridX + GRID_W() / 2
   const circleR = CELL * 0.28
   const finishRInner = CELL * 0.18
   const sw = 0.2
@@ -314,7 +323,7 @@ function drawFinishIofRow(
 
   // Distance text
   if (distM != null) {
-    doc.setFontSize(8)
+    doc.setFontSize(scaledFont(8))
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0, 0, 0)
     doc.text(formatDistance(distM), midX, cy + 0.8, { align: 'center' })
@@ -425,7 +434,7 @@ function drawSheetHeader(
 
   // Row 1: event name
   doc.rect(gridX, y, width, CELL, 'S')
-  doc.setFontSize(8)
+  doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 0, 0)
   doc.text(eventName, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
@@ -436,7 +445,7 @@ function drawSheetHeader(
   for (let i = 0; i < 3; i++) {
     doc.rect(gridX + i * colW, row2Y, colW, CELL, 'S')
   }
-  doc.setFontSize(8)
+  doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 0, 0)
   doc.text(course.name, gridX + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
@@ -464,7 +473,7 @@ function resolveControls(course: Course, controls: Control[]): Control[] {
 function sheetWidth(course: Course, controls: Control[]): number {
   return course.textDescriptions
     ? 2 * CELL + estimateDescColumnWidth(course, controls)
-    : GRID_W
+    : GRID_W()
 }
 
 // Leg distance feeding into the finish row (distance of the leg into the finish).
@@ -482,8 +491,10 @@ function drawControlRow(
   seq: number,
   descW: number,
   textDescriptions?: boolean,
+  asStart?: boolean,
 ) {
   const desc: ControlDescription = ctrl.description ?? {}
+  const isStart = ctrl.type === 'start' || asStart
 
   doc.setDrawColor(0, 0, 0)
   doc.setLineWidth(LINE_W)
@@ -495,10 +506,10 @@ function drawControlRow(
   // Column A: sequence / start
   const aCx = gridX + CELL / 2
   const aCy = y + CELL / 2
-  if (ctrl.type === 'start') {
+  if (isStart) {
     drawStartSymbol(doc, aCx, aCy)
   } else {
-    doc.setFontSize(10)
+    doc.setFontSize(scaledFont(10))
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(0, 0, 0)
     doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
@@ -507,11 +518,11 @@ function drawControlRow(
   // Column B: control code
   const bCx = gridX + CELL + CELL / 2
   const bCy = y + CELL / 2
-  doc.setFontSize(8)
+  doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(0, 0, 0)
   const code = defaultControlLabel(ctrl)
-  if (ctrl.type !== 'start') {
+  if (!isStart) {
     doc.text(code, bCx, bCy + 1, { align: 'center' })
   }
 
@@ -544,10 +555,12 @@ export function descriptionSheetSize(
   course: Course,
   controls: Control[],
   trailingFlip?: boolean,
+  cellSize?: number,
 ): { width: number; height: number } {
+  setCellSize(cellSize)
   const rowCount = resolveControls(course, controls).length + (trailingFlip ? 1 : 0)
   if (rowCount === 0) return { width: 0, height: 0 }
-  const height = HEADER_H + rowCount * CELL
+  const height = HEADER_H() + rowCount * CELL
   const width = sheetWidth(course, controls)
   return { width, height }
 }
@@ -557,7 +570,9 @@ export function descriptionSheetPartSizes(
   controls: Control[],
   breaks: number[],
   trailingFlip?: boolean,
+  cellSize?: number,
 ): Array<{ width: number; height: number }> {
+  setCellSize(cellSize)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return [{ width: 0, height: 0 }]
 
@@ -572,7 +587,7 @@ export function descriptionSheetPartSizes(
     const end = boundaries[p + 1]
     let rowCount = end - start
     if (p === boundaries.length - 2 && trailingFlip) rowCount++
-    const headerH = p === 0 ? HEADER_H : 0
+    const headerH = p === 0 ? HEADER_H() : 0
     sizes.push({ width, height: headerH + rowCount * CELL })
   }
 
@@ -592,11 +607,15 @@ export function drawDescriptionSheetOverlay(
   legDistances?: number[],
   trailingFlip?: boolean,
   eventName?: string,
+  seqOffset?: number,
+  restartControlId?: string,
+  cellSize?: number,
 ) {
+  setCellSize(cellSize)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
-  const { width, height } = descriptionSheetSize(course, controls, trailingFlip)
+  const { width, height } = descriptionSheetSize(course, controls, trailingFlip, cellSize)
   const descW = width - 2 * CELL
 
   // White background
@@ -605,10 +624,10 @@ export function drawDescriptionSheetOverlay(
 
   const gridX = originX
   let y = originY
-  let seq = 0
+  let seq = seqOffset ?? 0
 
   drawSheetHeader(doc, gridX, y, width, eventName ?? '', course, distanceM)
-  y += HEADER_H
+  y += HEADER_H()
 
   // Separate finish from other controls
   const nonFinish = resolved.filter(c => c.type !== 'finish')
@@ -617,8 +636,9 @@ export function drawDescriptionSheetOverlay(
 
   // Control rows (non-finish)
   for (const ctrl of nonFinish) {
-    if (ctrl.type === 'control') seq++
-    drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions)
+    const asStart = ctrl.id === restartControlId
+    if (ctrl.type === 'control' && !asStart) seq++
+    drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions, asStart)
     y += CELL
   }
 
@@ -646,7 +666,11 @@ export function drawDescriptionSheetOverlayPart(
   legDistances?: number[],
   trailingFlip?: boolean,
   eventName?: string,
+  seqOffset?: number,
+  restartControlId?: string,
+  cellSize?: number,
 ) {
+  setCellSize(cellSize)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
@@ -667,7 +691,7 @@ export function drawDescriptionSheetOverlayPart(
   const finish = partControls.find(c => c.type === 'finish')
 
   const rowCount = partControls.length + (isLastPart && trailingFlip ? 1 : 0)
-  const headerH = isFirstPart ? HEADER_H : 0
+  const headerH = isFirstPart ? HEADER_H() : 0
   const height = headerH + rowCount * CELL
 
   doc.setFillColor(255, 255, 255)
@@ -678,11 +702,10 @@ export function drawDescriptionSheetOverlayPart(
 
   if (isFirstPart) {
     drawSheetHeader(doc, gridX, y, fullWidth, eventName ?? '', course, distanceM)
-    y += HEADER_H
+    y += HEADER_H()
   }
 
-  // Compute sequence offset: count 'control' type entries before this part
-  let seq = 0
+  let seq = seqOffset ?? 0
   for (let i = 0; i < start; i++) {
     if (resolved[i].type === 'control') seq++
   }
@@ -691,8 +714,9 @@ export function drawDescriptionSheetOverlayPart(
   const globalFinishIdx = resolved.findIndex(c => c.type === 'finish')
 
   for (const ctrl of nonFinish) {
-    if (ctrl.type === 'control') seq++
-    drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions)
+    const asStart = ctrl.id === restartControlId
+    if (ctrl.type === 'control' && !asStart) seq++
+    drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions, asStart)
     y += CELL
   }
 
@@ -719,7 +743,11 @@ export function drawDescriptionSheet(
   legDistances?: number[],
   trailingFlip?: boolean,
   eventName?: string,
+  seqOffset?: number,
+  restartControlId?: string,
+  cellSize?: number,
 ) {
+  setCellSize(cellSize)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
@@ -729,12 +757,12 @@ export function drawDescriptionSheet(
   const maxRows = maxControlRows(pageH)
 
   let y = MARGIN_TOP
-  let seq = 0
+  let seq = seqOffset ?? 0
   let rowOnPage = 0
 
   function drawHeader() {
     drawSheetHeader(doc, gridX, y, gridW, eventName ?? '', course, distanceM)
-    y += HEADER_H
+    y += HEADER_H()
   }
 
   function startPage() {
@@ -755,8 +783,9 @@ export function drawDescriptionSheet(
       startPage()
     }
 
-    if (ctrl.type === 'control') seq++
-    drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions)
+    const asStart = ctrl.id === restartControlId
+    if (ctrl.type === 'control' && !asStart) seq++
+    drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions, asStart)
     y += CELL
     rowOnPage++
   }

@@ -10,13 +10,14 @@ interface Props {
   canvasH: number
   course: Course
   controls: Control[]
+  cellSize?: number
 }
 
 function mapToScreen(mapPt: { x: number; y: number }, vp: Viewport) {
   return { x: mapPt.x * vp.scale + vp.x, y: mapPt.y * vp.scale + vp.y }
 }
 
-export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls }: Props) {
+export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls, cellSize }: Props) {
   const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
   const pageW = layout.orientation === 'landscape' ? base.h : base.w
   const pageH = layout.orientation === 'landscape' ? base.w : base.h
@@ -112,7 +113,7 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
       {layout.clueSheet.visible && (() => {
         const breaks = layout.clueSheetBreaks
         if (breaks && breaks.length > 0) {
-          const sizes = descriptionSheetPartSizes(course, controls, breaks)
+          const sizes = descriptionSheetPartSizes(course, controls, breaks, false, cellSize)
           const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
           return sizes.map((size, i) => {
             const elPos = positions[i] ?? layout.clueSheet
@@ -138,7 +139,7 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
           })
         }
         const pos = elementScreenPos(layout.clueSheet)
-        const sheet = descriptionSheetSize(course, controls)
+        const sheet = descriptionSheetSize(course, controls, false, cellSize)
         const w = sheet.width * mmToPx
         const h = sheet.height * mmToPx
         return (

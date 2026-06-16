@@ -68,7 +68,7 @@ export function computeSubmaps(course: Course, _controls?: Control[]): Submap[] 
     if (course.controls[i].exchangeMode) exchangeIndices.push(i)
   }
   if (exchangeIndices.length === 0) {
-    return [{ index: 0, controls: course.controls, label: 'Map 1' }]
+    return [{ index: 0, controls: course.controls, label: '1' }]
   }
   const submaps: Submap[] = []
   let start = 0
@@ -100,7 +100,7 @@ export function submapLayoutView(layout: CourseLayout, index: number): SubmapLay
 
 // ─── Loop utilities ────────────────────────────────────────────────────────
 
-export function extractBranches(course: Course, loop: CourseLoop): CourseControl[][] {
+function extractBranches(course: Course, loop: CourseLoop): CourseControl[][] {
   const forkIndices: number[] = []
   for (let i = 0; i < course.controls.length; i++) {
     if (course.controls[i].controlId === loop.forkControlId) forkIndices.push(i)

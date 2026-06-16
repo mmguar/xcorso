@@ -9,7 +9,7 @@ export function hexToRgb(hex: string): [number, number, number] {
   ]
 }
 
-export function rgbToHex(r: number, g: number, b: number): string {
+function rgbToHex(r: number, g: number, b: number): string {
   const h = (n: number) => Math.round(n).toString(16).padStart(2, '0')
   return `#${h(r)}${h(g)}${h(b)}`
 }

@@ -289,6 +289,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const measureCourseId = useStore(s => s.editor.measureCourseId)
   const measureHiddenLegs = useStore(s => s.editor.measureHiddenLegs)
   const measuredLegs = useStore(s => s.project!.measuredLegs)
+  const clueSheetFontSize = useStore(s => s.project!.clueSheetFontSize)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
@@ -654,14 +655,14 @@ export function MapCanvas({ loadedMap }: Props) {
           const breaks = layout.clueSheetBreaks
           const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
           if (breaks && breaks.length > 0) {
-            const sizes = descriptionSheetPartSizes(submapCourse, proj.controls, breaks)
+            const sizes = descriptionSheetPartSizes(submapCourse, proj.controls, breaks, false, proj.clueSheetFontSize)
             const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
             for (let i = 0; i < sizes.length; i++) {
               const el = positions[i] ?? layout.clueSheet
               elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
             }
           } else {
-            const sheet = descriptionSheetSize(submapCourse, proj.controls)
+            const sheet = descriptionSheetSize(submapCourse, proj.controls, false, proj.clueSheetFontSize)
             elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
           }
           for (const { key, el, wMm, hMm } of elements) {
@@ -1988,6 +1989,7 @@ export function MapCanvas({ loadedMap }: Props) {
             canvasH={rectCacheRef.current?.height ?? 600}
             course={submapCourse}
             controls={controls}
+            cellSize={clueSheetFontSize}
           />
         )
       })()}
