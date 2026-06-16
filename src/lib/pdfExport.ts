@@ -198,7 +198,7 @@ async function rasterizeSvgRegion(
     ctx.drawImage(img, 0, 0, canvasW, canvasH)
     // PNG preserves transparency for the top-colours overlay; JPEG is smaller
     // for the opaque base map.
-    return extra.transparent ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.92)
+    return extra.transparent ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85)
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -218,7 +218,7 @@ async function rasterizeBitmap(loadedMap: LoadedMap, opacity: number): Promise<s
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.globalAlpha = opacity
   ctx.drawImage(img, 0, 0)
-  return canvas.toDataURL('image/jpeg', 0.92)
+  return canvas.toDataURL('image/jpeg', 0.85)
 }
 
 /**
@@ -953,7 +953,7 @@ export async function exportCoursePdf(
     import('jspdf'),
     loadedMap?.type === 'svg' && !useRaster ? import('svg2pdf.js') : Promise.resolve(),
   ])
-  const doc = new JsPdf({ orientation: orient, unit: 'mm', format: [pw, ph] })
+  const doc = new JsPdf({ orientation: orient, unit: 'mm', format: [pw, ph], compress: true })
   const controlMap = controlsById(project.controls)
   const courses = expandVariations(project.courses.filter(c => options.courseIds.includes(c.id)))
 
