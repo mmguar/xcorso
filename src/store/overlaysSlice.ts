@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid'
 import type { MapPoint, ScaleBar, TextLabel, ImageOverlay } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
@@ -6,7 +5,7 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
   return {
     addScaleBar: (position: MapPoint, scale: number): ScaleBar => {
       const sb: ScaleBar = {
-        id: uuidv4(), position, segments: 3, segmentLengthM: 100, bgAlpha: 0.8, scale,
+        id: crypto.randomUUID(), position, segments: 3, segmentLengthM: 100, bgAlpha: 0.8, scale,
       }
       h.mutateProject(p => { p.scaleBars.push(sb) })
       set(state => ({ editor: { ...state.editor, selectedOverlayId: sb.id } }))
@@ -39,7 +38,7 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
 
     addTextLabel: (position: MapPoint): TextLabel => {
       const tl: TextLabel = {
-        id: uuidv4(), position, text: 'Text', fontSizeMm: 4, color: '#000000', bgAlpha: 0,
+        id: crypto.randomUUID(), position, text: 'Text', fontSizeMm: 4, color: '#000000', bgAlpha: 0,
       }
       h.mutateProject(p => { p.textLabels.push(tl) })
       set(state => ({ editor: { ...state.editor, selectedOverlayId: tl.id } }))
@@ -72,7 +71,7 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
       const defaultWidthMm = 30
       const aspect = naturalHeight / naturalWidth
       const img: ImageOverlay = {
-        id: uuidv4(), position, widthMm: defaultWidthMm, heightMm: defaultWidthMm * aspect,
+        id: crypto.randomUUID(), position, widthMm: defaultWidthMm, heightMm: defaultWidthMm * aspect,
         dataUrl, filename, bgAlpha: 0,
       }
       h.mutateProject(p => { p.imageOverlays.push(img) })

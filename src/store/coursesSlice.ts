@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid'
 import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { defaultControlLabel, generateAllPermutations } from '../lib/courseUtils'
@@ -18,10 +17,10 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       if (project) {
         const starts = project.controls.filter(c => c.type === 'start')
         const finishes = project.controls.filter(c => c.type === 'finish')
-        if (starts.length === 1) controls.push({ id: uuidv4(), controlId: starts[0].id })
-        if (finishes.length === 1) controls.push({ id: uuidv4(), controlId: finishes[0].id })
+        if (starts.length === 1) controls.push({ id: crypto.randomUUID(), controlId: starts[0].id })
+        if (finishes.length === 1) controls.push({ id: crypto.randomUUID(), controlId: finishes[0].id })
       }
-      const course: Course = { id: uuidv4(), name, type, controls, color: '#a626ff' }
+      const course: Course = { id: crypto.randomUUID(), name, type, controls, color: '#a626ff' }
       h.mutateProject(p => { p.courses.push(course) })
       set(state => ({
         editor: {
@@ -41,18 +40,18 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       const idx = project.courses.findIndex(c => c.id === id)
       if (idx === -1) return null
       const copy = structuredClone(project.courses[idx])
-      copy.id = uuidv4()
+      copy.id = crypto.randomUUID()
       copy.name = `${copy.name} (copy)`
-      for (const cc of copy.controls) cc.id = uuidv4()
+      for (const cc of copy.controls) cc.id = crypto.randomUUID()
       // Loops are referenced by id from variation permutations — remap both.
       const loopIdMap = new Map<string, string>()
       for (const loop of copy.loops ?? []) {
-        const nid = uuidv4()
+        const nid = crypto.randomUUID()
         loopIdMap.set(loop.id, nid)
         loop.id = nid
       }
       for (const v of copy.variations ?? []) {
-        v.id = uuidv4()
+        v.id = crypto.randomUUID()
         for (const lo of v.loopOrders) lo.loopId = loopIdMap.get(lo.loopId) ?? lo.loopId
       }
       h.mutateProject(p => { p.courses.splice(idx + 1, 0, copy) })
@@ -110,7 +109,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           const c = p.courses.find(c => c.id === courseId)
           if (!c) return
           c.controls = c.controls.filter(cc => getType(cc.controlId) !== 'start')
-          c.controls.unshift({ id: uuidv4(), controlId })
+          c.controls.unshift({ id: crypto.randomUUID(), controlId })
         })
         return
       }
@@ -122,7 +121,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           const c = p.courses.find(c => c.id === courseId)
           if (!c) return
           c.controls = c.controls.filter(cc => getType(cc.controlId) !== 'finish')
-          c.controls.push({ id: uuidv4(), controlId })
+          c.controls.push({ id: crypto.randomUUID(), controlId })
         })
         return
       }
@@ -135,7 +134,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        insertBeforeFinish(c, p.controls, [{ id: uuidv4(), controlId }])
+        insertBeforeFinish(c, p.controls, [{ id: crypto.randomUUID(), controlId }])
       })
     },
 
@@ -153,7 +152,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
-        insertBeforeFinish(c, p.controls, regularControls.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
+        insertBeforeFinish(c, p.controls, regularControls.map(ctrl => ({ id: crypto.randomUUID(), controlId: ctrl.id })))
       })
     },
 
@@ -188,14 +187,14 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         // one finish at the end, regular controls before the finish.
         if (start && !c.controls.some(cc => cc.controlId === start.id)) {
           c.controls = c.controls.filter(cc => typeOf(cc.controlId) !== 'start')
-          c.controls.unshift({ id: uuidv4(), controlId: start.id })
+          c.controls.unshift({ id: crypto.randomUUID(), controlId: start.id })
         }
         if (finish && !c.controls.some(cc => cc.controlId === finish.id)) {
           c.controls = c.controls.filter(cc => typeOf(cc.controlId) !== 'finish')
-          c.controls.push({ id: uuidv4(), controlId: finish.id })
+          c.controls.push({ id: crypto.randomUUID(), controlId: finish.id })
         }
         if (regulars.length > 0) {
-          insertBeforeFinish(c, p.controls, regulars.map(ctrl => ({ id: uuidv4(), controlId: ctrl.id })))
+          insertBeforeFinish(c, p.controls, regulars.map(ctrl => ({ id: crypto.randomUUID(), controlId: ctrl.id })))
         }
       })
     },
@@ -258,6 +257,14 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       })
     },
 
+    updateClueSheetFontSize: (size: number | undefined) => {
+      h.mutateProject(p => { p.clueSheetFontSize = size })
+    },
+
+    updateClueSheetHideSubmapRestart: (hide: boolean) => {
+      h.mutateProject(p => { p.clueSheetHideSubmapRestart = hide || undefined })
+    },
+
     updateCourseSpec: (id: string, spec: EventSpec | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
@@ -266,7 +273,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     },
 
     addClass: (name: string, courseId: string): RaceClass => {
-      const rc: RaceClass = { id: uuidv4(), name, courseId }
+      const rc: RaceClass = { id: crypto.randomUUID(), name, courseId }
       h.mutateProject(p => { p.classes.push(rc) })
       return rc
     },
@@ -309,7 +316,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           if (forkCount < 3) return
           const branchCount = forkCount - 1
           const names = Array.from({ length: branchCount }, (_, i) => String.fromCharCode(65 + i))
-          const loop = { id: uuidv4(), forkControlId, branchNames: names }
+          const loop = { id: crypto.randomUUID(), forkControlId, branchNames: names }
           course.loops.push(loop)
           course.variations = generateAllPermutations(course)
         }
