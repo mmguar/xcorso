@@ -840,7 +840,7 @@ function drawNorthArrows(
 function overprintPass(doc: jsPDF, overprint: number, drawInk: () => void) {
   const t = Math.max(0, Math.min(1, overprint))
   if (t < 1) {
-    doc.setGState(doc.GState({ opacity: 1 - t }))
+    doc.setGState(doc.GState({ opacity: 1 - t, blendMode: 'Normal' }))
     drawInk()
   }
   if (t > 0) {
