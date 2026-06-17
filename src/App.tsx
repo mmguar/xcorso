@@ -4,7 +4,7 @@ import { useStore } from './store'
 import { WelcomeScreen } from './components/WelcomeScreen'
 import { EditorScreen } from './components/EditorScreen'
 import { AboutPage } from './components/AboutPage'
-import { loadSession } from './lib/persistence'
+import { getActiveId, loadProject as loadPersistedProject } from './lib/persistence'
 
 type Screen = 'home' | 'editor' | 'about'
 
@@ -15,9 +15,11 @@ export default function App() {
   const [restoring, setRestoring] = useState(true)
 
   useEffect(() => {
-    loadSession().then(saved => {
+    getActiveId().then(async id => {
+      if (!id) return
+      const saved = await loadPersistedProject(id)
       if (saved?.project) {
-        loadProject(saved.project, saved.mapFileData)
+        loadProject(saved.project, saved.mapFileData, id)
         setScreen('editor')
       }
     }).finally(() => setRestoring(false))
