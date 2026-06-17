@@ -12,9 +12,9 @@ import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
 import { OverlaySettingsPanel, AnnotationSettingsPanel } from './panels/OverlaySettingsPanel'
 
-interface Props { onGoHome: () => void }
+interface Props { onGoHome: () => void; onLogin: () => void }
 
-export function EditorScreen({ onGoHome }: Props) {
+export function EditorScreen({ onGoHome, onLogin }: Props) {
   useRenderTracker('EditorScreen')
   // Select primitives, not the project object — its reference changes on every
   // mutation (including per-pointermove drag updates), which would re-render
@@ -79,7 +79,7 @@ export function EditorScreen({ onGoHome }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <Header onGoHome={onGoHome} />
+      <Header onGoHome={onGoHome} onLogin={onLogin} />
       <div className="flex flex-1 overflow-hidden relative">
         <div className="flex-1 relative overflow-hidden">
           <MapCanvas loadedMap={loadedMap} />

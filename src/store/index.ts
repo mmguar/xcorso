@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import type { Project } from '../types'
 import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
-import { debouncedSave, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, setActiveId, flushSave } from '../lib/persistence'
+import { debouncedSave, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
+import { uploadProject, downloadProject, createCloudProject, hashMap } from '../lib/sync'
+import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
 import { distance } from '../lib/geometry'
@@ -54,6 +56,9 @@ export const useStore = create<Store>((set, get) => {
     undoStack: [],
     redoStack: [],
     editor: defaultEditor,
+    cloudUser: null,
+    syncStatus: 'idle',
+    syncConflict: null,
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
@@ -298,6 +303,99 @@ export const useStore = create<Store>((set, get) => {
       set({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
     },
 
+    // ── Cloud sync ───────────────────────────────────────────────────────
+
+    setCloudUser: (user) => set({ cloudUser: user }),
+
+    syncProject: async () => {
+      const { project, projectId, mapFileData, cloudUser } = get()
+      if (!project || !projectId || !cloudUser) return
+
+      set({ syncStatus: 'syncing' })
+      try {
+        let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
+
+        // First sync: create cloud project
+        if (!syncMeta) {
+          const cloudId = await createCloudProject(project.meta.name)
+          if (!cloudId) { set({ syncStatus: 'error' }); return }
+          syncMeta = { cloudId, syncVersion: 0, syncedAt: '', mapHash: null }
+        }
+
+        const localMapHash = mapFileData ? await hashMap(mapFileData) : null
+
+        const result = await uploadProject(
+          syncMeta.cloudId, project, mapFileData,
+          localMapHash, syncMeta.mapHash, syncMeta.syncVersion,
+        )
+
+        if (result.status === 'ok') {
+          const updated: SyncMeta = {
+            cloudId: syncMeta.cloudId,
+            syncVersion: result.version,
+            syncedAt: new Date().toISOString(),
+            mapHash: localMapHash,
+          }
+          await setSyncMeta(projectId, updated)
+          set({ syncStatus: 'synced' })
+        } else if (result.status === 'conflict') {
+          const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
+          if (remote) {
+            set({
+              syncStatus: 'idle',
+              syncConflict: {
+                cloudId: syncMeta.cloudId,
+                serverVersion: result.serverVersion,
+                remoteProject: remote.project,
+              },
+            })
+          } else {
+            set({ syncStatus: 'error' })
+          }
+        } else {
+          set({ syncStatus: 'error' })
+        }
+      } catch {
+        set({ syncStatus: navigator.onLine ? 'error' : 'offline' })
+      }
+    },
+
+    resolveConflict: async (keep) => {
+      const { syncConflict, projectId, project, mapFileData } = get()
+      if (!syncConflict || !projectId) return
+
+      if (keep === 'remote') {
+        const remote = await downloadProject(syncConflict.cloudId, null)
+        if (remote) {
+          get().loadProject(remote.project, remote.mapData ?? mapFileData)
+          const updated: SyncMeta = {
+            cloudId: syncConflict.cloudId,
+            syncVersion: syncConflict.serverVersion,
+            syncedAt: new Date().toISOString(),
+            mapHash: remote.mapHash,
+          }
+          await setSyncMeta(projectId, updated)
+        }
+      } else if (keep === 'local' && project) {
+        // Force-push local: upload without version check
+        const localMapHash = mapFileData ? await hashMap(mapFileData) : null
+        const result = await uploadProject(
+          syncConflict.cloudId, project, mapFileData,
+          localMapHash, null, 0,
+        )
+        if (result.status === 'ok') {
+          const updated: SyncMeta = {
+            cloudId: syncConflict.cloudId,
+            syncVersion: result.version,
+            syncedAt: new Date().toISOString(),
+            mapHash: localMapHash,
+          }
+          await setSyncMeta(projectId, updated)
+        }
+      }
+      set({ syncConflict: null, syncStatus: 'synced' })
+    },
+
     // ── Undo / Redo ───────────────────────────────────────────────────────
 
     undo: () => {
@@ -327,8 +425,16 @@ export const useStore = create<Store>((set, get) => {
   }
 })
 
+let syncTimer: ReturnType<typeof setTimeout> | null = null
+
 useStore.subscribe((state, prev) => {
   if (state.project && state.projectId && state.project !== prev.project) {
     debouncedSave(state.projectId, state.project, state.mapFileData)
+
+    // Auto-sync to cloud after 5s of inactivity
+    if (state.cloudUser) {
+      if (syncTimer) clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => { syncTimer = null; state.syncProject() }, 5000)
+    }
   }
 })
