@@ -3,18 +3,20 @@
  */
 
 import { useRef, useState, useEffect } from 'react'
-import { Map, FolderOpen, FileUp, Trash2 } from 'lucide-react'
+import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut } from 'lucide-react'
 import { useStore } from '../store'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
 import { listProjects, deleteProject as deletePersistedProject } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
+import { logout as cloudLogout, deleteAccount } from '../lib/sync'
 import { SPEC_LABELS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
 interface Props {
   onProjectLoaded: () => void
   onAbout: () => void
+  onLogin: () => void
 }
 
 type Step = 'landing' | 'new-project'
@@ -32,17 +34,20 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
+export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [step, setStep] = useState<Step>('landing')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
 
   const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
   const loadProject = useStore(s => s.loadProject)
   const switchProject = useStore(s => s.switchProject)
+  const cloudUser = useStore(s => s.cloudUser)
+  const setCloudUser = useStore(s => s.setCloudUser)
 
   const openFileRef = useRef<HTMLInputElement>(null)
   const mapFileRef = useRef<HTMLInputElement>(null)
@@ -129,7 +134,56 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
 
   if (step === 'landing') {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-8 gap-8">
+      <div className="relative flex flex-col items-center justify-center h-full bg-gray-50 p-8 gap-8">
+        {/* Account */}
+        <div className="absolute top-4 right-4">
+          {cloudUser ? (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <Cloud size={14} className="text-green-500" />
+              <span>{cloudUser.email}</span>
+              <button
+                onClick={() => { cloudLogout(); setCloudUser(null) }}
+                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+                title="Sign out"
+              >
+                <LogOut size={14} />
+              </button>
+              {confirmDeleteAccount ? (
+                <span className="flex items-center gap-1 ml-1">
+                  <button
+                    onClick={async () => { await deleteAccount(); setCloudUser(null); setConfirmDeleteAccount(false) }}
+                    className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
+                  >
+                    Confirm delete
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteAccount(false)}
+                    className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteAccount(true)}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1"
+                  title="Delete account and all cloud data"
+                >
+                  Delete account
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={onLogin}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors"
+            >
+              <LogIn size={14} />
+              Sign in
+            </button>
+          )}
+        </div>
+
         <div className="flex flex-col items-center gap-3">
           <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg">
             <Map size={32} className="text-white" />
@@ -156,7 +210,10 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
                 onClick={() => handleSwitchProject(p.id)}
               >
                 <div className="flex-1 min-w-0">
-                  <div className={`font-semibold text-sm truncate ${p.id === activeProjectId ? '' : ''}`}>{p.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-sm truncate">{p.name}</span>
+                    {p.sync && <Cloud size={12} className={p.id === activeProjectId ? 'text-orange-200' : 'text-gray-300'} />}
+                  </div>
                   <div className={`text-xs ${p.id === activeProjectId ? 'text-orange-200' : 'text-gray-400'}`}>
                     {timeAgo(p.updatedAt)}
                   </div>

@@ -1,4 +1,5 @@
 import type { Project } from '../types'
+import type { SyncMeta } from './sync'
 
 const DB_NAME = 'xcorso'
 const DB_VERSION = 2
@@ -10,6 +11,7 @@ export interface ProjectSummary {
   id: string
   name: string
   updatedAt: string
+  sync?: SyncMeta
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -91,11 +93,12 @@ export async function listProjects(): Promise<ProjectSummary[]> {
       tx.oncomplete = () => {
         db.close()
         const keys = keysReq.result as string[]
-        const vals = valsReq.result as { project: Project }[]
+        const vals = valsReq.result as { project: Project; sync?: SyncMeta }[]
         const list: ProjectSummary[] = keys.map((id, i) => ({
           id,
           name: vals[i].project.meta.name,
           updatedAt: vals[i].project.meta.updatedAt,
+          sync: vals[i].sync,
         }))
         list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         resolve(list)
@@ -151,6 +154,32 @@ export async function deleteProject(id: string): Promise<void> {
     if (metaReq.result === id) tx.objectStore(META_STORE).delete('active')
   }
   lastSavedMaps.delete(id)
+  return txDone(db, tx)
+}
+
+// ── Sync metadata ─────────────────────────────────────────────────────────
+
+export async function getSyncMeta(id: string): Promise<SyncMeta | null> {
+  try {
+    const db = await openDB()
+    const tx = db.transaction(PROJECTS_STORE, 'readonly')
+    const req = tx.objectStore(PROJECTS_STORE).get(id)
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => { db.close(); resolve((req.result as { sync?: SyncMeta })?.sync ?? null) }
+      tx.onerror = () => { db.close(); reject(tx.error) }
+    })
+  } catch { return null }
+}
+
+export async function setSyncMeta(id: string, sync: SyncMeta): Promise<void> {
+  const db = await openDB()
+  const tx = db.transaction(PROJECTS_STORE, 'readwrite')
+  const store = tx.objectStore(PROJECTS_STORE)
+  const req = store.get(id)
+  req.onsuccess = () => {
+    const entry = req.result as { project: Project; sync?: SyncMeta } | undefined
+    if (entry) store.put({ ...entry, sync }, id)
+  }
   return txDone(db, tx)
 }
 

@@ -5,6 +5,7 @@ import type {
   CourseLayout, SubmapLayout, LayoutElementPosition, LayoutDefaults, MapGeoref, OverprintMode,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
+import type { CloudUser } from '../lib/sync'
 
 export interface EditorState {
   activeTool: ActiveTool
@@ -33,6 +34,14 @@ export interface EditorState {
   centerRequest: { point: MapPoint; seq: number } | null
 }
 
+export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline'
+
+export interface SyncConflict {
+  cloudId: string
+  serverVersion: number
+  remoteProject: Project
+}
+
 export interface AppState {
   projectId: string | null
   project: Project | null
@@ -41,6 +50,9 @@ export interface AppState {
   undoStack: Project[]
   redoStack: Project[]
   editor: EditorState
+  cloudUser: CloudUser | null
+  syncStatus: SyncStatus
+  syncConflict: SyncConflict | null
 }
 
 export interface AppActions {
@@ -198,6 +210,10 @@ export interface AppActions {
   switchProject: (id: string) => Promise<void>
   deleteStoredProject: (id: string) => Promise<void>
   clearSession: () => void
+
+  setCloudUser: (user: CloudUser | null) => void
+  syncProject: () => Promise<void>
+  resolveConflict: (keep: 'local' | 'remote') => Promise<void>
 
   undo: () => void
   redo: () => void

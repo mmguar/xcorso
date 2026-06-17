@@ -1,24 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, FileDown, Map, ImageUp, Pencil, ChevronDown, Home, Plus } from 'lucide-react'
+import { Save, FileDown, Map, ImageUp, Pencil, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
 import { listProjects } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
+import { logout as cloudLogout } from '../../lib/sync'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { EventSpec, MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
-interface Props { onGoHome: () => void }
+interface Props { onGoHome: () => void; onLogin: () => void }
 
-export function Header({ onGoHome }: Props) {
+export function Header({ onGoHome, onLogin }: Props) {
   const project = useStore(s => s.project!)
   const projectId = useStore(s => s.projectId)
   const mapFileData = useStore(s => s.mapFileData)
   const updateProjectName = useStore(s => s.updateProjectName)
   const updateProjectSpec = useStore(s => s.updateProjectSpec)
   const switchProject = useStore(s => s.switchProject)
+  const cloudUser = useStore(s => s.cloudUser)
+  const syncStatus = useStore(s => s.syncStatus)
+  const syncProject = useStore(s => s.syncProject)
+  const setCloudUser = useStore(s => s.setCloudUser)
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
   const replaceMapFile = useStore(s => s.replaceMapFile)
@@ -166,6 +171,46 @@ export function Header({ onGoHome }: Props) {
       </select>
 
       <div className="flex items-center gap-2 md:ml-auto">
+        {/* Cloud sync */}
+        {cloudUser ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => syncProject()}
+              disabled={syncStatus === 'syncing'}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+              title={`Signed in as ${cloudUser.email}`}
+            >
+              {syncStatus === 'syncing' ? <RefreshCw size={14} className="animate-spin" /> :
+               syncStatus === 'synced' ? <Cloud size={14} className="text-green-500" /> :
+               syncStatus === 'error' ? <AlertTriangle size={14} className="text-red-400" /> :
+               syncStatus === 'offline' ? <CloudOff size={14} className="text-gray-400" /> :
+               <Cloud size={14} />}
+              <span className="hidden sm:inline">
+                {syncStatus === 'syncing' ? 'Syncing' :
+                 syncStatus === 'synced' ? 'Synced' :
+                 syncStatus === 'error' ? 'Sync error' :
+                 syncStatus === 'offline' ? 'Offline' : 'Sync'}
+              </span>
+            </button>
+            <button
+              onClick={() => { cloudLogout(); setCloudUser(null) }}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onLogin}
+            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-2.5 py-1.5 transition-colors"
+            title="Sign in to sync across devices"
+          >
+            <LogIn size={14} />
+            <span className="hidden sm:inline">Sign in</span>
+          </button>
+        )}
+
         {/* Save .oco */}
         <button
           onClick={handleSaveProject}

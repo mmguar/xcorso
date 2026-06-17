@@ -4,15 +4,21 @@ import { useStore } from './store'
 import { WelcomeScreen } from './components/WelcomeScreen'
 import { EditorScreen } from './components/EditorScreen'
 import { AboutPage } from './components/AboutPage'
+import { LoginModal } from './components/LoginModal'
+import { ConflictModal } from './components/ConflictModal'
 import { getActiveId, loadProject as loadPersistedProject } from './lib/persistence'
+import { fetchUser } from './lib/sync'
 
 type Screen = 'home' | 'editor' | 'about'
 
 export default function App() {
   const project = useStore(s => s.project)
   const loadProject = useStore(s => s.loadProject)
+  const setCloudUser = useStore(s => s.setCloudUser)
+  const syncConflict = useStore(s => s.syncConflict)
   const [screen, setScreen] = useState<Screen>('home')
   const [restoring, setRestoring] = useState(true)
+  const [showLogin, setShowLogin] = useState(false)
 
   useEffect(() => {
     getActiveId().then(async id => {
@@ -23,7 +29,10 @@ export default function App() {
         setScreen('editor')
       }
     }).finally(() => setRestoring(false))
-  }, [loadProject])
+
+    // Check if already signed in (cookie-based)
+    fetchUser().then(u => { if (u) setCloudUser(u) })
+  }, [loadProject, setCloudUser])
 
   if (restoring) {
     return (
@@ -38,8 +47,19 @@ export default function App() {
   }
 
   if (!project || screen !== 'editor') {
-    return <WelcomeScreen onProjectLoaded={() => setScreen('editor')} onAbout={() => setScreen('about')} />
+    return (
+      <>
+        <WelcomeScreen onProjectLoaded={() => setScreen('editor')} onAbout={() => setScreen('about')} onLogin={() => setShowLogin(true)} />
+        {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+      </>
+    )
   }
 
-  return <EditorScreen onGoHome={() => setScreen('home')} />
+  return (
+    <>
+      <EditorScreen onGoHome={() => setScreen('home')} onLogin={() => setShowLogin(true)} />
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+      {syncConflict && <ConflictModal />}
+    </>
+  )
 }
