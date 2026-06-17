@@ -34,6 +34,7 @@ export interface EditorState {
 }
 
 export interface AppState {
+  projectId: string | null
   project: Project | null
   mapFileData: ArrayBuffer | null
   loadedMap: LoadedMap | null
@@ -44,7 +45,7 @@ export interface AppState {
 
 export interface AppActions {
   createProject: (name: string, mapConfig: Project['map'], mapData: ArrayBuffer, spec?: EventSpec) => void
-  loadProject: (project: Project, mapData: ArrayBuffer | null) => void
+  loadProject: (project: Project, mapData: ArrayBuffer | null, id?: string) => void
   updateProjectName: (name: string) => void
   updateProjectSpec: (spec: EventSpec) => void
 
@@ -194,6 +195,8 @@ export interface AppActions {
   requestLayoutSnap: () => void
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
 
+  switchProject: (id: string) => Promise<void>
+  deleteStoredProject: (id: string) => Promise<void>
   clearSession: () => void
 
   undo: () => void

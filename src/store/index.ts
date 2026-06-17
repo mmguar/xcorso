@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Project } from '../types'
 import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
-import { debouncedSave, clearSession as clearPersistedSession } from '../lib/persistence'
+import { debouncedSave, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, setActiveId, flushSave } from '../lib/persistence'
 import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
 import { distance } from '../lib/geometry'
@@ -47,6 +47,7 @@ export const useStore = create<Store>((set, get) => {
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
 
   return {
+    projectId: null,
     project: null,
     mapFileData: null,
     loadedMap: null,
@@ -57,6 +58,7 @@ export const useStore = create<Store>((set, get) => {
     // ── Project lifecycle ─────────────────────────────────────────────────
 
     createProject: (name, mapConfig, mapData, spec) => {
+      const id = crypto.randomUUID()
       const now = new Date().toISOString()
       const project: Project = {
         version: '1.0',
@@ -73,10 +75,11 @@ export const useStore = create<Store>((set, get) => {
         overprint: 1,
         overprintMode: 'simulated',
       }
-      set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
+      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
+      setActiveId(id).catch(() => {})
     },
 
-    loadProject: (project, mapData) => {
+    loadProject: (project, mapData, id) => {
       // Session restores need the same migrations/defaults as .oco loads.
       // normalizeProject also validates; session data was written by us, so on
       // an unexpected failure keep the project as-is rather than losing it.
@@ -84,7 +87,9 @@ export const useStore = create<Store>((set, get) => {
       if (!project.scaleBars) project.scaleBars = []
       if (!project.textLabels) project.textLabels = []
       if (!project.imageOverlays) project.imageOverlays = []
-      set({ project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
+      const projectId = id ?? get().projectId ?? crypto.randomUUID()
+      set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
+      setActiveId(projectId).catch(() => {})
     },
 
     updateProjectName: (name) => {
@@ -273,9 +278,24 @@ export const useStore = create<Store>((set, get) => {
 
     // ── Session ──────────────────────────────────────────────────────────
 
+    switchProject: async (id) => {
+      await flushSave()
+      const saved = await loadPersistedProject(id)
+      if (!saved) return
+      get().loadProject(saved.project, saved.mapFileData, id)
+    },
+
+    deleteStoredProject: async (id) => {
+      await deletePersistedProject(id)
+      if (get().projectId === id) {
+        set({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
+      }
+    },
+
     clearSession: () => {
-      clearPersistedSession()
-      set({ project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
+      const { projectId } = get()
+      if (projectId) deletePersistedProject(projectId).catch(() => {})
+      set({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
     },
 
     // ── Undo / Redo ───────────────────────────────────────────────────────
@@ -308,7 +328,7 @@ export const useStore = create<Store>((set, get) => {
 })
 
 useStore.subscribe((state, prev) => {
-  if (state.project && state.project !== prev.project) {
-    debouncedSave(state.project, state.mapFileData)
+  if (state.project && state.projectId && state.project !== prev.project) {
+    debouncedSave(state.projectId, state.project, state.mapFileData)
   }
 })
