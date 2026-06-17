@@ -1,13 +1,14 @@
 /**
- * Landing screen: create new project or open existing .oco file.
+ * Landing screen: create new project, open .oco, or switch between saved projects.
  */
 
-import { useRef, useState } from 'react'
-import { Map, FolderOpen, FileUp, ArrowRight } from 'lucide-react'
+import { useRef, useState, useEffect } from 'react'
+import { Map, FolderOpen, FileUp, Trash2 } from 'lucide-react'
 import { useStore } from '../store'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
-import { clearSession } from '../lib/persistence'
+import { listProjects, deleteProject as deletePersistedProject } from '../lib/persistence'
+import type { ProjectSummary } from '../lib/persistence'
 import { SPEC_LABELS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -19,14 +20,29 @@ interface Props {
 type Step = 'landing' | 'new-project'
 const MAP_FILE_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(iso).toLocaleDateString()
+}
+
 export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
   const [step, setStep] = useState<Step>('landing')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const existingProject = useStore(s => s.project)
+  const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
   const loadProject = useStore(s => s.loadProject)
+  const switchProject = useStore(s => s.switchProject)
 
   const openFileRef = useRef<HTMLInputElement>(null)
   const mapFileRef = useRef<HTMLInputElement>(null)
@@ -37,10 +53,13 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
   const [storageMode, setStorageMode] = useState<'embedded' | 'reference'>('embedded')
   const [mapFile, setMapFile] = useState<File | null>(null)
 
+  useEffect(() => {
+    listProjects().then(setProjects)
+  }, [])
+
   async function handleOpenProject(file: File) {
     setLoading(true); setError(null)
     try {
-      await clearSession()
       const { project, mapData } = await loadProjectFile(file)
       loadProject(project, mapData)
       onProjectLoaded()
@@ -49,6 +68,24 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleSwitchProject(id: string) {
+    setLoading(true); setError(null)
+    try {
+      await switchProject(id)
+      onProjectLoaded()
+    } catch (e) {
+      setError(`Failed to open project: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDeleteProject(id: string) {
+    await deletePersistedProject(id)
+    setProjects(ps => ps.filter(p => p.id !== id))
+    setConfirmDeleteId(null)
   }
 
   async function handleCreateProject() {
@@ -104,19 +141,58 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
           </p>
         </div>
 
-        {existingProject && (
-          <button
-            onClick={onProjectLoaded}
-            className="flex items-center gap-3 w-full max-w-sm p-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl transition-colors shadow-md"
-          >
-            <ArrowRight size={20} />
-            <div className="text-left">
-              <div className="font-semibold text-sm">Return to "{existingProject.meta.name}"</div>
-              <div className="text-xs text-orange-200">
-                {existingProject.controls.length} controls · {existingProject.courses.length} courses
+        {/* Saved projects */}
+        {projects.length > 0 && (
+          <div className="w-full max-w-sm flex flex-col gap-1.5">
+            <h2 className="text-xs font-medium text-gray-400 px-1">Recent projects</h2>
+            {projects.map(p => (
+              <div
+                key={p.id}
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-colors cursor-pointer ${
+                  p.id === activeProjectId
+                    ? 'bg-orange-600 text-white shadow-md'
+                    : 'bg-white border border-gray-200 hover:border-orange-300 text-gray-800'
+                }`}
+                onClick={() => handleSwitchProject(p.id)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className={`font-semibold text-sm truncate ${p.id === activeProjectId ? '' : ''}`}>{p.name}</div>
+                  <div className={`text-xs ${p.id === activeProjectId ? 'text-orange-200' : 'text-gray-400'}`}>
+                    {timeAgo(p.updatedAt)}
+                  </div>
+                </div>
+                {confirmDeleteId === p.id ? (
+                  <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => handleDeleteProject(p.id)}
+                      className="text-xs px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className={`text-xs px-2 py-1 rounded ${
+                        p.id === activeProjectId ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'
+                      }`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={e => { e.stopPropagation(); setConfirmDeleteId(p.id) }}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      p.id === activeProjectId
+                        ? 'hover:bg-orange-500 text-orange-200'
+                        : 'hover:bg-gray-100 text-gray-300 hover:text-red-400'
+                    }`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
-            </div>
-          </button>
+            ))}
+          </div>
         )}
 
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
@@ -135,7 +211,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout }: Props) {
           >
             <FolderOpen size={24} className="text-gray-600" />
             <span className="font-semibold text-gray-800">Open .oco</span>
-            <span className="text-xs text-gray-400 text-center">Resume an existing project</span>
+            <span className="text-xs text-gray-400 text-center">Import a project file</span>
           </button>
         </div>
 

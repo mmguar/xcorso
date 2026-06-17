@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, FileDown, Map, ImageUp, Pencil } from 'lucide-react'
+import { Save, FileDown, Map, ImageUp, Pencil, ChevronDown, Home, Plus } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
+import { listProjects } from '../../lib/persistence'
+import type { ProjectSummary } from '../../lib/persistence'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { EventSpec, MapType } from '../../types'
 
@@ -12,15 +14,34 @@ interface Props { onGoHome: () => void }
 
 export function Header({ onGoHome }: Props) {
   const project = useStore(s => s.project!)
+  const projectId = useStore(s => s.projectId)
   const mapFileData = useStore(s => s.mapFileData)
   const updateProjectName = useStore(s => s.updateProjectName)
   const updateProjectSpec = useStore(s => s.updateProjectSpec)
+  const switchProject = useStore(s => s.switchProject)
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
   const replaceMapFile = useStore(s => s.replaceMapFile)
   const [exportOpen, setExportOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
   const mapInputRef = useRef<HTMLInputElement>(null)
+
+  // Project switcher dropdown
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [otherProjects, setOtherProjects] = useState<ProjectSummary[]>([])
+  const switcherRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!switcherOpen) return
+    listProjects().then(all => setOtherProjects(all.filter(p => p.id !== projectId)))
+    function handleClick(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setSwitcherOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [switcherOpen, projectId])
 
   useEffect(() => {
     if (!exportOpen) return
@@ -53,6 +74,11 @@ export function Header({ onGoHome }: Props) {
     replaceMapFile(file.name, type, data)
   }
 
+  async function handleSwitchTo(id: string) {
+    setSwitcherOpen(false)
+    await switchProject(id)
+  }
+
   return (
     <header className="flex items-center gap-3 px-4 h-12 bg-white border-b border-gray-200 z-40 shrink-0 relative">
       <button
@@ -66,26 +92,67 @@ export function Header({ onGoHome }: Props) {
 
       <div className="w-px h-5 bg-gray-200" />
 
-      {/* Project name */}
-      {editingName ? (
-        <input
-          autoFocus
-          value={nameVal}
-          onChange={e => setNameVal(e.target.value)}
-          onBlur={() => { updateProjectName(nameVal); setEditingName(false) }}
-          onKeyDown={e => { if (e.key === 'Enter') { updateProjectName(nameVal); setEditingName(false) } }}
-          className="text-sm font-medium border-b border-orange-400 focus:outline-none bg-transparent w-48"
-        />
-      ) : (
-        <span
-          className="edit-icon-group text-sm font-medium cursor-pointer hover:text-orange-700 transition-colors flex items-center gap-1"
-          onClick={() => { setNameVal(project.meta.name); setEditingName(true) }}
-          title="Click to rename"
-        >
-          {project.meta.name}
-          <Pencil size={12} className="edit-icon shrink-0" />
-        </span>
-      )}
+      {/* Project name + switcher */}
+      <div className="relative" ref={switcherRef}>
+        <div className="flex items-center gap-0.5">
+          {editingName ? (
+            <input
+              autoFocus
+              value={nameVal}
+              onChange={e => setNameVal(e.target.value)}
+              onBlur={() => { updateProjectName(nameVal); setEditingName(false) }}
+              onKeyDown={e => { if (e.key === 'Enter') { updateProjectName(nameVal); setEditingName(false) } }}
+              className="text-sm font-medium border-b border-orange-400 focus:outline-none bg-transparent w-48"
+            />
+          ) : (
+            <span
+              className="edit-icon-group text-sm font-medium cursor-pointer hover:text-orange-700 transition-colors flex items-center gap-1"
+              onClick={() => { setNameVal(project.meta.name); setEditingName(true) }}
+              title="Click to rename"
+            >
+              {project.meta.name}
+              <Pencil size={12} className="edit-icon shrink-0" />
+            </span>
+          )}
+          <button
+            onClick={() => setSwitcherOpen(o => !o)}
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Switch project"
+          >
+            <ChevronDown size={14} />
+          </button>
+        </div>
+
+        {switcherOpen && (
+          <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
+            {otherProjects.map(p => (
+              <button
+                key={p.id}
+                onClick={() => handleSwitchTo(p.id)}
+                className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+              >
+                <div className="text-sm font-medium text-gray-800 truncate">{p.name}</div>
+                <div className="text-[10px] text-gray-400">{new Date(p.updatedAt).toLocaleDateString()}</div>
+              </button>
+            ))}
+            {otherProjects.length > 0 && <div className="border-t border-gray-100 my-1" />}
+            <button
+              onClick={() => { setSwitcherOpen(false); onGoHome() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <Home size={14} />
+              <span>Home</span>
+            </button>
+            <button
+              onClick={() => { setSwitcherOpen(false); onGoHome() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <Plus size={14} />
+              <span>New project</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       <select
         value={project.spec ?? 'isom-2017'}
