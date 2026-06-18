@@ -1,4 +1,4 @@
-name = "xcorso"
+name = "xcorso-prod"
 main = "worker/index.ts"
 compatibility_date = "2026-05-01"
 
