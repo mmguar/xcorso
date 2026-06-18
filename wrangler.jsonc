@@ -1,7 +1,14 @@
 {
   "name": "xcorso",
   "compatibility_date": "2026-05-01",
-  "assets": {
-    "directory": "./dist"
+  "pages_build_output_dir": "./dist",
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "xcorso-projects" }
+  ],
+  "kv_namespaces": [
+    { "binding": "KV", "id": "a2fff06e513a4e1f9fd6e64484987825" }
+  ],
+  "vars": {
+    "RESEND_FROM": "noreply@xcorso.it"
   }
 }
