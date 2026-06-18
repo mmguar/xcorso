@@ -3,13 +3,13 @@
  */
 
 import { useRef, useState, useEffect } from 'react'
-import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut } from 'lucide-react'
+import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut, RefreshCw } from 'lucide-react'
 import { useStore } from '../store'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
-import { listProjects, deleteProject as deletePersistedProject } from '../lib/persistence'
+import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { logout as cloudLogout, deleteAccount } from '../lib/sync'
+import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, type SyncMeta } from '../lib/sync'
 import { SPEC_LABELS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -41,6 +41,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
@@ -59,8 +60,27 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [mapFile, setMapFile] = useState<File | null>(null)
 
   useEffect(() => {
-    listProjects().then(setProjects)
-  }, [])
+    loadProjectList()
+  }, [cloudUser]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadProjectList() {
+    const local = await listProjects()
+    if (!cloudUser) { setProjects(local); return }
+
+    setSyncing(true)
+    try {
+      const cloud = await fetchCloudProjects()
+      const localCloudIds = new Set(local.map(p => p.sync?.cloudId).filter(Boolean))
+      const cloudOnly: ProjectSummary[] = cloud
+        .filter(c => !localCloudIds.has(c.id))
+        .map(c => ({ id: c.id, name: c.name, updatedAt: c.updatedAt, sync: { cloudId: c.id, syncVersion: c.version, syncedAt: c.updatedAt, mapHash: null } }))
+      setProjects([...local, ...cloudOnly])
+    } catch {
+      setProjects(local)
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   async function handleOpenProject(file: File) {
     setLoading(true); setError(null)
@@ -75,10 +95,24 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     }
   }
 
-  async function handleSwitchProject(id: string) {
+  async function handleSwitchProject(p: ProjectSummary) {
     setLoading(true); setError(null)
     try {
-      await switchProject(id)
+      const cloudId = p.sync?.cloudId
+      const isLocallyAvailable = await loadPersistedProject(p.id)
+      if (isLocallyAvailable) {
+        await switchProject(p.id)
+      } else if (cloudId) {
+        const result = await downloadProject(cloudId, null)
+        if (!result) throw new Error('Download failed')
+        const localId = crypto.randomUUID()
+        await saveProject(localId, result.project, result.mapData)
+        const sync: SyncMeta = { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash }
+        await setSyncMeta(localId, sync)
+        loadProject(result.project, result.mapData, localId)
+      } else {
+        throw new Error('Project not found')
+      }
       onProjectLoaded()
     } catch (e) {
       setError(`Failed to open project: ${e instanceof Error ? e.message : String(e)}`)
@@ -88,6 +122,10 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   }
 
   async function handleDeleteProject(id: string) {
+    const project = projects.find(p => p.id === id)
+    if (project?.sync?.cloudId) {
+      await deleteCloudProject(project.sync.cloudId)
+    }
     await deletePersistedProject(id)
     setProjects(ps => ps.filter(p => p.id !== id))
     setConfirmDeleteId(null)
@@ -134,7 +172,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
   if (step === 'landing') {
     return (
-      <div className="relative flex flex-col items-center justify-center h-full bg-gray-50 p-8 gap-8">
+      <div className="relative flex flex-col items-center h-dvh bg-gray-50 px-8 gap-8 overflow-y-auto py-16">
         {/* Account */}
         <div className="absolute top-4 right-4">
           {cloudUser ? (
@@ -196,9 +234,23 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
         </div>
 
         {/* Saved projects */}
-        {projects.length > 0 && (
+        {(projects.length > 0 || cloudUser) && (
           <div className="w-full max-w-sm flex flex-col gap-1.5">
-            <h2 className="text-xs font-medium text-gray-400 px-1">Recent projects</h2>
+            <div className="flex items-center gap-2 px-1">
+              <h2 className="text-xs font-medium text-gray-400">
+                {syncing ? 'Syncing…' : 'Recent projects'}
+              </h2>
+              {cloudUser && (
+                <button
+                  onClick={loadProjectList}
+                  disabled={syncing}
+                  className="p-0.5 rounded text-gray-300 hover:text-orange-500 transition-colors disabled:opacity-40"
+                  title="Refresh cloud projects"
+                >
+                  <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+                </button>
+              )}
+            </div>
             {projects.map(p => (
               <div
                 key={p.id}
@@ -207,7 +259,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     ? 'bg-orange-600 text-white shadow-md'
                     : 'bg-white border border-gray-200 hover:border-orange-300 text-gray-800'
                 }`}
-                onClick={() => handleSwitchProject(p.id)}
+                onClick={() => handleSwitchProject(p)}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
