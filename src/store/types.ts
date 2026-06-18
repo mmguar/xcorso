@@ -208,8 +208,6 @@ export interface AppActions {
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
 
   switchProject: (id: string) => Promise<void>
-  deleteStoredProject: (id: string) => Promise<void>
-  clearSession: () => void
 
   setCloudUser: (user: CloudUser | null) => void
   syncProject: () => Promise<void>

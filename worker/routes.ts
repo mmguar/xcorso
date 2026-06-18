@@ -18,6 +18,18 @@ function r2Prefix(userId: string, projectId: string) {
   return `users/${userId}/projects/${projectId}`
 }
 
+async function getIndex(env: Env, userId: string): Promise<ProjectMeta[]> {
+  const obj = await env.BUCKET.get(`users/${userId}/index.json`)
+  if (!obj) return []
+  return obj.json()
+}
+
+async function putIndex(env: Env, userId: string, index: ProjectMeta[]): Promise<void> {
+  await env.BUCKET.put(`users/${userId}/index.json`, JSON.stringify(index), {
+    httpMetadata: { contentType: 'application/json' },
+  })
+}
+
 // --- Auth ---
 
 export async function authSend(request: Request, env: Env, _params: Params) {
@@ -100,7 +112,6 @@ export async function authDeleteAccount(request: Request, env: Env, _params: Par
     cursor = listed.truncated ? listed.cursor : undefined
   } while (cursor)
 
-  await env.KV.delete(`users:${userId}:projects`)
   await env.KV.delete(`users:id:${userId}`)
   await env.KV.delete(`users:email:${user.email}`)
 
@@ -121,8 +132,8 @@ export async function projectsList(request: Request, env: Env, _params: Params) 
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const raw = await env.KV.get(`users:${user.sub}:projects`, 'json') as ProjectMeta[] | null
-  return Response.json({ projects: raw ?? [] })
+  const index = await getIndex(env, user.sub)
+  return Response.json({ projects: index })
 }
 
 export async function projectsCreate(request: Request, env: Env, _params: Params) {
@@ -133,7 +144,7 @@ export async function projectsCreate(request: Request, env: Env, _params: Params
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
 
-  const existing = await env.KV.get(`users:${user.sub}:projects`, 'json') as ProjectMeta[] | null ?? []
+  const existing = await getIndex(env, user.sub)
   existing.push({
     id,
     name: body.name ?? 'Untitled',
@@ -144,7 +155,7 @@ export async function projectsCreate(request: Request, env: Env, _params: Params
     version: 0,
     history: [],
   })
-  await env.KV.put(`users:${user.sub}:projects`, JSON.stringify(existing))
+  await putIndex(env, user.sub, existing)
 
   return Response.json({ id }, { status: 201 })
 }
@@ -167,7 +178,7 @@ export async function projectPut(request: Request, env: Env, params: Params) {
 
   const prefix = r2Prefix(user.sub, params.id)
 
-  const index = await env.KV.get(`users:${user.sub}:projects`, 'json') as ProjectMeta[] | null ?? []
+  const index = await getIndex(env, user.sub)
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -210,7 +221,7 @@ export async function projectPut(request: Request, env: Env, params: Params) {
     ...meta.history,
   ].slice(0, 50)
 
-  await env.KV.put(`users:${user.sub}:projects`, JSON.stringify(index))
+  await putIndex(env, user.sub, index)
   return Response.json({ version: newVersion })
 }
 
@@ -224,9 +235,9 @@ export async function projectDelete(request: Request, env: Env, params: Params) 
     await env.BUCKET.delete(listed.objects.map((o: R2Object) => o.key))
   }
 
-  const index = await env.KV.get(`users:${user.sub}:projects`, 'json') as ProjectMeta[] | null ?? []
+  const index = await getIndex(env, user.sub)
   const filtered = index.filter(p => p.id !== params.id)
-  await env.KV.put(`users:${user.sub}:projects`, JSON.stringify(filtered))
+  await putIndex(env, user.sub, filtered)
 
   return Response.json({ ok: true })
 }
@@ -269,7 +280,7 @@ export async function historyList(request: Request, env: Env, params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const index = await env.KV.get(`users:${user.sub}:projects`, 'json') as { id: string; history: unknown[] }[] | null ?? []
+  const index = await getIndex(env, user.sub) as { id: string; history: unknown[] }[]
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -300,7 +311,7 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   if (!snapshot) return Response.json({ error: 'Version not found' }, { status: 404 })
   const snapshotBytes = await snapshot.arrayBuffer()
 
-  const index = await env.KV.get(`users:${user.sub}:projects`, 'json') as ProjectMeta[] | null ?? []
+  const index = await getIndex(env, user.sub)
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Project not found' }, { status: 404 })
 
@@ -331,6 +342,6 @@ export async function historyRestore(request: Request, env: Env, params: Params)
     meta.mapHash = parsed.meta?.mapHash ?? meta.mapHash
   } catch { /* keep existing */ }
 
-  await env.KV.put(`users:${user.sub}:projects`, JSON.stringify(index))
+  await putIndex(env, user.sub, index)
   return Response.json({ version: newVersion })
 }
