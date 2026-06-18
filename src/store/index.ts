@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Project } from '../types'
 import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
-import { debouncedSave, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
+import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
 import { uploadProject, downloadProject, createCloudProject, hashMap } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
@@ -288,19 +288,6 @@ export const useStore = create<Store>((set, get) => {
       const saved = await loadPersistedProject(id)
       if (!saved) return
       get().loadProject(saved.project, saved.mapFileData, id)
-    },
-
-    deleteStoredProject: async (id) => {
-      await deletePersistedProject(id)
-      if (get().projectId === id) {
-        set({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
-      }
-    },
-
-    clearSession: () => {
-      const { projectId } = get()
-      if (projectId) deletePersistedProject(projectId).catch(() => {})
-      set({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor })
     },
 
     // ── Cloud sync ───────────────────────────────────────────────────────
