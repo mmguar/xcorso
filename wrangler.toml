@@ -1,0 +1,19 @@
+name = "xcorso"
+main = "worker/index.ts"
+compatibility_date = "2026-05-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "xcorso-projects"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "a2fff06e513a4e1f9fd6e64484987825"
+
+[vars]
+RESEND_FROM = "noreply@xcorso.it"
+# RESEND_API_KEY and JWT_SECRET: set via `wrangler secret put`
