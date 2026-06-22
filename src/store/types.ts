@@ -80,6 +80,8 @@ export interface AppActions {
   updateControlLabel: (id: string, label: string) => void
   updateControlPoints: (id: string, points: number | undefined) => void
   updateControlDescription: (id: string, field: string, value: string | undefined) => void
+  updateSkipCodes: (codes: number[]) => void
+  reassignControlIds: () => void
 
   addCourse: (name: string, type?: CourseType) => Course
   duplicateCourse: (id: string) => Course | null
