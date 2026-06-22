@@ -69,7 +69,7 @@ export function SidePanel() {
         ${collapsed ? 'w-12' : 'w-88 overflow-hidden'}
       `}>
         {collapsed ? (
-          <CollapsedSidebar onExpand={() => setCollapsed(false)} onSelectTab={setTab} />
+          <CollapsedSidebar onExpand={() => setCollapsed(false)} />
         ) : (
           <>
             <div className="flex border-b border-gray-200">
@@ -154,7 +154,7 @@ function SubmapChips({ course }: { course: Course }) {
   )
 }
 
-function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onSelectTab: (t: Tab) => void }) {
+function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
@@ -183,7 +183,7 @@ function CollapsedSidebar({ onExpand, onSelectTab }: { onExpand: () => void; onS
                   <button
                     onClick={() => {
                       if (isActive) { setSelectedCourse(null) }
-                      else { setSelectedCourse(course.id); onSelectTab('courses'); onExpand() }
+                      else { setSelectedCourse(course.id) }
                     }}
                     title={isActive ? `${course.name} (click to deselect)` : course.name}
                     className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 ${

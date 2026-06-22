@@ -3,13 +3,14 @@
  */
 
 import { useRef, useState, useEffect } from 'react'
-import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut, RefreshCw } from 'lucide-react'
+import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut, RefreshCw, Copy } from 'lucide-react'
 import { useStore } from '../store'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
+import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, type SyncMeta } from '../lib/sync'
+import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, type SyncMeta, type SharedProject } from '../lib/sync'
 import { SPEC_LABELS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -42,6 +43,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
 
   const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
@@ -52,12 +54,14 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
   const openFileRef = useRef<HTMLInputElement>(null)
   const mapFileRef = useRef<HTMLInputElement>(null)
+  const iofFileRef = useRef<HTMLInputElement>(null)
 
   // New project state
   const [projectName, setProjectName] = useState('My Event')
   const [eventSpec, setEventSpec] = useState<EventSpec>('isom-2017')
   const [storageMode, setStorageMode] = useState<'embedded' | 'reference'>('embedded')
   const [mapFile, setMapFile] = useState<File | null>(null)
+  const [iofFile, setIofFile] = useState<File | null>(null)
 
   useEffect(() => {
     loadProjectList()
@@ -65,16 +69,17 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
   async function loadProjectList() {
     const local = await listProjects()
-    if (!cloudUser) { setProjects(local); return }
+    if (!cloudUser) { setProjects(local); setSharedProjects([]); return }
 
     setSyncing(true)
     try {
-      const cloud = await fetchCloudProjects()
+      const [cloud, shared] = await Promise.all([fetchCloudProjects(), fetchSharedProjects()])
       const localCloudIds = new Set(local.map(p => p.sync?.cloudId).filter(Boolean))
       const cloudOnly: ProjectSummary[] = cloud
         .filter(c => !localCloudIds.has(c.id))
         .map(c => ({ id: c.id, name: c.name, updatedAt: c.updatedAt, sync: { cloudId: c.id, syncVersion: c.version, syncedAt: c.updatedAt, mapHash: null } }))
-      setProjects([...local, ...cloudOnly])
+      setProjects([...local, ...cloudOnly].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+      setSharedProjects(shared)
     } catch {
       setProjects(local)
     } finally {
@@ -105,17 +110,49 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
       } else if (cloudId) {
         const result = await downloadProject(cloudId, null)
         if (!result) throw new Error('Download failed')
-        const localId = crypto.randomUUID()
-        await saveProject(localId, result.project, result.mapData)
+        await saveProject(p.id, result.project, result.mapData)
         const sync: SyncMeta = { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash }
-        await setSyncMeta(localId, sync)
-        loadProject(result.project, result.mapData, localId)
+        await setSyncMeta(p.id, sync)
+        loadProject(result.project, result.mapData, p.id)
       } else {
         throw new Error('Project not found')
       }
       onProjectLoaded()
     } catch (e) {
       setError(`Failed to open project: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDuplicateProject(p: ProjectSummary) {
+    setLoading(true); setError(null)
+    try {
+      const saved = await loadPersistedProject(p.id)
+      if (!saved) throw new Error('Project not found locally')
+      const newId = crypto.randomUUID()
+      const dup = structuredClone(saved.project)
+      dup.meta.name = `${dup.meta.name} (copy)`
+      dup.meta.updatedAt = new Date().toISOString()
+      await saveProject(newId, dup, saved.mapFileData)
+      loadProject(dup, saved.mapFileData, newId)
+      onProjectLoaded()
+    } catch (e) {
+      setError(`Failed to duplicate: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleOpenShared(sp: SharedProject) {
+    setLoading(true); setError(null)
+    try {
+      const result = await downloadProject(sp.projectId, null)
+      if (!result) throw new Error('Download failed')
+      loadProject(result.project, result.mapData, sp.projectId, sp.role)
+      onProjectLoaded()
+    } catch (e) {
+      setError(`Failed to open shared project: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setLoading(false)
     }
@@ -161,6 +198,16 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
       }
 
       createProject(projectName, mapConfig, data, eventSpec)
+
+      if (iofFile) {
+        const xml = await iofFile.text()
+        const imported = importIofXml(xml, mapConfig)
+        const state = useStore.getState()
+        loadProject(
+          { ...state.project!, controls: imported.controls, courses: imported.courses, classes: imported.classes },
+          state.mapFileData,
+        )
+      }
 
       onProjectLoaded()
     } catch (e) {
@@ -288,17 +335,55 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={e => { e.stopPropagation(); setConfirmDeleteId(p.id) }}
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      p.id === activeProjectId
-                        ? 'hover:bg-orange-500 text-orange-200'
-                        : 'hover:bg-gray-100 text-gray-300 hover:text-red-400'
-                    }`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex gap-0.5">
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDuplicateProject(p) }}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        p.id === activeProjectId
+                          ? 'hover:bg-orange-500 text-orange-200'
+                          : 'hover:bg-gray-100 text-gray-300 hover:text-gray-500'
+                      }`}
+                      title="Duplicate"
+                    >
+                      <Copy size={14} />
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); setConfirmDeleteId(p.id) }}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        p.id === activeProjectId
+                          ? 'hover:bg-orange-500 text-orange-200'
+                          : 'hover:bg-gray-100 text-gray-300 hover:text-red-400'
+                      }`}
+                      title="Delete"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Shared with me */}
+        {sharedProjects.length > 0 && (
+          <div className="w-full max-w-sm flex flex-col gap-1.5">
+            <h2 className="text-xs font-medium text-gray-400 px-1">Shared with me</h2>
+            {sharedProjects.map(sp => (
+              <div
+                key={sp.projectId}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-xl bg-white border border-blue-100 hover:border-blue-300 text-gray-800 transition-colors cursor-pointer"
+                onClick={() => handleOpenShared(sp)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-sm truncate">{sp.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">{sp.role}</span>
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    {sp.ownerEmail} · {timeAgo(sp.updatedAt)}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -407,6 +492,32 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               setMapFile(selectedFile)
               setError(null)
             }}
+          />
+          {mapFile && !mapFile.name.toLowerCase().endsWith('.ocd') && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              PDF and image maps are saved locally only. Use an OCAD file (.ocd) for cloud sync and sharing.
+            </p>
+          )}
+        </div>
+
+        {/* IOF XML import */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-gray-500">Import courses <span className="font-normal text-gray-400">(optional)</span></label>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => iofFileRef.current?.click()}
+              className="flex-1 border border-dashed border-gray-200 hover:border-orange-300 rounded-lg px-3 py-2 text-xs text-gray-400 hover:text-orange-600 transition-colors text-left truncate"
+            >
+              {iofFile ? iofFile.name : 'IOF XML v3 — from Condes, Purple Pen, etc.'}
+            </button>
+            {iofFile && (
+              <button onClick={() => setIofFile(null)} className="text-xs text-gray-400 hover:text-red-400 px-1">Clear</button>
+            )}
+          </div>
+          <input
+            ref={iofFileRef}
+            type="file" accept=".xml" className="hidden"
+            onChange={e => { setIofFile(e.target.files?.[0] ?? null); setError(null) }}
           />
         </div>
 

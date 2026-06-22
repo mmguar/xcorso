@@ -357,7 +357,7 @@ function GeneralSection() {
   )
 }
 
-function CourseCard({ courseId }: { courseId: string }) {
+function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId: string; includedOverride?: boolean; onToggleIncluded?: () => void }) {
   const project = useStore(s => s.project!)
   const course = project.courses.find(c => c.id === courseId)!
   const controls = project.controls
@@ -383,7 +383,7 @@ function CourseCard({ courseId }: { courseId: string }) {
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
 
   const isActive = courseId === layoutCourseId
-  const included = layout?.included !== false
+  const included = includedOverride ?? (layout?.included !== false)
   const descMode = layout?.descMode ?? 'none'
 
   // Per-submap layout scoping. The expanded controls edit the submap selected in
@@ -437,6 +437,10 @@ function CourseCard({ courseId }: { courseId: string }) {
   )
 
   function toggleIncluded() {
+    if (onToggleIncluded) {
+      onToggleIncluded()
+      return
+    }
     if (!layout) {
       useStore.getState().ensureAllCourseLayouts()
     }
@@ -886,16 +890,23 @@ export function LayoutPanel() {
   const courses = project.courses
   const loadedMap = useStore(s => s.loadedMap)
   const ensureAllCourseLayouts = useStore(s => s.ensureAllCourseLayouts)
+  const isViewer = useStore(s => s.projectRole) === 'viewer'
   const scalable = canExportPdf(project.map)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [allControls, setAllControls] = useState(true)
+  const [viewerExclusions, setViewerExclusions] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (courses.length > 0) ensureAllCourseLayouts()
   }, [courses.length])
 
-  const includedCount = courses.filter(c => c.layout?.included !== false).length
+  function isIncluded(c: typeof courses[0]) {
+    if (isViewer) return !viewerExclusions.has(c.id)
+    return c.layout?.included !== false
+  }
+
+  const includedCount = courses.filter(isIncluded).length
   const hasControls = project.controls.length > 0
 
   async function handleExport() {
@@ -904,7 +915,9 @@ export function LayoutPanel() {
     try {
       const currentProject = useStore.getState().project!
       const defaults = getLayoutDefaults(useStore.getState)
-      const includedCourses = currentProject.courses.filter(c => c.layout?.included !== false)
+      const includedCourses = currentProject.courses.filter(c =>
+        isViewer ? !viewerExclusions.has(c.id) : c.layout?.included !== false
+      )
 
       // Scale, clue-sheet positions, page size, border and centring are all read
       // per-submap directly from each course's layout inside exportCoursePdf, so
@@ -980,7 +993,16 @@ export function LayoutPanel() {
       )}
 
       {courses.map(course => (
-        <CourseCard key={course.id} courseId={course.id} />
+        <CourseCard
+          key={course.id}
+          courseId={course.id}
+          includedOverride={isViewer ? !viewerExclusions.has(course.id) : undefined}
+          onToggleIncluded={isViewer ? () => setViewerExclusions(s => {
+            const next = new Set(s)
+            next.has(course.id) ? next.delete(course.id) : next.add(course.id)
+            return next
+          }) : undefined}
+        />
       ))}
 
       {/* Export */}

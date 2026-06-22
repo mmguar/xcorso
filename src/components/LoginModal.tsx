@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { sendCode, verifyCode } from '../lib/sync'
 import { useStore } from '../store'
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAADnxI0hcBbrG9wCc'
 
 interface Props {
   onClose: () => void
@@ -14,15 +16,49 @@ export function LoginModal({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const turnstileRef = useRef<HTMLDivElement>(null)
+  const widgetId = useRef<string | null>(null)
+  const cfToken = useRef('')
+
+  const onToken = useCallback((token: string) => { cfToken.current = token }, [])
+
+  useEffect(() => {
+    if (!turnstileRef.current) return
+    let cancelled = false
+    function tryRender() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = (window as any).turnstile
+      if (!t) { if (!cancelled) setTimeout(tryRender, 200); return }
+      widgetId.current = t.render(turnstileRef.current!, {
+        sitekey: TURNSTILE_SITE_KEY,
+        size: 'normal',
+        appearance: 'interaction-only',
+        callback: onToken,
+        'expired-callback': () => { cfToken.current = '' },
+      })
+    }
+    tryRender()
+    return () => {
+      cancelled = true
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = (window as any).turnstile
+      if (widgetId.current && t) t.remove(widgetId.current)
+    }
+  }, [onToken])
 
   useEffect(() => { inputRef.current?.focus() }, [step])
 
   async function handleSendCode() {
     if (!email.includes('@')) { setError('Enter a valid email'); return }
     setLoading(true); setError(null)
-    const ok = await sendCode(email.trim().toLowerCase())
+    const result = await sendCode(email.trim().toLowerCase(), cfToken.current || undefined)
     setLoading(false)
-    if (ok) setStep('code')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t = (window as any).turnstile
+    if (widgetId.current && t) t.reset(widgetId.current)
+    if (result.ok) setStep('code')
+    else if (result.throttled) setError('Wait a minute before requesting a new code')
+    else if (result.blocked) setError('Verification failed — try disabling ad blockers or privacy extensions')
     else setError('Failed to send code')
   }
 
@@ -36,7 +72,7 @@ export function LoginModal({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl p-5 w-80 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
         <h3 className="text-sm font-semibold text-gray-800">
           {step === 'email' ? 'Sign in to sync' : 'Enter code'}
@@ -44,7 +80,10 @@ export function LoginModal({ onClose }: Props) {
 
         {step === 'email' ? (
           <>
-            <p className="text-xs text-gray-500">We'll send a login code to your email.</p>
+            <p className="text-xs text-gray-500">
+              We'll send a login code to your email. By signing in you agree to our{' '}
+              <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">terms &amp; privacy policy</a>.
+            </p>
             <input
               ref={inputRef}
               type="email"
@@ -71,6 +110,8 @@ export function LoginModal({ onClose }: Props) {
             />
           </>
         )}
+
+        <div ref={turnstileRef} />
 
         {error && <p className="text-xs text-red-500">{error}</p>}
 

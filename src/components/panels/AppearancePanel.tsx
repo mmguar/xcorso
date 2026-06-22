@@ -15,6 +15,8 @@ export function AppearancePanel() {
   const setOverprint = useStore(s => s.setOverprint)
   const overprintMode = useStore(s => s.project?.overprintMode ?? 'simulated')
   const setOverprintMode = useStore(s => s.setOverprintMode)
+  const labelSubmapStart = useStore(s => s.project?.labelSubmapStart ?? false)
+  const updateLabelSubmapStart = useStore(s => s.updateLabelSubmapStart)
 
   return (
     <div className="p-3 space-y-4 text-sm">
@@ -123,6 +125,19 @@ export function AppearancePanel() {
             />
           </div>
         )}
+      </Section>
+
+      {/* Submap labelling */}
+      <Section label="Submaps">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={labelSubmapStart}
+            onChange={e => updateLabelSubmapStart(e.target.checked)}
+            className="accent-orange-600"
+          />
+          <span className="text-xs text-gray-600">Label first control of submap</span>
+        </label>
       </Section>
 
       {/* Reset all */}

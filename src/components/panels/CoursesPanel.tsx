@@ -7,11 +7,56 @@ import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
 
+const IOF_PURPLE = '#a626ff'
+
+function ClueSheetColorPicker({ label, value, onChange }: {
+  label: string
+  value: string | undefined
+  onChange: (color: string | undefined) => void
+}) {
+  const current = value || '#000000'
+  const isBlack = !value || value === '#000000'
+  const isPurple = value === IOF_PURPLE
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+      <span className="w-16 shrink-0">{label}</span>
+      <button
+        onClick={() => onChange(undefined)}
+        className={`w-5 h-5 rounded border transition-all shrink-0 ${isBlack ? 'ring-2 ring-orange-500 ring-offset-1' : 'border-gray-300'}`}
+        style={{ background: '#000000' }}
+        title="Black"
+      />
+      <button
+        onClick={() => onChange(IOF_PURPLE)}
+        className={`w-5 h-5 rounded border transition-all shrink-0 ${isPurple ? 'ring-2 ring-orange-500 ring-offset-1' : 'border-gray-300'}`}
+        style={{ background: IOF_PURPLE }}
+        title="IOF purple"
+      />
+      <input
+        type="color"
+        value={current}
+        onChange={e => onChange(e.target.value === '#000000' ? undefined : e.target.value)}
+        className="w-5 h-5 rounded cursor-pointer border-0 p-0 shrink-0"
+        title="Custom color"
+      />
+      {!isBlack && (
+        <span className="text-[10px] text-gray-400 truncate">{current}</span>
+      )}
+    </div>
+  )
+}
+
 function ClueSheetOptionsPanel() {
   const clueSheetFontSize = useStore(s => s.project!.clueSheetFontSize)
   const clueSheetHideSubmapRestart = useStore(s => s.project!.clueSheetHideSubmapRestart)
+  const clueSheetSplitSubmaps = useStore(s => s.project!.clueSheetSplitSubmaps)
+  const overlayColor = useStore(s => s.project!.clueSheetOverlayColor)
+  const separateColor = useStore(s => s.project!.clueSheetSeparateColor)
   const updateClueSheetFontSize = useStore(s => s.updateClueSheetFontSize)
   const updateClueSheetHideSubmapRestart = useStore(s => s.updateClueSheetHideSubmapRestart)
+  const updateClueSheetSplitSubmaps = useStore(s => s.updateClueSheetSplitSubmaps)
+  const updateOverlayColor = useStore(s => s.updateClueSheetOverlayColor)
+  const updateSeparateColor = useStore(s => s.updateClueSheetSeparateColor)
 
   return (
     <div className="px-3 py-2 flex flex-col gap-2">
@@ -36,6 +81,17 @@ function ClueSheetOptionsPanel() {
         />
         Hide first control on submaps
       </label>
+      <label className="flex items-center gap-2 text-xs text-gray-600 select-none cursor-pointer">
+        <input
+          type="checkbox"
+          checked={clueSheetSplitSubmaps ?? false}
+          onChange={e => updateClueSheetSplitSubmaps(e.target.checked)}
+          className="accent-orange-600"
+        />
+        Split clue sheets for submaps
+      </label>
+      <ClueSheetColorPicker label="On-map" value={overlayColor} onChange={updateOverlayColor} />
+      <ClueSheetColorPicker label="Separate" value={separateColor} onChange={updateSeparateColor} />
     </div>
   )
 }
@@ -59,7 +115,7 @@ function ClueSheetPopover({ open, onClose, anchorRef }: { open: boolean; onClose
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-full mb-2 right-0 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
+      className="absolute bottom-full mb-2 right-0 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
     >
       <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
         <span className="text-xs font-semibold text-gray-700">Clue sheet options</span>

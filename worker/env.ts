@@ -5,4 +5,5 @@ export interface Env {
   RESEND_API_KEY: string
   RESEND_FROM: string
   JWT_SECRET: string
+  TURNSTILE_SECRET?: string
 }

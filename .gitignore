@@ -3,3 +3,5 @@ dist/
 .vite/
 tests/internal
 *_review.md
+.env
+.env.local
