@@ -220,9 +220,40 @@ export function ControlsPanel() {
     )
   }
 
+  const skipCodes = project.skipCodes ?? []
+  const updateSkipCodes = useStore(s => s.updateSkipCodes)
+  const reassignControlIds = useStore(s => s.reassignControlIds)
+  const [skipCodesText, setSkipCodesText] = useState(() => skipCodes.join(', '))
+
+  function commitSkipCodes() {
+    const codes = skipCodesText.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)
+    updateSkipCodes(codes)
+    setSkipCodesText(codes.join(', '))
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 flex flex-col gap-1 p-2 overflow-y-auto">
+        <div className="px-3 py-2 flex flex-col gap-1.5 border-b border-gray-100 mb-1">
+          <label className="text-xs text-gray-500">
+            Control IDs to skip
+            <input
+              type="text"
+              value={skipCodesText}
+              onChange={e => setSkipCodesText(e.target.value)}
+              onBlur={commitSkipCodes}
+              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+              placeholder="e.g. 33, 40, 55"
+              className="mt-1 w-full text-xs font-mono border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+          </label>
+          <button
+            onClick={reassignControlIds}
+            className="text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded px-2 py-1 self-start transition-colors"
+          >
+            Reassign IDs
+          </button>
+        </div>
         <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
           <input
             type="checkbox"

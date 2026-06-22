@@ -1,10 +1,12 @@
 import type { Control, ControlType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
-function nextControlCode(controls: Control[]): number {
-  const codes = controls.filter(c => c.type === 'control').map(c => c.code)
-  if (codes.length === 0) return 31
-  return Math.max(...codes) + 1
+function nextControlCode(controls: Control[], skipCodes?: number[]): number {
+  const used = new Set(controls.filter(c => c.type === 'control').map(c => c.code))
+  const skip = new Set(skipCodes)
+  let code = 31
+  while (used.has(code) || skip.has(code)) code++
+  return code
 }
 
 function nextTypeCode(controls: Control[], type: ControlType): number {
@@ -19,7 +21,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       const { project } = get()
       if (!project) throw new Error('No project')
       let finalCode = code ?? 0
-      if (type === 'control' && !code) finalCode = nextControlCode(project.controls)
+      if (type === 'control' && !code) finalCode = nextControlCode(project.controls, project.skipCodes)
       if (type === 'start' && !code) finalCode = nextTypeCode(project.controls, 'start')
       if (type === 'finish' && !code) finalCode = nextTypeCode(project.controls, 'finish')
       const control: Control = { id: crypto.randomUUID(), type, code: finalCode, position }
@@ -47,7 +49,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       const orig = project.controls.find(c => c.id === controlId)
       if (!orig) throw new Error('Control not found')
       const code = orig.type === 'control'
-        ? nextControlCode(project.controls)
+        ? nextControlCode(project.controls, project.skipCodes)
         : nextTypeCode(project.controls, orig.type)
       const newControl: Control = { id: crypto.randomUUID(), type: orig.type, code, position: newPos }
       h.mutateProject(p => {
@@ -114,6 +116,26 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
         ;(c.description as any)[field] = value
         if (Object.values(c.description).every(v => v === undefined)) {
           c.description = undefined
+        }
+      })
+    },
+
+    updateSkipCodes: (codes: number[]) => {
+      h.mutateProject(p => {
+        if (codes.length > 0) p.skipCodes = codes
+        else delete p.skipCodes
+      })
+    },
+
+    reassignControlIds: () => {
+      h.mutateProject(p => {
+        const skip = new Set(p.skipCodes)
+        const regulars = p.controls.filter(c => c.type === 'control').sort((a, b) => a.code - b.code)
+        let code = 31
+        for (const ctrl of regulars) {
+          while (skip.has(code)) code++
+          ctrl.code = code
+          code++
         }
       })
     },

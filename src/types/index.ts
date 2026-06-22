@@ -292,12 +292,15 @@ export interface Project {
    *                  falls back to 'simulated' on the fast raster screen).
    */
   overprintMode?: OverprintMode
+  skipCodes?: number[]
   clueSheetFontSize?: number
   clueSheetHideSubmapRestart?: boolean
   clueSheetSplitSubmaps?: boolean
   labelSubmapStart?: boolean
   clueSheetOverlayColor?: string
   clueSheetSeparateColor?: string
+  allControlsMulticolor?: boolean
+  allControlsLinkId?: boolean
 }
 
 export type OverprintMode = 'simulated' | 'none' | 'below'
