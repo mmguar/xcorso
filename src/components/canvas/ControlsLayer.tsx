@@ -7,6 +7,7 @@ import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbo
 import { startTriangleVertices, exchangeTriangleVertices } from '../../lib/symbolGeometry'
 import type { SymbolDims } from '../../lib/symbolSpec'
 import { circleGapDashArray } from '../../lib/gapDash'
+import { assignControlColors, MULTICOLOR_PALETTE } from '../../lib/pdfExport'
 
 function gapsToDashArray(gaps: CircleGap[], circumference: number): { dashArray: string; dashOffset: number } | null {
   const dashes = circleGapDashArray(gaps, circumference)
@@ -210,6 +211,8 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const labelSubmapStart = useStore(s => s.project!.labelSubmapStart ?? false)
   const allCourses = useStore(s => s.project!.courses)
+  const multicolor = useStore(s => s.project!.allControlsMulticolor)
+  const linkId = useStore(s => s.project!.allControlsLinkId)
 
   const spec = resolveSpec(projectSpec, selectedCourse?.spec)
   const dims = getSymbolDims(spec)
@@ -256,6 +259,11 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     return ids
   }, [selectedCourse, allCourses])
 
+  const colorMap = useMemo(() => {
+    if (selectedCourse || !multicolor) return null
+    return assignControlColors(controls)
+  }, [selectedCourse, multicolor, controls])
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {controls.map(control => {
@@ -281,6 +289,8 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         } else if (isCourseMode) {
           color = '#ec4899'
           opacity = 0.7
+        } else if (colorMap) {
+          color = MULTICOLOR_PALETTE[colorMap.get(control.id) ?? 0]
         } else {
           color = '#a626ff'
         }
@@ -329,9 +339,8 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId
 
-        // Thin leader line from control centre to label anchor while the
-        // label itself is being dragged (editor chrome — never exported).
-        const leaderLine = control.id === draggingLabelControlId ? (() => {
+        const showLinkLine = (linkId && !isCourseMode) || control.id === draggingLabelControlId
+        const leaderLine = showLinkLine ? (() => {
           const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
           return (
             <line

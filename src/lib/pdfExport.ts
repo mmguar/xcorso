@@ -87,6 +87,8 @@ export interface PdfExportOptions {
   scaleOverrides?: Record<string, number>
   courseIds: string[]
   allControls?: boolean
+  allControlsMulticolor?: boolean
+  allControlsLinkId?: boolean
   descModes?: Record<string, DescMode>
   offsets?: Record<string, { x: number; y: number }>
   sheetPositions?: Record<string, { x: number; y: number }>
@@ -389,6 +391,51 @@ function allControlsBoundsMm(
   printScale: number,
 ): Bounds | null {
   return computeBounds(controls.map(c => mapToMm(c.position, map, printScale)))
+}
+
+// ponytail: greedy graph coloring by proximity — not optimal 4-color but good enough
+export const MULTICOLOR_PALETTE = ['#a626ff', '#d946a8', '#a31515', '#e6199e'] as const
+
+export function assignControlColors(controls: Control[]): Map<string, number> {
+  if (controls.length === 0) return new Map()
+  // Sort by nearest-neighbor distance so close controls get colored first
+  const idxByDist: number[] = []
+  const used = new Set<number>()
+  // Start from first control
+  let cur = 0
+  for (let step = 0; step < controls.length; step++) {
+    idxByDist.push(cur)
+    used.add(cur)
+    let bestDist = Infinity
+    let bestIdx = -1
+    for (let j = 0; j < controls.length; j++) {
+      if (used.has(j)) continue
+      const dx = controls[j].position.x - controls[cur].position.x
+      const dy = controls[j].position.y - controls[cur].position.y
+      const d = dx * dx + dy * dy
+      if (d < bestDist) { bestDist = d; bestIdx = j }
+    }
+    if (bestIdx >= 0) cur = bestIdx
+  }
+
+  const result = new Map<string, number>()
+  for (const idx of idxByDist) {
+    const neighbors: { dist: number; color: number }[] = []
+    for (const [otherId, otherColor] of result) {
+      const other = controls.find(c => c.id === otherId)!
+      const dx = controls[idx].position.x - other.position.x
+      const dy = controls[idx].position.y - other.position.y
+      neighbors.push({ dist: dx * dx + dy * dy, color: otherColor })
+    }
+    neighbors.sort((a, b) => a.dist - b.dist)
+    const blocked = new Set(neighbors.slice(0, 3).map(n => n.color))
+    let pick = 0
+    for (let c = 0; c < 4; c++) {
+      if (!blocked.has(c)) { pick = c; break }
+    }
+    result.set(controls[idx].id, pick)
+  }
+  return result
 }
 
 function pageDimsFor(pageSize: string, orientation: 'portrait' | 'landscape'): { w: number; h: number } {
@@ -1240,16 +1287,28 @@ export async function exportCoursePdf(
           const annColor = '#a626ff'
           const allCtrlSpec = resolveSpec(project.spec)
 
+          const colorMap = options.allControlsMulticolor ? assignControlColors(project.controls) : null
+
           overprintPass(doc, courseOverprint, () => {
             setColor(doc, annColor)
             drawAnnotationInk(doc, project.annotations, toPage, mapScale, allCtrlSpec)
 
-            setColor(doc, ctrlColor)
+            const acDims = getSymbolDims(allCtrlSpec)
+            const acSf = specScaleFactor(allCtrlSpec, acScale)
+
             for (const ctrl of project.controls) {
+              const cc = colorMap ? MULTICOLOR_PALETTE[colorMap.get(ctrl.id) ?? 0] : ctrlColor
+              setColor(doc, cc)
               const pos = toPage(ctrl.position)
               drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec, false, ctrl.gaps)
               const loMm = ctrl.labelOffset ? mapToMm(ctrl.labelOffset, project.map, acScale) : undefined
               drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec, loMm)
+
+              if (options.allControlsLinkId) {
+                const off = loMm ?? symbolLabelOffset(ctrl.type, acDims, acSf)
+                doc.setLineWidth(acDims.strokeW * acSf * 0.4)
+                doc.line(pos.x, pos.y, pos.x + off.x, pos.y + off.y)
+              }
             }
           })
           await embedTopColors(toPage, pw, ph)

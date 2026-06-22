@@ -299,6 +299,8 @@ export interface Project {
   labelSubmapStart?: boolean
   clueSheetOverlayColor?: string
   clueSheetSeparateColor?: string
+  allControlsMulticolor?: boolean
+  allControlsLinkId?: boolean
 }
 
 export type OverprintMode = 'simulated' | 'none' | 'below'
