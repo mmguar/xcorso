@@ -294,6 +294,9 @@ export interface Project {
   overprintMode?: OverprintMode
   clueSheetFontSize?: number
   clueSheetHideSubmapRestart?: boolean
+  labelSubmapStart?: boolean
+  clueSheetOverlayColor?: string
+  clueSheetSeparateColor?: string
 }
 
 export type OverprintMode = 'simulated' | 'none' | 'below'

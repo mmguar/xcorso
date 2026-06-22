@@ -102,11 +102,13 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
     const ctrl = controlMap.get(cc.controlId)
     if (!ctrl) continue
     if (ctrl.type === 'finish') {
-      finishRow = {
-        cc,
-        ctrl,
-        seq: 0,
-        legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+      if (!finishRow) {
+        finishRow = {
+          cc,
+          ctrl,
+          seq: 0,
+          legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
+        }
       }
       filteredIdx++
       continue
@@ -220,6 +222,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                         onModeChange: (mode) => setExchangeMode(course.id, row.cc.id, mode),
                         onSelectSubmap: selectSubmap,
                         selectedSubmapIndex: shownSubmapIndex,
+                        seqLabel: String(row.seq),
                       } : undefined}
                     />
                   )
@@ -257,6 +260,7 @@ interface ExchangeSeparatorProps {
   onModeChange: (mode: 'exchange' | 'flip') => void
   onSelectSubmap: (index: number | null) => void
   selectedSubmapIndex: number | null
+  seqLabel: string
 }
 
 function SortableDescRow({
@@ -314,7 +318,7 @@ function SortableDescRow({
       <tr ref={setNodeRef} style={style} className="group">
         <td
           className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
-          style={{ width: CELL, height: CELL }}
+          style={{ width: CELL, height: CELL, touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' } as React.CSSProperties}
           {...attributes}
           {...listeners}
         >
@@ -437,6 +441,7 @@ function SortableDescRow({
           />
           <RestartRow
             ctrl={ctrl}
+            seqLabel={exchangeSeparator.seqLabel}
             submapLabel={exchangeSeparator.nextSubmapLabel}
             submapIndex={exchangeSeparator.submapEndIdx + 1}
             onSelectSubmap={exchangeSeparator.onSelectSubmap}
@@ -497,6 +502,7 @@ function ExchangeRow({
 
 function RestartRow({
   ctrl,
+  seqLabel,
   submapLabel,
   submapIndex,
   onSelectSubmap,
@@ -504,16 +510,18 @@ function RestartRow({
   showExtraCol,
 }: {
   ctrl: Control
+  seqLabel: string
   submapLabel: string
   submapIndex: number
   onSelectSubmap: (index: number | null) => void
   selectedSubmapIndex: number | null
   showExtraCol: boolean
 }) {
+  const labelSubmapStart = useStore(s => s.project!.labelSubmapStart ?? false)
   return (
     <tr>
       <td className={`${BORDER} text-center font-bold`} style={{ width: CELL, height: CELL }}>
-        △
+        {labelSubmapStart ? seqLabel : '△'}
       </td>
       <td className={`${BORDER} text-center font-mono`} style={{ height: CELL }} />
       {columns.map(col => {

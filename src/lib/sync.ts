@@ -18,14 +18,16 @@ export async function fetchUser(): Promise<CloudUser | null> {
   } catch { return null }
 }
 
-export async function sendCode(email: string): Promise<boolean> {
+export async function sendCode(email: string, cfToken?: string): Promise<{ ok: boolean; throttled?: boolean; blocked?: boolean }> {
   const res = await fetch(`${API}/auth/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, cfToken }),
   })
-  return res.ok
+  if (res.status === 429) return { ok: false, throttled: true }
+  if (res.status === 403) return { ok: false, blocked: true }
+  return { ok: res.ok }
 }
 
 export async function verifyCode(email: string, code: string): Promise<CloudUser | null> {
@@ -87,6 +89,7 @@ export async function uploadProject(
   localMapHash: string | null,
   lastSyncedMapHash: string | null,
   syncVersion: number,
+  forceSnapshot?: boolean,
 ): Promise<SyncResult> {
   // Upload map if it changed
   let mapHash = localMapHash
@@ -108,6 +111,7 @@ export async function uploadProject(
     headers: {
       'Content-Type': 'application/json',
       ...(syncVersion > 0 ? { 'If-Match': String(syncVersion) } : {}),
+      ...(forceSnapshot ? { 'X-Snapshot': 'true' } : {}),
     },
     credentials: 'include',
     body: JSON.stringify(payload),
@@ -182,6 +186,83 @@ export async function deleteCloudProject(cloudId: string): Promise<boolean> {
     credentials: 'include',
   })
   return res.ok
+}
+
+// ── Sharing ──────────────────────────────────────────────────────────────────
+
+export type ShareRole = 'owner' | 'editor' | 'viewer'
+
+export interface ShareEntry {
+  userId: string
+  email: string
+  role: 'editor' | 'viewer'
+}
+
+export interface SharedProject {
+  projectId: string
+  ownerId: string
+  ownerEmail: string
+  role: 'editor' | 'viewer'
+  name: string
+  updatedAt: string
+}
+
+export async function addShare(cloudId: string, email: string, role: 'editor' | 'viewer'): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${API}/projects/${cloudId}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, role }),
+  })
+  if (!res.ok) {
+    const data = await res.json() as { error?: string }
+    return { ok: false, error: data.error ?? 'Failed to share' }
+  }
+  return { ok: true }
+}
+
+export async function removeShare(cloudId: string, userId: string): Promise<boolean> {
+  const res = await fetch(`${API}/projects/${cloudId}/share/${userId}`, { method: 'DELETE', credentials: 'include' })
+  return res.ok
+}
+
+export async function listShares(cloudId: string): Promise<{ shares: ShareEntry[]; role: ShareRole }> {
+  const res = await fetch(`${API}/projects/${cloudId}/share`, { credentials: 'include' })
+  if (!res.ok) return { shares: [], role: 'owner' }
+  return await res.json() as { shares: ShareEntry[]; role: ShareRole }
+}
+
+export async function fetchSharedProjects(): Promise<SharedProject[]> {
+  const res = await fetch(`${API}/shared`, { credentials: 'include' })
+  if (!res.ok) return []
+  const { projects } = await res.json() as { projects: SharedProject[] }
+  return projects
+}
+
+// ── Version history ──────────────────────────────────────────────────────────
+
+export interface VersionEntry {
+  version: number
+  timestamp: string
+  projectSizeBytes: number
+  editedBy?: string
+}
+
+export async function fetchHistory(cloudId: string): Promise<VersionEntry[]> {
+  const res = await fetch(`${API}/projects/${cloudId}/history`, { credentials: 'include' })
+  if (!res.ok) return []
+  const { history } = await res.json() as { history: VersionEntry[] }
+  return history
+}
+
+export async function restoreVersion(cloudId: string, version: number): Promise<number | null> {
+  const res = await fetch(`${API}/projects/${cloudId}/history/${version}/restore`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!res.ok) return null
+  const { version: newVersion } = await res.json() as { version: number }
+  return newVersion
 }
 
 // ── Sync state (per-project, stored in IDB alongside the project) ─────────

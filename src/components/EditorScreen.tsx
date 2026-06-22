@@ -1,8 +1,4 @@
-/**
- * Main editor screen — loads the map and renders the full editing UI.
- */
-
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import { useRenderTracker } from '../lib/perf'
 import { loadMap } from '../lib/mapLoader'
@@ -12,10 +8,71 @@ import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
 import { OverlaySettingsPanel, AnnotationSettingsPanel } from './panels/OverlaySettingsPanel'
 
+const shortcuts: [string, string][] = [
+  ['V', 'Select / Pan'],
+  ['S', 'Place Start'],
+  ['F', 'Place Finish'],
+  ['C', 'Place Control'],
+  ['G', 'Gap Tool'],
+  ['D', 'Delete Tool'],
+  ['M', 'Measure Scale'],
+  ['B', 'Forbidden Route'],
+  ['P', 'Crossing Point'],
+  ['O', 'Out of Bounds'],
+  ['K', 'Scale Bar'],
+  ['T', 'Text'],
+  ['N', 'North Arrow'],
+  ['I', 'Image'],
+  ['⌘Z', 'Undo'],
+  ['⌘Y', 'Redo'],
+  ['Del', 'Delete Selected'],
+  ['Esc', 'Deselect / Exit'],
+  ['?', 'This help'],
+]
+
+function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); e.stopPropagation(); onClose() }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl p-5 w-80" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">Keyboard shortcuts</h3>
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+          {shortcuts.map(([key, label]) => (
+            <div key={key} className="contents">
+              <kbd className="text-[11px] font-mono bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 text-center min-w-[2rem]">{key}</kbd>
+              <span className="text-xs text-gray-600 py-0.5">{label}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-400 mt-3">In course mode: <strong>G</strong> gap, <strong>B</strong> bend</p>
+      </div>
+    </div>
+  )
+}
+
 interface Props { onGoHome: () => void; onLogin: () => void }
 
 export function EditorScreen({ onGoHome, onLogin }: Props) {
   useRenderTracker('EditorScreen')
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const closeShortcuts = useCallback(() => setShowShortcuts(false), [])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === '?') setShowShortcuts(s => !s)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // Select primitives, not the project object — its reference changes on every
   // mutation (including per-pointermove drag updates), which would re-render
   // the entire app shell at pointer-event rate.
@@ -89,6 +146,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
         </div>
         <SidePanel />
       </div>
+      {showShortcuts && <ShortcutsOverlay onClose={closeShortcuts} />}
     </div>
   )
 }

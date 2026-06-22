@@ -5,7 +5,7 @@ import type {
   CourseLayout, SubmapLayout, LayoutElementPosition, LayoutDefaults, MapGeoref, OverprintMode,
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
-import type { CloudUser } from '../lib/sync'
+import type { CloudUser, VersionEntry, ShareRole } from '../lib/sync'
 
 export interface EditorState {
   activeTool: ActiveTool
@@ -53,11 +53,13 @@ export interface AppState {
   cloudUser: CloudUser | null
   syncStatus: SyncStatus
   syncConflict: SyncConflict | null
+  versionHistory: VersionEntry[]
+  projectRole: ShareRole
 }
 
 export interface AppActions {
   createProject: (name: string, mapConfig: Project['map'], mapData: ArrayBuffer, spec?: EventSpec) => void
-  loadProject: (project: Project, mapData: ArrayBuffer | null, id?: string) => void
+  loadProject: (project: Project, mapData: ArrayBuffer | null, id?: string, role?: ShareRole) => void
   updateProjectName: (name: string) => void
   updateProjectSpec: (spec: EventSpec) => void
 
@@ -97,6 +99,9 @@ export interface AppActions {
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateClueSheetFontSize: (size: number | undefined) => void
   updateClueSheetHideSubmapRestart: (hide: boolean) => void
+  updateClueSheetOverlayColor: (color: string | undefined) => void
+  updateClueSheetSeparateColor: (color: string | undefined) => void
+  updateLabelSubmapStart: (label: boolean) => void
   updateCourseSpec: (id: string, spec: EventSpec | undefined) => void
 
   setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
@@ -211,6 +216,9 @@ export interface AppActions {
 
   setCloudUser: (user: CloudUser | null) => void
   syncProject: () => Promise<void>
+  saveSnapshot: () => Promise<void>
+  fetchVersionHistory: () => Promise<void>
+  restoreVersion: (version: number) => Promise<void>
   resolveConflict: (keep: 'local' | 'remote') => Promise<void>
 
   undo: () => void

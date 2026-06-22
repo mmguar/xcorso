@@ -265,6 +265,18 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       h.mutateProject(p => { p.clueSheetHideSubmapRestart = hide || undefined })
     },
 
+    updateClueSheetOverlayColor: (color: string | undefined) => {
+      h.mutateProject(p => { p.clueSheetOverlayColor = color || undefined })
+    },
+
+    updateClueSheetSeparateColor: (color: string | undefined) => {
+      h.mutateProject(p => { p.clueSheetSeparateColor = color || undefined })
+    },
+
+    updateLabelSubmapStart: (label: boolean) => {
+      h.mutateProject(p => { p.labelSubmapStart = label || undefined })
+    },
+
     updateCourseSpec: (id: string, spec: EventSpec | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)

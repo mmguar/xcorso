@@ -7,6 +7,12 @@ import { formatDistance } from './distance'
 
 const DEFAULT_CELL = 7
 let CELL = DEFAULT_CELL
+let INK: [number, number, number] = [0, 0, 0]
+
+function setInkColor(hex?: string) {
+  if (!hex) { INK = [0, 0, 0]; return }
+  INK = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
+}
 const COLS = 8
 const LINE_W = 0.25
 const MARGIN_TOP = 15
@@ -119,8 +125,8 @@ function sv(svgVal: number, center: number): number {
 }
 
 function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
-  doc.setDrawColor(0, 0, 0)
-  doc.setFillColor(0, 0, 0)
+  doc.setDrawColor(...INK)
+  doc.setFillColor(...INK)
 
   // Filled paths
   if (sym.fills) {
@@ -197,7 +203,7 @@ function drawDimensionText(doc: jsPDF, text: string, cx: number, cy: number) {
   doc.setFont('helvetica', 'bold')
   const fontSize = scaledFont(text.length > 5 ? 4.5 : 5.5)
   doc.setFontSize(fontSize)
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   doc.text(text, cx, cy + fontSize * 0.12, { align: 'center' })
 }
 
@@ -239,7 +245,7 @@ function estimateDescColumnWidth(course: Course, controls: Control[]): number {
 
 function drawMergedDescriptionText(doc: jsPDF, text: string, x: number, y: number, w: number, h: number) {
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   const fs = scaledFont(DESC_FONT_SIZE)
   doc.setFontSize(fs)
   const maxW = w - DESC_PADDING * 2
@@ -259,7 +265,7 @@ function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
   const s = CELL * 0.45
   const h = s * Math.sqrt(3) / 2
   doc.setLineWidth(0.2)
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.moveTo(cx, cy - h * 0.6)
   doc.lineTo(cx + s / 2, cy + h * 0.4)
   doc.lineTo(cx - s / 2, cy + h * 0.4)
@@ -276,7 +282,7 @@ function drawFinishIofRow(
   finishType: FinishType,
   distM?: number,
 ) {
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
   doc.rect(gridX, y, GRID_W(), CELL, 'S')
 
@@ -293,7 +299,7 @@ function drawFinishIofRow(
   const hasLines = finishType !== 'navigate'
 
   doc.setLineWidth(sw)
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
 
   // Last control circle
   doc.circle(circleX, cy, circleR, 'S')
@@ -325,7 +331,7 @@ function drawFinishIofRow(
   if (distM != null) {
     doc.setFontSize(scaledFont(8))
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(0, 0, 0)
+    doc.setTextColor(...INK)
     doc.text(formatDistance(distM), midX, cy + 0.8, { align: 'center' })
   }
 
@@ -376,7 +382,7 @@ function drawFinishIofRow(
 // ── Draw IOF map flip row (15.3) ──────────────────────────────────────────
 
 function drawFlipRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
   doc.rect(gridX, y, gridW, CELL, 'S')
 
@@ -403,7 +409,7 @@ function drawFlipRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
   doc.rect(tx(-80.36), ty(-17.21), 134.92 * s, 66.97 * s, 'S')
 
   // Curved arrow (filled)
-  doc.setFillColor(0, 0, 0)
+  doc.setFillColor(...INK)
   doc.moveTo(tx(49.30), ty(11.02))
   doc.lineTo(tx(49.30), ty(17.92))
   doc.lineTo(tx(8.27), ty(2.82))
@@ -429,14 +435,14 @@ function drawSheetHeader(
   course: Course,
   distanceM?: number,
 ) {
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
 
   // Row 1: event name
   doc.rect(gridX, y, width, CELL, 'S')
   doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   doc.text(eventName, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
 
   // Row 2: course name | distance | climb — three equal columns
@@ -447,7 +453,7 @@ function drawSheetHeader(
   }
   doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   doc.text(course.name, gridX + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
 
   doc.setFont('helvetica', 'normal')
@@ -496,7 +502,7 @@ function drawControlRow(
   const desc: ControlDescription = ctrl.description ?? {}
   const isStart = ctrl.type === 'start' || asStart
 
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
 
   // Columns A and B always separate
@@ -511,7 +517,7 @@ function drawControlRow(
   } else {
     doc.setFontSize(scaledFont(10))
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(0, 0, 0)
+    doc.setTextColor(...INK)
     doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
   }
 
@@ -520,7 +526,7 @@ function drawControlRow(
   const bCy = y + CELL / 2
   doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   const code = defaultControlLabel(ctrl)
   if (!isStart) {
     doc.text(code, bCx, bCy + 1, { align: 'center' })
@@ -610,8 +616,10 @@ export function drawDescriptionSheetOverlay(
   seqOffset?: number,
   restartControlId?: string,
   cellSize?: number,
+  inkColor?: string,
 ) {
   setCellSize(cellSize)
+  setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
@@ -669,8 +677,10 @@ export function drawDescriptionSheetOverlayPart(
   seqOffset?: number,
   restartControlId?: string,
   cellSize?: number,
+  inkColor?: string,
 ) {
   setCellSize(cellSize)
+  setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
@@ -746,8 +756,10 @@ export function drawDescriptionSheet(
   seqOffset?: number,
   restartControlId?: string,
   cellSize?: number,
+  inkColor?: string,
 ) {
   setCellSize(cellSize)
+  setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
