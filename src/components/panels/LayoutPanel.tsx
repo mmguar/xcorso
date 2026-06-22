@@ -895,6 +895,8 @@ export function LayoutPanel() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [allControls, setAllControls] = useState(true)
+  const allControlsMulticolor = useStore(s => s.project!.allControlsMulticolor ?? false)
+  const allControlsLinkId = useStore(s => s.project!.allControlsLinkId ?? false)
   const [viewerExclusions, setViewerExclusions] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -934,6 +936,8 @@ export function LayoutPanel() {
         printScale: defaults.printScale,
         courseIds: includedCourses.map(c => c.id),
         allControls,
+        allControlsMulticolor: allControls && allControlsMulticolor,
+        allControlsLinkId: allControls && allControlsLinkId,
         descModes,
         mapOpacity: defaults.mapOpacity,
         mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
@@ -989,6 +993,18 @@ export function LayoutPanel() {
             <div className="w-3 h-3 rounded-full shrink-0 bg-orange-600" />
             <span className="text-sm font-medium text-gray-800 flex-1">All controls</span>
           </div>
+          {allControls && (
+            <div className="flex items-center gap-3 px-3 py-1.5 border-t border-gray-100 bg-gray-50">
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={allControlsMulticolor} onChange={e => useStore.setState(s => ({ project: s.project ? { ...s.project, allControlsMulticolor: e.target.checked || undefined } : s.project }))} className="accent-orange-600" />
+                Multicolor
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={allControlsLinkId} onChange={e => useStore.setState(s => ({ project: s.project ? { ...s.project, allControlsLinkId: e.target.checked || undefined } : s.project }))} className="accent-orange-600" />
+                Link ID
+              </label>
+            </div>
+          )}
         </div>
       )}
 
