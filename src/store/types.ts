@@ -99,6 +99,7 @@ export interface AppActions {
   updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => void
   updateClueSheetFontSize: (size: number | undefined) => void
   updateClueSheetHideSubmapRestart: (hide: boolean) => void
+  updateClueSheetSplitSubmaps: (split: boolean) => void
   updateClueSheetOverlayColor: (color: string | undefined) => void
   updateClueSheetSeparateColor: (color: string | undefined) => void
   updateLabelSubmapStart: (label: boolean) => void

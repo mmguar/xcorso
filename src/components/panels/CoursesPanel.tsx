@@ -49,12 +49,12 @@ function ClueSheetColorPicker({ label, value, onChange }: {
 function ClueSheetOptionsPanel() {
   const clueSheetFontSize = useStore(s => s.project!.clueSheetFontSize)
   const clueSheetHideSubmapRestart = useStore(s => s.project!.clueSheetHideSubmapRestart)
-  const labelSubmapStart = useStore(s => s.project!.labelSubmapStart ?? false)
+  const clueSheetSplitSubmaps = useStore(s => s.project!.clueSheetSplitSubmaps)
   const overlayColor = useStore(s => s.project!.clueSheetOverlayColor)
   const separateColor = useStore(s => s.project!.clueSheetSeparateColor)
   const updateClueSheetFontSize = useStore(s => s.updateClueSheetFontSize)
   const updateClueSheetHideSubmapRestart = useStore(s => s.updateClueSheetHideSubmapRestart)
-  const updateLabelSubmapStart = useStore(s => s.updateLabelSubmapStart)
+  const updateClueSheetSplitSubmaps = useStore(s => s.updateClueSheetSplitSubmaps)
   const updateOverlayColor = useStore(s => s.updateClueSheetOverlayColor)
   const updateSeparateColor = useStore(s => s.updateClueSheetSeparateColor)
 
@@ -84,11 +84,11 @@ function ClueSheetOptionsPanel() {
       <label className="flex items-center gap-2 text-xs text-gray-600 select-none cursor-pointer">
         <input
           type="checkbox"
-          checked={labelSubmapStart}
-          onChange={e => updateLabelSubmapStart(e.target.checked)}
+          checked={clueSheetSplitSubmaps ?? false}
+          onChange={e => updateClueSheetSplitSubmaps(e.target.checked)}
           className="accent-orange-600"
         />
-        Label first control on submaps
+        Split clue sheets for submaps
       </label>
       <ClueSheetColorPicker label="On-map" value={overlayColor} onChange={updateOverlayColor} />
       <ClueSheetColorPicker label="Separate" value={separateColor} onChange={updateSeparateColor} />

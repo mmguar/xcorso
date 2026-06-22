@@ -262,7 +262,17 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     },
 
     updateClueSheetHideSubmapRestart: (hide: boolean) => {
-      h.mutateProject(p => { p.clueSheetHideSubmapRestart = hide || undefined })
+      h.mutateProject(p => {
+        if (hide) p.clueSheetHideSubmapRestart = true
+        else delete p.clueSheetHideSubmapRestart
+      })
+    },
+
+    updateClueSheetSplitSubmaps: (split: boolean) => {
+      h.mutateProject(p => {
+        if (split) p.clueSheetSplitSubmaps = true
+        else delete p.clueSheetSplitSubmaps
+      })
     },
 
     updateClueSheetOverlayColor: (color: string | undefined) => {
@@ -274,7 +284,10 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     },
 
     updateLabelSubmapStart: (label: boolean) => {
-      h.mutateProject(p => { p.labelSubmapStart = label || undefined })
+      h.mutateProject(p => {
+        if (label) p.labelSubmapStart = true
+        else delete p.labelSubmapStart
+      })
     },
 
     updateCourseSpec: (id: string, spec: EventSpec | undefined) => {

@@ -5,7 +5,7 @@ import type { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation, OverprintMode } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
-import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
+import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
@@ -1263,6 +1263,21 @@ export async function exportCoursePdf(
     }
   }
 
+  const pendingSheets: Array<{
+    course: Course
+    distance: number
+    textDescriptions?: boolean
+    legDistances?: number[]
+    trailingFlip: boolean
+    trailingExchange: boolean
+    eventName: string
+    seqOffset: number
+    restartControlId?: string
+    cellSize?: number
+    inkColor?: string
+    inlineExchanges?: Map<string, 'exchange' | 'flip'>
+  }> = []
+
   for (const course of courses) {
     const oKey = optionKey(course)
     const origCourse = project.courses.find(c => c.id === (course._parentId ?? course.id))
@@ -1292,10 +1307,9 @@ export async function exportCoursePdf(
         }
         if (project.clueSheetHideSubmapRestart) {
           clueSheetControls = submap.controls.slice(1)
-        } else if (!project.labelSubmapStart) {
-          const firstCtrl = cMap.get(submap.controls[0].controlId)
-          if (firstCtrl) restartControlId = firstCtrl.id
         }
+        const firstCtrl = cMap.get(submap.controls[0].controlId)
+        if (firstCtrl) restartControlId = firstCtrl.id
       }
 
       const pageCourse = hasSubmaps
@@ -1314,10 +1328,13 @@ export async function exportCoursePdf(
       const cPrintableH = cph - 2 * MARGIN
 
       let trailingFlip = false
+      let trailingExchange = false
       if (hasSubmaps && submap.index < submaps.length - 1) {
         const lastCc = submap.controls[submap.controls.length - 1]
         if (lastCc?.exchangeMode === 'flip') {
           trailingFlip = true
+        } else if (lastCc?.exchangeMode === 'exchange') {
+          trailingExchange = true
         }
       }
 
@@ -1400,7 +1417,7 @@ export async function exportCoursePdf(
             const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
             drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange, ctrl.gaps)
             const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
-            if (!isSubmapStart && ctrl.type === 'control') {
+            if (ctrl.type === 'control' && (!isSubmapStart || project.labelSubmapStart)) {
               const lo = cc.labelOffset ?? ctrl.labelOffset
               const loMm = lo ? mapToMm(lo, project.map, courseScale) : undefined
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
@@ -1456,12 +1473,12 @@ export async function exportCoursePdf(
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
-                drawDescriptionSheetOverlayPart(doc, clueSheetCourse, project.controls, partPos.x, partPos.y, pi, breaks, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor)
+                drawDescriptionSheetOverlayPart(doc, clueSheetCourse, project.controls, partPos.x, partPos.y, pi, breaks, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor, trailingExchange)
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? sLayout?.clueSheet ?? { x: MARGIN, y: MARGIN }
               if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
-                drawDescriptionSheetOverlay(doc, clueSheetCourse, project.controls, sheetPos.x, sheetPos.y, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor)
+                drawDescriptionSheetOverlay(doc, clueSheetCourse, project.controls, sheetPos.x, sheetPos.y, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor, trailingExchange)
               }
             }
           }
@@ -1469,12 +1486,63 @@ export async function exportCoursePdf(
         }
       }
 
-      if ((descMode === 'separate' || descMode === 'both') && clueSheetCourse.controls.length > 0) {
-        doc.addPage([cpw, cph], cOrientFlag)
-        pageIndex++
+      if ((descMode === 'separate' || descMode === 'both') && clueSheetCourse.controls.length > 0 && (!hasSubmaps || project.clueSheetSplitSubmaps)) {
         const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
         const sheetTotal = hasSubmaps ? fullCourseDistance : resolveCourseLength(course, dist)
-        drawDescriptionSheet(doc, clueSheetCourse, project.controls, cpw, cph, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetSeparateColor)
+        pendingSheets.push({ course: clueSheetCourse, distance: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip, trailingExchange, eventName: project.meta.name, seqOffset, restartControlId, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor })
+      }
+    }
+
+    if (hasSubmaps && !project.clueSheetSplitSubmaps && (descMode === 'separate' || descMode === 'both') && course.controls.length > 0) {
+      const inlineExchanges = new Map<string, 'exchange' | 'flip'>()
+      for (const cc of course.controls) {
+        if (cc.exchangeMode) {
+          const ctrl = controlsById(project.controls).get(cc.controlId)
+          if (ctrl) inlineExchanges.set(ctrl.id, cc.exchangeMode)
+        }
+      }
+      const dist = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
+      const sheetTotal = resolveCourseLength(course, dist)
+      pendingSheets.push({ course, distance: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip: false, trailingExchange: false, eventName: project.meta.name, seqOffset: 0, restartControlId: undefined, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor, inlineExchanges })
+    }
+  }
+
+  // Tile clue sheets at the end — fill each page with as many copies as fit
+  const TILE_GAP = 3
+  for (const s of pendingSheets) {
+    const tilePageBase = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4
+    const tpw = options.orientation === 'landscape' ? tilePageBase.h : tilePageBase.w
+    const tph = options.orientation === 'landscape' ? tilePageBase.w : tilePageBase.h
+    const tOrient = options.orientation === 'landscape' ? 'l' : 'p'
+
+    const extraRows = s.inlineExchanges?.size ?? 0
+    const size = descriptionSheetSize(s.course, project.controls, s.trailingFlip || s.trailingExchange, s.cellSize, extraRows)
+
+    let pw = tpw, ph = tph, po: 'l' | 'p' = tOrient
+    if (size.height > ph - 2 * TILE_GAP && size.height <= pw - 2 * TILE_GAP) {
+      pw = tph; ph = tpw; po = tOrient === 'l' ? 'p' : 'l'
+    }
+
+    if (size.height > ph - 2 * TILE_GAP) {
+      doc.addPage([pw, ph], po)
+      pageIndex++
+      drawDescriptionSheet(doc, s.course, project.controls, pw, ph, s.distance, s.textDescriptions, s.legDistances, s.trailingFlip, s.eventName, s.seqOffset, s.restartControlId, s.cellSize, s.inkColor, s.trailingExchange, s.inlineExchanges)
+      continue
+    }
+
+    const cols = Math.max(1, Math.floor((pw - TILE_GAP) / (size.width + TILE_GAP)))
+    const rows = Math.max(1, Math.floor((ph - TILE_GAP) / (size.height + TILE_GAP)))
+    const startX = (pw - cols * size.width - (cols - 1) * TILE_GAP) / 2
+    const startY = (ph - rows * size.height - (rows - 1) * TILE_GAP) / 2
+
+    doc.addPage([pw, ph], po)
+    pageIndex++
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = startX + c * (size.width + TILE_GAP)
+        const y = startY + r * (size.height + TILE_GAP)
+        drawDescriptionSheetOverlay(doc, s.course, project.controls, x, y, s.distance, s.textDescriptions, s.legDistances, s.trailingFlip, s.eventName, s.seqOffset, s.restartControlId, s.cellSize, s.inkColor, s.trailingExchange, s.inlineExchanges)
       }
     }
   }

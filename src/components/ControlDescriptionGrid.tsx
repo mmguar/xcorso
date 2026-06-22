@@ -464,7 +464,7 @@ function ExchangeRow({
   showExtraCol: boolean
 }) {
   return (
-    <tr>
+    <tr className="group">
       <td colSpan={8} className={`${BORDER} relative`} style={{ height: CELL, padding: 0 }}>
         <div className="flex items-center justify-center h-full gap-2 ml-3">
           {exchangeMode === 'flip' ? (
@@ -483,12 +483,12 @@ function ExchangeRow({
               />
             </svg>
           ) : (
-            <span className="text-[10px] font-bold tracking-wider text-gray-600">EXCHANGE</span>
+            <ExchangeRowSvg />
           )}
           <select
             value={exchangeMode}
             onChange={e => onModeChange(e.target.value as 'exchange' | 'flip')}
-            className="text-[10px] border border-gray-300 rounded px-1 py-0.5 bg-white"
+            className="text-[10px] border border-gray-300 rounded px-1 py-0.5 bg-white opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <option value="exchange">Exchange</option>
             <option value="flip">Flip</option>
@@ -497,6 +497,58 @@ function ExchangeRow({
       </td>
       {showExtraCol && <td />}
     </tr>
+  )
+}
+
+function ExchangeRowSvg() {
+  const W = 256
+  const CY = 18
+  const sw = 1.5
+  const circleR = 9
+  const circleX = 18
+  const triX = W - 18
+  const triR = 10
+
+  const contentLeft = circleX + circleR + 3
+  const contentRight = triX - triR - 3
+  const midX = (contentLeft + contentRight) / 2
+
+  const chevronW = 5
+  const chevronH = 8
+  const rightChevronStart = contentRight - chevronW
+
+  const dashes = 3
+  const dashGapRatio = 1.8
+  const textWidth = 38
+  const textLeft = midX - textWidth / 2
+  const textRight = midX + textWidth / 2
+
+  const leftTotal = textLeft - 2 - contentLeft
+  const leftDashLen = leftTotal / (dashes + (dashes - 1) / dashGapRatio)
+  const leftGapLen = leftDashLen / dashGapRatio
+
+  const rightTotal = rightChevronStart - 2 - (textRight + 2)
+  const rightDashLen = rightTotal / (dashes + (dashes - 1) / dashGapRatio)
+  const rightGapLen = rightDashLen / dashGapRatio
+
+  return (
+    <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+      <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
+      {Array.from({ length: dashes }, (_, i) => {
+        const x1 = contentLeft + i * (leftDashLen + leftGapLen)
+        return <line key={`ld${i}`} x1={x1} y1={CY} x2={x1 + leftDashLen} y2={CY} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      })}
+      <text x={midX} y={CY + 1} textAnchor="middle" dominantBaseline="central" fontSize="11" fontFamily="sans-serif">0 m</text>
+      {Array.from({ length: dashes }, (_, i) => {
+        const x1 = textRight + 2 + i * (rightDashLen + rightGapLen)
+        return <line key={`rd${i}`} x1={x1} y1={CY} x2={x1 + rightDashLen} y2={CY} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+      })}
+      <Chevron x={rightChevronStart} cy={CY} w={chevronW} h={chevronH} direction=">" sw={sw} />
+      <polygon
+        points={`${triX},${CY - triR} ${triX + triR * 0.866},${CY + triR * 0.5} ${triX - triR * 0.866},${CY + triR * 0.5}`}
+        fill="none" stroke="black" strokeWidth={sw} strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
