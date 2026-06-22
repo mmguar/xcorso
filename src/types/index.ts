@@ -292,6 +292,7 @@ export interface Project {
    *                  falls back to 'simulated' on the fast raster screen).
    */
   overprintMode?: OverprintMode
+  skipCodes?: number[]
   clueSheetFontSize?: number
   clueSheetHideSubmapRestart?: boolean
   clueSheetSplitSubmaps?: boolean
