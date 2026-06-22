@@ -7,6 +7,12 @@ import { formatDistance } from './distance'
 
 const DEFAULT_CELL = 7
 let CELL = DEFAULT_CELL
+let INK: [number, number, number] = [0, 0, 0]
+
+function setInkColor(hex?: string) {
+  if (!hex) { INK = [0, 0, 0]; return }
+  INK = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
+}
 const COLS = 8
 const LINE_W = 0.25
 const MARGIN_TOP = 15
@@ -119,8 +125,8 @@ function sv(svgVal: number, center: number): number {
 }
 
 function drawIofSymbol(doc: jsPDF, sym: SymbolDef, cx: number, cy: number) {
-  doc.setDrawColor(0, 0, 0)
-  doc.setFillColor(0, 0, 0)
+  doc.setDrawColor(...INK)
+  doc.setFillColor(...INK)
 
   // Filled paths
   if (sym.fills) {
@@ -197,7 +203,7 @@ function drawDimensionText(doc: jsPDF, text: string, cx: number, cy: number) {
   doc.setFont('helvetica', 'bold')
   const fontSize = scaledFont(text.length > 5 ? 4.5 : 5.5)
   doc.setFontSize(fontSize)
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   doc.text(text, cx, cy + fontSize * 0.12, { align: 'center' })
 }
 
@@ -239,7 +245,7 @@ function estimateDescColumnWidth(course: Course, controls: Control[]): number {
 
 function drawMergedDescriptionText(doc: jsPDF, text: string, x: number, y: number, w: number, h: number) {
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   const fs = scaledFont(DESC_FONT_SIZE)
   doc.setFontSize(fs)
   const maxW = w - DESC_PADDING * 2
@@ -259,7 +265,7 @@ function drawStartSymbol(doc: jsPDF, cx: number, cy: number) {
   const s = CELL * 0.45
   const h = s * Math.sqrt(3) / 2
   doc.setLineWidth(0.2)
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.moveTo(cx, cy - h * 0.6)
   doc.lineTo(cx + s / 2, cy + h * 0.4)
   doc.lineTo(cx - s / 2, cy + h * 0.4)
@@ -276,7 +282,7 @@ function drawFinishIofRow(
   finishType: FinishType,
   distM?: number,
 ) {
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
   doc.rect(gridX, y, GRID_W(), CELL, 'S')
 
@@ -293,7 +299,7 @@ function drawFinishIofRow(
   const hasLines = finishType !== 'navigate'
 
   doc.setLineWidth(sw)
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
 
   // Last control circle
   doc.circle(circleX, cy, circleR, 'S')
@@ -325,7 +331,7 @@ function drawFinishIofRow(
   if (distM != null) {
     doc.setFontSize(scaledFont(8))
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(0, 0, 0)
+    doc.setTextColor(...INK)
     doc.text(formatDistance(distM), midX, cy + 0.8, { align: 'center' })
   }
 
@@ -373,10 +379,81 @@ function drawFinishIofRow(
   }
 }
 
+function drawExchangeRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
+  doc.setDrawColor(...INK)
+  doc.setLineWidth(LINE_W)
+  doc.rect(gridX, y, gridW, CELL, 'S')
+
+  const cy = y + CELL / 2
+  const circleX = gridX + CELL * 0.55
+  const triCx = gridX + gridW - CELL * 0.55
+  const midX = gridX + gridW / 2
+  const circleR = CELL * 0.28
+  const triR = CELL * 0.30
+  const sw = 0.2
+  const chevronW = CELL * 0.14
+  const chevronH = circleR
+
+  doc.setLineWidth(sw)
+  doc.setDrawColor(...INK)
+
+  // Last control circle
+  doc.circle(circleX, cy, circleR, 'S')
+
+  // Triangle (start symbol)
+  const triTop = cy - triR
+  const triBaseY = cy + triR * 0.5
+  const triHalfW = triR * 0.866
+  doc.triangle(triCx, triTop, triCx + triHalfW, triBaseY, triCx - triHalfW, triBaseY, 'S')
+
+  const contentLeft = circleX + circleR + 0.5
+  const contentRight = triCx - triHalfW - 0.5
+
+  // Right chevron
+  const chevronTipX = contentRight
+  const chevronBackX = chevronTipX - chevronW
+  doc.setLineCap(1)
+  doc.line(chevronBackX, cy - chevronH, chevronTipX, cy)
+  doc.line(chevronTipX, cy, chevronBackX, cy + chevronH)
+
+  // Distance text: 0 m
+  doc.setFontSize(scaledFont(8))
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...INK)
+  doc.text(formatDistance(0), midX, cy + 0.8, { align: 'center' })
+
+  // Dashes
+  const dashCount = 3
+  const dashGapRatio = 1.8
+  const textHalfW = CELL * 0.55
+
+  const leftStart = contentLeft
+  const leftEnd = midX - textHalfW - 0.3
+  const leftTotal = leftEnd - leftStart
+  const leftDashLen = leftTotal / (dashCount + (dashCount - 1) / dashGapRatio)
+  const leftGapLen = leftDashLen / dashGapRatio
+
+  for (let i = 0; i < dashCount; i++) {
+    const x1 = leftStart + i * (leftDashLen + leftGapLen)
+    doc.line(x1, cy, x1 + leftDashLen, cy)
+  }
+
+  const rightStart = midX + textHalfW + 0.3
+  const rightEnd = contentRight - chevronW - 0.3
+  const rightTotal = rightEnd - rightStart
+  const rightDashLen = rightTotal / (dashCount + (dashCount - 1) / dashGapRatio)
+  const rightGapLen = rightDashLen / dashGapRatio
+
+  for (let i = 0; i < dashCount; i++) {
+    const x1 = rightStart + i * (rightDashLen + rightGapLen)
+    doc.line(x1, cy, x1 + rightDashLen, cy)
+  }
+}
+
 // ── Draw IOF map flip row (15.3) ──────────────────────────────────────────
 
 function drawFlipRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
   doc.rect(gridX, y, gridW, CELL, 'S')
 
@@ -403,7 +480,7 @@ function drawFlipRow(doc: jsPDF, gridX: number, y: number, gridW: number) {
   doc.rect(tx(-80.36), ty(-17.21), 134.92 * s, 66.97 * s, 'S')
 
   // Curved arrow (filled)
-  doc.setFillColor(0, 0, 0)
+  doc.setFillColor(...INK)
   doc.moveTo(tx(49.30), ty(11.02))
   doc.lineTo(tx(49.30), ty(17.92))
   doc.lineTo(tx(8.27), ty(2.82))
@@ -429,14 +506,14 @@ function drawSheetHeader(
   course: Course,
   distanceM?: number,
 ) {
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
 
   // Row 1: event name
   doc.rect(gridX, y, width, CELL, 'S')
   doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   doc.text(eventName, gridX + width / 2, y + CELL / 2 + 1, { align: 'center' })
 
   // Row 2: course name | distance | climb — three equal columns
@@ -447,7 +524,7 @@ function drawSheetHeader(
   }
   doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   doc.text(course.name, gridX + colW / 2, row2Y + CELL / 2 + 1, { align: 'center' })
 
   doc.setFont('helvetica', 'normal')
@@ -496,7 +573,7 @@ function drawControlRow(
   const desc: ControlDescription = ctrl.description ?? {}
   const isStart = ctrl.type === 'start' || asStart
 
-  doc.setDrawColor(0, 0, 0)
+  doc.setDrawColor(...INK)
   doc.setLineWidth(LINE_W)
 
   // Columns A and B always separate
@@ -511,7 +588,7 @@ function drawControlRow(
   } else {
     doc.setFontSize(scaledFont(10))
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(0, 0, 0)
+    doc.setTextColor(...INK)
     doc.text(String(seq), aCx, aCy + 1.2, { align: 'center' })
   }
 
@@ -520,7 +597,7 @@ function drawControlRow(
   const bCy = y + CELL / 2
   doc.setFontSize(scaledFont(8))
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(0, 0, 0)
+  doc.setTextColor(...INK)
   const code = defaultControlLabel(ctrl)
   if (!isStart) {
     doc.text(code, bCx, bCy + 1, { align: 'center' })
@@ -556,9 +633,10 @@ export function descriptionSheetSize(
   controls: Control[],
   trailingFlip?: boolean,
   cellSize?: number,
+  extraRows?: number,
 ): { width: number; height: number } {
   setCellSize(cellSize)
-  const rowCount = resolveControls(course, controls).length + (trailingFlip ? 1 : 0)
+  const rowCount = resolveControls(course, controls).length + (trailingFlip ? 1 : 0) + (extraRows ?? 0)
   if (rowCount === 0) return { width: 0, height: 0 }
   const height = HEADER_H() + rowCount * CELL
   const width = sheetWidth(course, controls)
@@ -610,12 +688,16 @@ export function drawDescriptionSheetOverlay(
   seqOffset?: number,
   restartControlId?: string,
   cellSize?: number,
+  inkColor?: string,
+  trailingExchange?: boolean,
+  inlineExchanges?: Map<string, 'exchange' | 'flip'>,
 ) {
   setCellSize(cellSize)
+  setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
-  const { width, height } = descriptionSheetSize(course, controls, trailingFlip, cellSize)
+  const { width, height } = descriptionSheetSize(course, controls, trailingFlip || trailingExchange, cellSize, inlineExchanges?.size)
   const descW = width - 2 * CELL
 
   // White background
@@ -640,6 +722,13 @@ export function drawDescriptionSheetOverlay(
     if (ctrl.type === 'control' && !asStart) seq++
     drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions, asStart)
     y += CELL
+
+    const inlineMode = inlineExchanges?.get(ctrl.id)
+    if (inlineMode) {
+      if (inlineMode === 'flip') drawFlipRow(doc, gridX, y, width)
+      else drawExchangeRow(doc, gridX, y, width)
+      y += CELL
+    }
   }
 
   // Finish row (IOF 16.1/16.2/16.3)
@@ -650,6 +739,8 @@ export function drawDescriptionSheetOverlay(
 
   if (trailingFlip) {
     drawFlipRow(doc, gridX, y, width)
+  } else if (trailingExchange) {
+    drawExchangeRow(doc, gridX, y, width)
   }
 }
 
@@ -669,8 +760,11 @@ export function drawDescriptionSheetOverlayPart(
   seqOffset?: number,
   restartControlId?: string,
   cellSize?: number,
+  inkColor?: string,
+  trailingExchange?: boolean,
 ) {
   setCellSize(cellSize)
+  setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
@@ -690,7 +784,8 @@ export function drawDescriptionSheetOverlayPart(
   const nonFinish = partControls.filter(c => c.type !== 'finish')
   const finish = partControls.find(c => c.type === 'finish')
 
-  const rowCount = partControls.length + (isLastPart && trailingFlip ? 1 : 0)
+  const hasTrailing = isLastPart && (trailingFlip || trailingExchange)
+  const rowCount = partControls.length + (hasTrailing ? 1 : 0)
   const headerH = isFirstPart ? HEADER_H() : 0
   const height = headerH + rowCount * CELL
 
@@ -727,6 +822,8 @@ export function drawDescriptionSheetOverlayPart(
 
   if (isLastPart && trailingFlip) {
     drawFlipRow(doc, gridX, y, fullWidth)
+  } else if (isLastPart && trailingExchange) {
+    drawExchangeRow(doc, gridX, y, fullWidth)
   }
 }
 
@@ -746,8 +843,12 @@ export function drawDescriptionSheet(
   seqOffset?: number,
   restartControlId?: string,
   cellSize?: number,
+  inkColor?: string,
+  trailingExchange?: boolean,
+  inlineExchanges?: Map<string, 'exchange' | 'flip'>,
 ) {
   setCellSize(cellSize)
+  setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
   if (resolved.length === 0) return
 
@@ -771,6 +872,13 @@ export function drawDescriptionSheet(
     drawHeader()
   }
 
+  function nextRow() {
+    if (rowOnPage >= maxRows) {
+      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
+      startPage()
+    }
+  }
+
   const nonFinish = resolved.filter(c => c.type !== 'finish')
   const finish = resolved.find(c => c.type === 'finish')
   const finishIdx = resolved.findIndex(c => c.type === 'finish')
@@ -778,34 +886,35 @@ export function drawDescriptionSheet(
   startPage()
 
   for (const ctrl of nonFinish) {
-    if (rowOnPage >= maxRows) {
-      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
-      startPage()
-    }
+    nextRow()
 
     const asStart = ctrl.id === restartControlId
     if (ctrl.type === 'control' && !asStart) seq++
     drawControlRow(doc, ctrl, gridX, y, seq, descW, textDescriptions, asStart)
     y += CELL
     rowOnPage++
+
+    const inlineMode = inlineExchanges?.get(ctrl.id)
+    if (inlineMode) {
+      nextRow()
+      if (inlineMode === 'flip') drawFlipRow(doc, gridX, y, gridW)
+      else drawExchangeRow(doc, gridX, y, gridW)
+      y += CELL
+      rowOnPage++
+    }
   }
 
   // Finish row (IOF 16.1/16.2/16.3)
   if (finish) {
-    if (rowOnPage >= maxRows) {
-      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
-      startPage()
-    }
+    nextRow()
     drawFinishIofRow(doc, gridX, y, course.finishType ?? 'navigate', finishLegDistance(finishIdx, legDistances))
     y += CELL
     rowOnPage++
   }
 
-  if (trailingFlip) {
-    if (rowOnPage >= maxRows) {
-      doc.addPage([pageW, pageH], pageW > pageH ? 'l' : 'p')
-      startPage()
-    }
-    drawFlipRow(doc, gridX, y, gridW)
+  if (trailingFlip || trailingExchange) {
+    nextRow()
+    if (trailingFlip) drawFlipRow(doc, gridX, y, gridW)
+    else drawExchangeRow(doc, gridX, y, gridW)
   }
 }

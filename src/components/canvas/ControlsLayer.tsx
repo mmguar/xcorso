@@ -208,6 +208,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const appearance = useStore(s => s.editor.appearance)
   const projectSpec = useStore(s => s.project!.spec)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
+  const labelSubmapStart = useStore(s => s.project!.labelSubmapStart ?? false)
   const allCourses = useStore(s => s.project!.courses)
 
   const spec = resolveSpec(projectSpec, selectedCourse?.spec)
@@ -294,7 +295,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
         const cc = ccByControlId?.get(control.id)
 
-        if (submapInfo && cc?.exchangeMode && control.id === submapInfo.firstCcId) {
+        if (submapInfo && cc?.exchangeMode && control.id === submapInfo.firstCcId && !labelSubmapStart) {
           label = ''
         }
 

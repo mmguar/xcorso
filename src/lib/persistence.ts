@@ -111,7 +111,12 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 export async function saveProject(id: string, project: Project, mapFileData: ArrayBuffer | null): Promise<void> {
   const db = await openDB()
   const tx = db.transaction([PROJECTS_STORE, MAPS_STORE], 'readwrite')
-  tx.objectStore(PROJECTS_STORE).put({ project }, id)
+  const store = tx.objectStore(PROJECTS_STORE)
+  const req = store.get(id)
+  req.onsuccess = () => {
+    const existing = req.result as { sync?: SyncMeta } | undefined
+    store.put(existing?.sync ? { project, sync: existing.sync } : { project }, id)
+  }
   tx.objectStore(MAPS_STORE).put(mapFileData, id)
   return txDone(db, tx)
 }
@@ -119,7 +124,12 @@ export async function saveProject(id: string, project: Project, mapFileData: Arr
 async function saveProjectOnly(id: string, project: Project): Promise<void> {
   const db = await openDB()
   const tx = db.transaction(PROJECTS_STORE, 'readwrite')
-  tx.objectStore(PROJECTS_STORE).put({ project }, id)
+  const store = tx.objectStore(PROJECTS_STORE)
+  const req = store.get(id)
+  req.onsuccess = () => {
+    const existing = req.result as { sync?: SyncMeta } | undefined
+    store.put(existing?.sync ? { project, sync: existing.sync } : { project }, id)
+  }
   return txDone(db, tx)
 }
 

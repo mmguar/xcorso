@@ -16,4 +16,4 @@ id = "a2fff06e513a4e1f9fd6e64484987825"
 
 [vars]
 RESEND_FROM = "noreply@xcorso.it"
-# RESEND_API_KEY and JWT_SECRET: set via `wrangler secret put`
+# RESEND_API_KEY, JWT_SECRET, TURNSTILE_SECRET: set via `wrangler secret put`

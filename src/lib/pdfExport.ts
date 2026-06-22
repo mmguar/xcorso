@@ -5,7 +5,7 @@ import type { jsPDF } from 'jspdf'
 import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation, OverprintMode } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
-import { drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
+import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
@@ -297,8 +297,11 @@ async function rasterizeBitmap(loadedMap: LoadedMap, opacity: number): Promise<s
 /**
  * svg2pdf resolves inline `style` blocks via the browser selector engine. Running it on SVG
  * attached to the main document can leave engine state that breaks fills on a later export.
- * A one-off iframe document matches “open file then export” every time.
+ * A reusable iframe isolates each svg2pdf call from the main document.
  */
+// ponytail: one iframe reused across pages instead of create/destroy per page
+let sharedIframe: HTMLIFrameElement | null = null
+
 async function svg2pdfInIsolatedDocument(
   svg: SVGElement,
   pdf: jsPDF,
@@ -308,33 +311,36 @@ async function svg2pdfInIsolatedDocument(
   h: number,
 ): Promise<void> {
   const markup = new XMLSerializer().serializeToString(svg)
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('title', 'pdf map svg')
-  iframe.setAttribute('aria-hidden', 'true')
-  iframe.setAttribute('sandbox', 'allow-same-origin')
-  iframe.style.cssText =
-    'position:fixed;left:-10000px;top:0;width:10px;height:10px;border:0;opacity:0;pointer-events:none'
-  document.body.appendChild(iframe)
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const ms = 10_000
-      const to = window.setTimeout(() => reject(new Error('PDF SVG iframe load timeout')), ms)
-      iframe.onload = () => {
-        window.clearTimeout(to)
-        resolve()
-      }
-      iframe.srcdoc =
-        '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">' +
-        markup +
-        '</body></html>'
-    })
-    const idoc = iframe.contentDocument
-    const mounted = idoc?.body?.querySelector('svg')
-    if (!mounted) throw new Error('PDF SVG iframe: no root <svg>')
-    await pdf.svg(mounted as SVGElement, { x, y, width: w, height: h })
-  } finally {
-    iframe.remove()
+  if (!sharedIframe || !sharedIframe.isConnected) {
+    sharedIframe = document.createElement('iframe')
+    sharedIframe.setAttribute('title', 'pdf map svg')
+    sharedIframe.setAttribute('aria-hidden', 'true')
+    sharedIframe.setAttribute('sandbox', 'allow-same-origin')
+    sharedIframe.style.cssText =
+      'position:fixed;left:-10000px;top:0;width:10px;height:10px;border:0;opacity:0;pointer-events:none'
+    document.body.appendChild(sharedIframe)
   }
+  const iframe = sharedIframe
+  await new Promise<void>((resolve, reject) => {
+    const ms = 10_000
+    const to = window.setTimeout(() => reject(new Error('PDF SVG iframe load timeout')), ms)
+    iframe.onload = () => {
+      window.clearTimeout(to)
+      resolve()
+    }
+    iframe.srcdoc =
+      '<!DOCTYPE html><html><head><meta charset=”utf-8”></head><body style=”margin:0”>' +
+      markup +
+      '</body></html>'
+  })
+  const idoc = iframe.contentDocument
+  const mounted = idoc?.body?.querySelector('svg')
+  if (!mounted) throw new Error('PDF SVG iframe: no root <svg>')
+  await pdf.svg(mounted as SVGElement, { x, y, width: w, height: h })
+}
+
+function cleanupSvgIframe() {
+  if (sharedIframe) { sharedIframe.remove(); sharedIframe = null }
 }
 
 // ── Bounding box ────────────────────────────────────────────────────────────
@@ -1052,41 +1058,47 @@ export async function exportCoursePdf(
 
   let svgBaseCache: SvgRasterCache | null = null
   let svgTopCache: SvgRasterCache | null = null
-  if (loadedMap?.type === 'svg' && svgEmbedDisabled) {
+
+  async function ensureSvgRasterCache() {
+    if (svgBaseCache || loadedMap?.type !== 'svg') return
     const svgEl = loadedMap.content as SVGElement
     const b = loadedMap.bounds
-    try { svgBaseCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, mapOverprint) } catch {}
+    try {
+      svgBaseCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, mapOverprint)
+    } catch {}
     if (belowActive) {
-      try { svgTopCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, false, { keepColors: belowColors, transparent: true }) } catch {}
+      try {
+        svgTopCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, false, { keepColors: belowColors, transparent: true })
+      } catch {}
     }
   }
 
-  /** XML round-trip so we never feed svg2pdf a live subtree it may have touched in an earlier export. */
+  if (loadedMap?.type === 'svg' && svgEmbedDisabled) {
+    await ensureSvgRasterCache()
+  }
+
+  // ponytail: serialize the SVG once, reparse per page (reparse is ~10× cheaper)
+  let cachedSvgXml: string | null = null
   function prepareSvgForPdfEmbed(): SVGElement {
-    const svgEl = loadedMap!.content as SVGElement
-    let xml = new XMLSerializer().serializeToString(svgEl)
-    if (!/^<svg[^>]*\sxmlns=/.test(xml)) {
-      xml = xml.replace(/^<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"')
+    if (!cachedSvgXml) {
+      const svgEl = loadedMap!.content as SVGElement
+      let xml = new XMLSerializer().serializeToString(svgEl)
+      if (!/^<svg[^>]*\sxmlns=/.test(xml)) {
+        xml = xml.replace(/^<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"')
+      }
+      if (mapOpacity < 1) {
+        // Inject opacity wrapper into the cached XML so we don't DOM-walk per page
+        xml = xml.replace(/(<svg[^>]*>)/, `$1<g opacity="${mapOpacity}">`)
+        xml = xml.replace(/<\/svg>\s*$/, '</g></svg>')
+      }
+      cachedSvgXml = xml.replace(/\sfill="transparent"/g, ' fill="none"')
     }
-    const parsed = new DOMParser().parseFromString(xml, 'image/svg+xml')
+    const parsed = new DOMParser().parseFromString(cachedSvgXml, 'image/svg+xml')
     const parseErr = parsed.querySelector('parsererror')
     const docEl = parsed.documentElement
-    const root =
-      !parseErr && docEl && docEl.namespaceURI === 'http://www.w3.org/2000/svg'
-        ? (docEl as unknown as SVGElement)
-        : (svgEl.cloneNode(true) as SVGElement)
-
-    if (root.getAttribute('fill') === 'transparent') {
-      root.setAttribute('fill', 'none')
-    }
-
-    if (mapOpacity < 1) {
-      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-      g.setAttribute('opacity', String(mapOpacity))
-      while (root.firstChild) g.appendChild(root.firstChild)
-      root.appendChild(g)
-    }
-    return root
+    return !parseErr && docEl && docEl.namespaceURI === 'http://www.w3.org/2000/svg'
+      ? (docEl as unknown as SVGElement)
+      : (loadedMap!.content as SVGElement).cloneNode(true) as SVGElement
   }
 
   // Crop + capped pixel size for rasterising the visible page region of an SVG
@@ -1130,6 +1142,7 @@ export async function exportCoursePdf(
         return
       } catch {
         svgEmbedDisabled = true
+        await ensureSvgRasterCache()
       }
     }
     if (loadedMap.type === 'svg') {
@@ -1148,19 +1161,28 @@ export async function exportCoursePdf(
         return
       } catch { /* fall through */ }
     }
-    if (bitmapDataUrl) doc.addImage(bitmapDataUrl, 'JPEG', tl.x, tl.y, w, h)
+    if (bitmapDataUrl) {
+      doc.addImage(bitmapDataUrl, 'JPEG', tl.x, tl.y, w, h)
+    }
   }
 
   // 'Below' overprint: after the course ink is drawn, redraw only the
   // black/brown/blue map layers on top so the purple sits beneath them.
   async function embedTopColors(toPage: (pt: MapPoint) => Pos, pageMmW: number, pageMmH: number) {
     if (!belowActive || loadedMap?.type !== 'svg') return
+    if (!svgTopCache) {
+      try {
+        const svgEl = loadedMap.content as SVGElement
+        const b = loadedMap.bounds
+        svgTopCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, false, { keepColors: belowColors, transparent: true })
+      } catch { /* fall through */ }
+    }
     const { crop, capW, capH } = svgPageRegion(toPage, pageMmW, pageMmH)
     if (svgTopCache) {
       try {
-        const bytes = await cropFromSvgCache(svgTopCache, crop, capW, capH, true)
+        const bytes = await cropFromSvgCache(svgTopCache, crop, capW, capH, false)
         doc.setGState(doc.GState({ blendMode: 'Multiply' }))
-        doc.addImage(bytes, 'PNG', 0, 0, pageMmW, pageMmH)
+        doc.addImage(bytes, 'JPEG', 0, 0, pageMmW, pageMmH)
         doc.setGState(doc.GState({ blendMode: 'Normal' }))
         return
       } catch { /* fall through to per-page */ }
@@ -1169,10 +1191,10 @@ export async function exportCoursePdf(
       const svgEl = loadedMap.content as SVGElement
       const dataUrl = await rasterizeSvgRegion(svgEl, crop, capW, capH, mapOpacity, false, {
         keepColors: belowColors,
-        transparent: true,
+        transparent: false,
       })
       doc.setGState(doc.GState({ blendMode: 'Multiply' }))
-      doc.addImage(dataUrl, 'PNG', 0, 0, pageMmW, pageMmH)
+      doc.addImage(dataUrl, 'JPEG', 0, 0, pageMmW, pageMmH)
       doc.setGState(doc.GState({ blendMode: 'Normal' }))
     } catch { /* overlay is best-effort */ }
   }
@@ -1213,9 +1235,6 @@ export async function exportCoursePdf(
 
           await embedMap(toPage, pw, ph)
 
-          // Annotations scale with the export print scale, exactly like control
-          // symbols and legs (which use acScale) — keeps their on-paper size
-          // consistent with the overlay when a scale override is in effect.
           const mapScale = acScale
           const ctrlColor = '#a626ff'
           const annColor = '#a626ff'
@@ -1235,8 +1254,6 @@ export async function exportCoursePdf(
           })
           await embedTopColors(toPage, pw, ph)
           drawNorthArrows(doc, project.annotations, toPage, mapScale, allCtrlSpec)
-
-          // Overlays
           for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
           for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
           for (const img of project.imageOverlays) await drawImageOverlay(doc, img, toPage, project.map)
@@ -1245,6 +1262,21 @@ export async function exportCoursePdf(
       }
     }
   }
+
+  const pendingSheets: Array<{
+    course: Course
+    distance: number
+    textDescriptions?: boolean
+    legDistances?: number[]
+    trailingFlip: boolean
+    trailingExchange: boolean
+    eventName: string
+    seqOffset: number
+    restartControlId?: string
+    cellSize?: number
+    inkColor?: string
+    inlineExchanges?: Map<string, 'exchange' | 'flip'>
+  }> = []
 
   for (const course of courses) {
     const oKey = optionKey(course)
@@ -1275,10 +1307,9 @@ export async function exportCoursePdf(
         }
         if (project.clueSheetHideSubmapRestart) {
           clueSheetControls = submap.controls.slice(1)
-        } else {
-          const firstCtrl = cMap.get(submap.controls[0].controlId)
-          if (firstCtrl) restartControlId = firstCtrl.id
         }
+        const firstCtrl = cMap.get(submap.controls[0].controlId)
+        if (firstCtrl) restartControlId = firstCtrl.id
       }
 
       const pageCourse = hasSubmaps
@@ -1297,10 +1328,13 @@ export async function exportCoursePdf(
       const cPrintableH = cph - 2 * MARGIN
 
       let trailingFlip = false
+      let trailingExchange = false
       if (hasSubmaps && submap.index < submaps.length - 1) {
         const lastCc = submap.controls[submap.controls.length - 1]
         if (lastCc?.exchangeMode === 'flip') {
           trailingFlip = true
+        } else if (lastCc?.exchangeMode === 'exchange') {
+          trailingExchange = true
         }
       }
 
@@ -1345,8 +1379,6 @@ export async function exportCoursePdf(
 
           await embedMap(toPage, cpw, cph)
 
-          // Match control/leg sizing (courseScale) so annotations keep the same
-          // on-paper size as the overlay under a per-course scale override.
           const mapScale = courseScale
           const annColor = '#a626ff'
           const courseSpec = resolveSpec(project.spec, course.spec)
@@ -1385,7 +1417,7 @@ export async function exportCoursePdf(
             const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
             drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange, ctrl.gaps)
             const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
-            if (!isSubmapStart && ctrl.type === 'control') {
+            if (ctrl.type === 'control' && (!isSubmapStart || project.labelSubmapStart)) {
               const lo = cc.labelOffset ?? ctrl.labelOffset
               const loMm = lo ? mapToMm(lo, project.map, courseScale) : undefined
               drawLabel(doc, getLabel(ctrl, seqMap), pos, ctrl.type, courseScale, courseSpec, loMm)
@@ -1428,7 +1460,6 @@ export async function exportCoursePdf(
             const effectiveImg = overridePos ? { ...img, position: overridePos } : img
             await drawImageOverlay(doc, effectiveImg, toPage, project.map)
           }
-
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
             const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
             const sheetTotal = hasSubmaps ? fullCourseDistance : resolveCourseLength(course, dist)
@@ -1442,12 +1473,12 @@ export async function exportCoursePdf(
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
-                drawDescriptionSheetOverlayPart(doc, clueSheetCourse, project.controls, partPos.x, partPos.y, pi, breaks, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize)
+                drawDescriptionSheetOverlayPart(doc, clueSheetCourse, project.controls, partPos.x, partPos.y, pi, breaks, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor, trailingExchange)
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? sLayout?.clueSheet ?? { x: MARGIN, y: MARGIN }
               if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
-                drawDescriptionSheetOverlay(doc, clueSheetCourse, project.controls, sheetPos.x, sheetPos.y, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize)
+                drawDescriptionSheetOverlay(doc, clueSheetCourse, project.controls, sheetPos.x, sheetPos.y, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor, trailingExchange)
               }
             }
           }
@@ -1455,15 +1486,68 @@ export async function exportCoursePdf(
         }
       }
 
-      if ((descMode === 'separate' || descMode === 'both') && clueSheetCourse.controls.length > 0) {
-        doc.addPage([cpw, cph], cOrientFlag)
-        pageIndex++
+      if ((descMode === 'separate' || descMode === 'both') && clueSheetCourse.controls.length > 0 && (!hasSubmaps || project.clueSheetSplitSubmaps)) {
         const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
         const sheetTotal = hasSubmaps ? fullCourseDistance : resolveCourseLength(course, dist)
-        drawDescriptionSheet(doc, clueSheetCourse, project.controls, cpw, cph, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize)
+        pendingSheets.push({ course: clueSheetCourse, distance: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip, trailingExchange, eventName: project.meta.name, seqOffset, restartControlId, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor })
+      }
+    }
+
+    if (hasSubmaps && !project.clueSheetSplitSubmaps && (descMode === 'separate' || descMode === 'both') && course.controls.length > 0) {
+      const inlineExchanges = new Map<string, 'exchange' | 'flip'>()
+      for (const cc of course.controls) {
+        if (cc.exchangeMode) {
+          const ctrl = controlsById(project.controls).get(cc.controlId)
+          if (ctrl) inlineExchanges.set(ctrl.id, cc.exchangeMode)
+        }
+      }
+      const dist = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
+      const sheetTotal = resolveCourseLength(course, dist)
+      pendingSheets.push({ course, distance: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip: false, trailingExchange: false, eventName: project.meta.name, seqOffset: 0, restartControlId: undefined, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor, inlineExchanges })
+    }
+  }
+
+  // Tile clue sheets at the end — fill each page with as many copies as fit
+  const TILE_GAP = 3
+  for (const s of pendingSheets) {
+    const tilePageBase = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4
+    const tpw = options.orientation === 'landscape' ? tilePageBase.h : tilePageBase.w
+    const tph = options.orientation === 'landscape' ? tilePageBase.w : tilePageBase.h
+    const tOrient = options.orientation === 'landscape' ? 'l' : 'p'
+
+    const extraRows = s.inlineExchanges?.size ?? 0
+    const size = descriptionSheetSize(s.course, project.controls, s.trailingFlip || s.trailingExchange, s.cellSize, extraRows)
+
+    let pw = tpw, ph = tph, po: 'l' | 'p' = tOrient
+    if (size.height > ph - 2 * TILE_GAP && size.height <= pw - 2 * TILE_GAP) {
+      pw = tph; ph = tpw; po = tOrient === 'l' ? 'p' : 'l'
+    }
+
+    if (size.height > ph - 2 * TILE_GAP) {
+      doc.addPage([pw, ph], po)
+      pageIndex++
+      drawDescriptionSheet(doc, s.course, project.controls, pw, ph, s.distance, s.textDescriptions, s.legDistances, s.trailingFlip, s.eventName, s.seqOffset, s.restartControlId, s.cellSize, s.inkColor, s.trailingExchange, s.inlineExchanges)
+      continue
+    }
+
+    const cols = Math.max(1, Math.floor((pw - TILE_GAP) / (size.width + TILE_GAP)))
+    const rows = Math.max(1, Math.floor((ph - TILE_GAP) / (size.height + TILE_GAP)))
+    const startX = (pw - cols * size.width - (cols - 1) * TILE_GAP) / 2
+    const startY = (ph - rows * size.height - (rows - 1) * TILE_GAP) / 2
+
+    doc.addPage([pw, ph], po)
+    pageIndex++
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = startX + c * (size.width + TILE_GAP)
+        const y = startY + r * (size.height + TILE_GAP)
+        drawDescriptionSheetOverlay(doc, s.course, project.controls, x, y, s.distance, s.textDescriptions, s.legDistances, s.trailingFlip, s.eventName, s.seqOffset, s.restartControlId, s.cellSize, s.inkColor, s.trailingExchange, s.inlineExchanges)
       }
     }
   }
 
-  return doc.output('blob')
+  cleanupSvgIframe()
+  const blob = doc.output('blob')
+  return blob
 }

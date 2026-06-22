@@ -19,6 +19,10 @@ const ROUTES: [string, string, Handler][] = [
   ['GET', '/api/projects/:id/history', routes.historyList],
   ['GET', '/api/projects/:id/history/:version', routes.historyGet],
   ['POST', '/api/projects/:id/history/:version/restore', routes.historyRestore],
+  ['GET', '/api/projects/:id/share', routes.shareList],
+  ['POST', '/api/projects/:id/share', routes.shareAdd],
+  ['DELETE', '/api/projects/:id/share/:userId', routes.shareRemove],
+  ['GET', '/api/shared', routes.sharedWithMe],
 ]
 
 function matchRoute(method: string, pathname: string): [Handler, Record<string, string>] | null {

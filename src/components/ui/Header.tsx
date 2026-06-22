@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, FileDown, Map, ImageUp, Pencil, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn } from 'lucide-react'
+import { Save, FileDown, Map, ImageUp, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn, History, Share2, UserPlus, X, Eye } from 'lucide-react'
 import { useStore } from '../../store'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
-import { listProjects } from '../../lib/persistence'
+import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
-import { logout as cloudLogout } from '../../lib/sync'
+import { logout as cloudLogout, addShare, removeShare, listShares, type ShareEntry } from '../../lib/sync'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { EventSpec, MapType } from '../../types'
 
@@ -24,12 +24,31 @@ export function Header({ onGoHome, onLogin }: Props) {
   const syncStatus = useStore(s => s.syncStatus)
   const syncProject = useStore(s => s.syncProject)
   const setCloudUser = useStore(s => s.setCloudUser)
+  const projectRole = useStore(s => s.projectRole)
+  const mapType = useStore(s => s.project!.map.type)
+  const isViewer = projectRole === 'viewer'
+  const isOwner = projectRole === 'owner'
+  const canSync = mapType === 'ocad'
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
   const replaceMapFile = useStore(s => s.replaceMapFile)
+  const saveSnapshot = useStore(s => s.saveSnapshot)
+  const fetchVersionHistory = useStore(s => s.fetchVersionHistory)
+  const restoreVersionAction = useStore(s => s.restoreVersion)
+  const versionHistory = useStore(s => s.versionHistory)
   const [exportOpen, setExportOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
   const mapInputRef = useRef<HTMLInputElement>(null)
+
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const historyRef = useRef<HTMLDivElement>(null)
+
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shares, setShares] = useState<ShareEntry[]>([])
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareRole, setShareRole] = useState<'editor' | 'viewer'>('editor')
+  const [shareError, setShareError] = useState<string | null>(null)
+  const shareRef = useRef<HTMLDivElement>(null)
 
   // Project switcher dropdown
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -47,6 +66,30 @@ export function Header({ onGoHome, onLogin }: Props) {
     document.addEventListener('pointerdown', handleClick)
     return () => document.removeEventListener('pointerdown', handleClick)
   }, [switcherOpen, projectId])
+
+  useEffect(() => {
+    if (!historyOpen) return
+    fetchVersionHistory()
+    function handleClick(e: MouseEvent) {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) setHistoryOpen(false)
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [historyOpen, fetchVersionHistory])
+
+  useEffect(() => {
+    if (!shareOpen) return
+    if (isOwner && projectId) {
+      getSyncMeta(projectId).then(sm => {
+        if (sm) listShares(sm.cloudId).then(r => setShares(r.shares))
+      })
+    }
+    function handleClick(e: MouseEvent) {
+      if (shareRef.current && !shareRef.current.contains(e.target as Node)) setShareOpen(false)
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [shareOpen, isOwner, projectId])
 
   useEffect(() => {
     if (!exportOpen) return
@@ -71,6 +114,28 @@ export function Header({ onGoHome, onLogin }: Props) {
     setExportOpen(false)
   }
 
+  async function handleAddShare() {
+    if (!projectId || !shareEmail.includes('@')) return
+    setShareError(null)
+    const sm = await getSyncMeta(projectId)
+    if (!sm) { setShareError('Sync the project first'); return }
+    const result = await addShare(sm.cloudId, shareEmail.trim().toLowerCase(), shareRole)
+    if (result.ok) {
+      setShareEmail('')
+      listShares(sm.cloudId).then(r => setShares(r.shares))
+    } else {
+      setShareError(result.error ?? 'Failed to share')
+    }
+  }
+
+  async function handleRemoveShare(userId: string) {
+    if (!projectId) return
+    const sm = await getSyncMeta(projectId)
+    if (!sm) return
+    await removeShare(sm.cloudId, userId)
+    setShares(s => s.filter(e => e.userId !== userId))
+  }
+
   async function handleReplaceMap(file: File) {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
     if (!MAP_EXTENSIONS.has(ext)) return
@@ -85,43 +150,42 @@ export function Header({ onGoHome, onLogin }: Props) {
   }
 
   return (
-    <header className="flex items-center gap-3 px-4 h-12 bg-white border-b border-gray-200 z-40 shrink-0 relative">
+    <header className="flex items-center gap-2 px-3 h-12 bg-white border-b border-gray-200 z-40 shrink-0">
+      {/* Left: logo + name + spec + role */}
       <button
         onClick={onGoHome}
-        className="flex items-center gap-2 text-orange-700 hover:text-orange-900 transition-colors"
+        className="flex items-center gap-1.5 text-orange-700 hover:text-orange-900 transition-colors shrink-0"
         title="Back to home"
       >
-        <Map size={20} />
+        <Map size={18} />
         <span className="font-semibold text-sm hidden sm:inline">xcorso</span>
       </button>
 
-      <div className="w-px h-5 bg-gray-200" />
+      <div className="w-px h-5 bg-gray-200 shrink-0" />
 
-      {/* Project name + switcher */}
-      <div className="relative" ref={switcherRef}>
-        <div className="flex items-center gap-0.5">
-          {editingName ? (
+      <div className="relative min-w-0" ref={switcherRef}>
+        <div className="flex items-center gap-0.5 min-w-0">
+          {editingName && !isViewer ? (
             <input
               autoFocus
               value={nameVal}
               onChange={e => setNameVal(e.target.value)}
               onBlur={() => { updateProjectName(nameVal); setEditingName(false) }}
               onKeyDown={e => { if (e.key === 'Enter') { updateProjectName(nameVal); setEditingName(false) } }}
-              className="text-sm font-medium border-b border-orange-400 focus:outline-none bg-transparent w-48"
+              className="text-xs font-medium border-b border-orange-400 focus:outline-none bg-transparent w-24 sm:w-40"
             />
           ) : (
             <span
-              className="edit-icon-group text-sm font-medium cursor-pointer hover:text-orange-700 transition-colors flex items-center gap-1"
-              onClick={() => { setNameVal(project.meta.name); setEditingName(true) }}
-              title="Click to rename"
+              className={`text-xs font-medium truncate min-w-0 ${isViewer ? 'text-gray-600' : 'edit-icon-group cursor-pointer hover:text-orange-700 transition-colors'}`}
+              onClick={isViewer ? undefined : () => { setNameVal(project.meta.name); setEditingName(true) }}
+              title={project.meta.name}
             >
               {project.meta.name}
-              <Pencil size={12} className="edit-icon shrink-0" />
             </span>
           )}
           <button
             onClick={() => setSwitcherOpen(o => !o)}
-            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
             title="Switch project"
           >
             <ChevronDown size={14} />
@@ -159,25 +223,94 @@ export function Header({ onGoHome, onLogin }: Props) {
         )}
       </div>
 
-      <select
-        value={project.spec ?? 'isom-2017'}
-        onChange={e => updateProjectSpec(e.target.value as EventSpec)}
-        className="text-[10px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400"
-        title="Event specification"
-      >
-        {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
-          <option key={key} value={key}>{label}</option>
-        ))}
-      </select>
+      {!isViewer && (
+        <select
+          value={project.spec ?? 'isom-2017'}
+          onChange={e => updateProjectSpec(e.target.value as EventSpec)}
+          className="text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 shrink-0 hidden sm:block"
+          title="Event specification"
+        >
+          {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
+      )}
 
-      <div className="flex items-center gap-2 md:ml-auto">
-        {/* Cloud sync */}
-        {cloudUser ? (
-          <div className="flex items-center gap-1.5">
+      {isViewer && (
+        <span className="flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 rounded-full px-2 py-0.5 shrink-0">
+          <Eye size={10} /> View only
+        </span>
+      )}
+      {projectRole === 'editor' && (
+        <span className="text-[10px] font-medium text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 shrink-0">Shared</span>
+      )}
+
+      {/* Right side */}
+      <div className="flex items-center gap-1.5 ml-auto shrink-0">
+        {/* Share (collaborators) */}
+        {isOwner && cloudUser && canSync && (
+          <div className="relative" ref={shareRef}>
+            <button
+              onClick={() => setShareOpen(o => !o)}
+              className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              title="Share project"
+            >
+              <Share2 size={15} />
+            </button>
+            {shareOpen && (
+              <div className="fixed top-12 right-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                <div className="flex gap-1.5">
+                  <input
+                    type="email"
+                    value={shareEmail}
+                    onChange={e => setShareEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddShare() }}
+                    placeholder="email@example.com"
+                    className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400"
+                  />
+                  <select
+                    value={shareRole}
+                    onChange={e => setShareRole(e.target.value as 'editor' | 'viewer')}
+                    className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-xs bg-white focus:outline-none"
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <button
+                    onClick={handleAddShare}
+                    className="p-1.5 rounded-lg bg-orange-600 text-white hover:bg-orange-700 transition-colors"
+                    title="Add"
+                  >
+                    <UserPlus size={14} />
+                  </button>
+                </div>
+                {shareError && <p className="text-[11px] text-red-500">{shareError}</p>}
+                {shares.length > 0 && (
+                  <div className="flex flex-col gap-1 mt-1">
+                    {shares.map(s => (
+                      <div key={s.userId} className="flex items-center justify-between text-xs px-1">
+                        <span className="text-gray-700 truncate flex-1">{s.email}</span>
+                        <span className="text-gray-400 text-[10px] mx-2">{s.role}</span>
+                        <button onClick={() => handleRemoveShare(s.userId)} className="text-gray-300 hover:text-red-400 transition-colors">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {shares.length === 0 && <p className="text-[11px] text-gray-400 text-center py-1">Not shared with anyone</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sync + Versions (grouped) */}
+        {!isViewer && cloudUser && canSync && (
+          <div className="flex items-center border border-gray-200 rounded-lg">
             <button
               onClick={() => syncProject()}
               disabled={syncStatus === 'syncing'}
-              className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 px-2 py-1.5 transition-colors disabled:opacity-40"
               title={`Signed in as ${cloudUser.email}`}
             >
               {syncStatus === 'syncing' ? <RefreshCw size={14} className="animate-spin" /> :
@@ -185,25 +318,70 @@ export function Header({ onGoHome, onLogin }: Props) {
                syncStatus === 'error' ? <AlertTriangle size={14} className="text-red-400" /> :
                syncStatus === 'offline' ? <CloudOff size={14} className="text-gray-400" /> :
                <Cloud size={14} />}
-              <span className="hidden sm:inline">
-                {syncStatus === 'syncing' ? 'Syncing' :
-                 syncStatus === 'synced' ? 'Synced' :
-                 syncStatus === 'error' ? 'Sync error' :
-                 syncStatus === 'offline' ? 'Offline' : 'Sync'}
-              </span>
             </button>
-            <button
-              onClick={() => { cloudLogout(); setCloudUser(null) }}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-              title="Sign out"
-            >
-              <LogOut size={14} />
-            </button>
+            <div className="w-px h-4 bg-gray-200" />
+            <div className="relative" ref={historyRef}>
+              <button
+                onClick={() => setHistoryOpen(o => !o)}
+                className="flex items-center text-gray-500 hover:text-gray-800 hover:bg-gray-50 px-2 py-1.5 transition-colors"
+                title="Version history"
+              >
+                <History size={14} />
+              </button>
+              {historyOpen && (
+                <div className="absolute top-full right-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-80 overflow-y-auto">
+                  {!isViewer && (
+                    <>
+                      <button
+                        onClick={async () => { await saveSnapshot(); }}
+                        disabled={syncStatus === 'syncing'}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-40"
+                      >
+                        <Save size={14} />
+                        Save snapshot
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                    </>
+                  )}
+                  {versionHistory.length === 0 ? (
+                    <div className="px-3 py-3 text-xs text-gray-400 text-center">No snapshots yet</div>
+                  ) : (
+                    (() => {
+                      const multiEditor = new Set(versionHistory.map(e => e.editedBy).filter(Boolean)).size > 1
+                      return versionHistory.map(v => (
+                        <div key={v.version} className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center gap-2">
+                            {multiEditor && v.editedBy && (
+                              <span className="w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center text-white shrink-0"
+                                style={{ backgroundColor: `hsl(${(v.editedBy.charCodeAt(0) * 37 + v.editedBy.charCodeAt(1) * 53) % 360}, 55%, 50%)` }}
+                              >{v.editedBy.toUpperCase()}</span>
+                            )}
+                            <div>
+                              <div className="text-sm text-gray-700">v{v.version}</div>
+                              <div className="text-[10px] text-gray-400">{new Date(v.timestamp).toLocaleString()}</div>
+                            </div>
+                          </div>
+                          {!isViewer && (
+                            <button
+                              onClick={async () => { setHistoryOpen(false); await restoreVersionAction(v.version) }}
+                              className="text-[11px] font-medium text-orange-600 hover:text-orange-800 px-2 py-1 rounded hover:bg-orange-50 transition-colors"
+                            >
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    })()
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        ) : (
+        )}
+        {!isViewer && !cloudUser && canSync && (
           <button
             onClick={onLogin}
-            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-2.5 py-1.5 transition-colors"
+            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-2 py-1.5 transition-colors"
             title="Sign in to sync across devices"
           >
             <LogIn size={14} />
@@ -211,25 +389,46 @@ export function Header({ onGoHome, onLogin }: Props) {
           </button>
         )}
 
-        {/* Save .oco */}
-        <button
-          onClick={handleSaveProject}
-          className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors"
-          title="Save project as .oco"
-        >
-          <Save size={14} />
-          <span className="hidden sm:inline">Save .oco</span>
-        </button>
-
-        {/* Replace map */}
-        <button
-          onClick={() => mapInputRef.current?.click()}
-          className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-1.5 transition-colors"
-          title="Replace map file (keeps controls in place)"
-        >
-          <ImageUp size={14} />
-          <span className="hidden sm:inline">Replace map</span>
-        </button>
+        {/* Export dropdown (save .oco, export IOF, replace map) */}
+        <div className="relative" ref={exportRef}>
+          <button
+            onClick={() => setExportOpen(o => !o)}
+            className="flex items-center gap-1 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-2.5 py-1.5 transition-colors"
+          >
+            <FileDown size={14} />
+            <ChevronDown size={12} />
+          </button>
+          {exportOpen && (
+            <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
+              <button
+                onClick={() => { handleSaveProject(); setExportOpen(false) }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Save size={14} />
+                Save .oco
+              </button>
+              <button
+                onClick={handleExportIof}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <FileDown size={14} />
+                Export IOF XML
+              </button>
+              {!isViewer && (
+                <>
+                  <div className="border-t border-gray-100 my-1" />
+                  <button
+                    onClick={() => { mapInputRef.current?.click(); setExportOpen(false) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <ImageUp size={14} />
+                    Replace map
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         <input
           ref={mapInputRef}
           type="file"
@@ -238,16 +437,16 @@ export function Header({ onGoHome, onLogin }: Props) {
           onChange={e => { const f = e.target.files?.[0]; if (f) handleReplaceMap(f); e.target.value = '' }}
         />
 
-        {/* Export */}
-        <div className="relative" ref={exportRef}>
+        {/* Logout — rightmost */}
+        {cloudUser && (
           <button
-            onClick={handleExportIof}
-            className="flex items-center gap-1.5 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-3 py-1.5 transition-colors"
+            onClick={() => { cloudLogout(); setCloudUser(null) }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            title="Sign out"
           >
-            <FileDown size={14} />
-            <span className="hidden sm:inline">Export IOF</span>
+            <LogOut size={14} />
           </button>
-        </div>
+        )}
       </div>
     </header>
   )
