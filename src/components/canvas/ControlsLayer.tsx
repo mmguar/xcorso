@@ -197,9 +197,10 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
 interface Props {
   controls: Control[]
   course: Course | null
+  _rev?: number
 }
 
-export const ControlsLayer = memo(function ControlsLayer({ controls, course: selectedCourse }: Props) {
+export const ControlsLayer = memo(function ControlsLayer({ controls, course: selectedCourse, _rev: _ }: Props) {
   useRenderTracker('ControlsLayer')
   const map = useStore(s => s.project!.map)
   const upm = unitsPerMm(map)

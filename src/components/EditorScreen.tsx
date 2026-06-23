@@ -138,7 +138,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
     <div className="flex flex-col h-full">
       <Header onGoHome={onGoHome} onLogin={onLogin} />
       <div className="flex flex-1 overflow-hidden relative">
-        <div className="flex-1 relative overflow-hidden">
+        <div className="flex-1 relative overflow-hidden canvas-area">
           <MapCanvas loadedMap={loadedMap} />
           <Toolbar />
           <OverlaySettingsPanel />

@@ -33,6 +33,17 @@ html, body, #root {
   }
 }
 
+/* ponytail: --ui-top is the clearance for overlays inside the canvas area.
+   On mobile the MobileTopBar (h-10) sits over the canvas; desktop has none. */
+.canvas-area {
+  --ui-top: 3rem;
+}
+@media (min-width: 768px) {
+  .canvas-area {
+    --ui-top: 0.5rem;
+  }
+}
+
 /* Custom scrollbar for panels */
 .panel-scroll {
   scrollbar-width: thin;
