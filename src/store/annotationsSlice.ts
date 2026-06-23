@@ -103,7 +103,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
     },
 
     setSelectedAnnotation: (id: string | null) => {
-      set(state => ({ editor: { ...state.editor, selectedAnnotationId: id } }))
+      set(state => ({ editor: { ...state.editor, selectedAnnotationId: id, selectedControlId: id ? null : state.editor.selectedControlId, selectedOverlayId: id ? null : state.editor.selectedOverlayId } }))
     },
   }
 }

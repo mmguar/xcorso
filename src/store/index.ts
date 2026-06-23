@@ -36,14 +36,14 @@ export const useStore = create<Store>((set, get) => {
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
-    set({ project: p, syncStatus: 'idle' })
+    set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
   function mutateProjectSilent(fn: (p: Project) => void) {
     const { project, projectRole } = get()
     if (!project || projectRole === 'viewer') return
     fn(project)
-    set({ project: { ...project } as Project, syncStatus: 'idle' })
+    set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
@@ -51,6 +51,7 @@ export const useStore = create<Store>((set, get) => {
   return {
     projectId: null,
     project: null,
+    projectRevision: 0,
     mapFileData: null,
     loadedMap: null,
     undoStack: [],
@@ -167,7 +168,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     setSelectedControl: (id) => {
-      set(state => ({ editor: { ...state.editor, selectedControlId: id, selectedAnnotationId: id ? null : state.editor.selectedAnnotationId } }))
+      set(state => ({ editor: { ...state.editor, selectedControlId: id, selectedOverlayId: id ? null : state.editor.selectedOverlayId, selectedAnnotationId: id ? null : state.editor.selectedAnnotationId } }))
     },
 
     setDraggingControl: (id) => {
@@ -237,7 +238,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     exitMeasureMode: () => {
-      set(state => ({ editor: { ...state.editor, measureMode: false, measureCourseId: null } }))
+      set(state => ({ editor: { ...state.editor, measureMode: false, measureCourseId: null, measureHiddenLegs: [] } }))
     },
 
     toggleMeasureLeg: (legKey) => {
@@ -449,32 +450,36 @@ export const useStore = create<Store>((set, get) => {
             })
           }
         }
-      } catch (e) { console.error('resolveConflict failed:', e) }
-      set({ syncConflict: null, syncStatus: 'synced' })
+        set({ syncConflict: null, syncStatus: 'synced' })
+      } catch (e) {
+        console.error('resolveConflict failed:', e)
+        set({ syncConflict: null, syncStatus: 'error' })
+      }
       if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
     },
 
     // ── Undo / Redo ───────────────────────────────────────────────────────
 
     undo: () => {
-      const { undoStack, project, redoStack, editor } = get()
+      const { undoStack, project, redoStack, editor, projectRevision } = get()
       if (undoStack.length === 0 || !project) return
       const prev = undoStack[undoStack.length - 1]
       set({
         project: prev,
+        projectRevision: projectRevision + 1,
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack, structuredClone(project)],
-        // Re-snap the layout viewport onto the restored mapCenter (see MapCanvas).
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
 
     redo: () => {
-      const { redoStack, project, undoStack, editor } = get()
+      const { redoStack, project, undoStack, editor, projectRevision } = get()
       if (redoStack.length === 0 || !project) return
       const next = redoStack[redoStack.length - 1]
       set({
         project: next,
+        projectRevision: projectRevision + 1,
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, structuredClone(project)],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
