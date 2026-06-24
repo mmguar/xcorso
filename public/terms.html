@@ -13,7 +13,7 @@
 </head>
 <body>
 <h1>xcorso — Terms of Service &amp; Privacy Policy</h1>
-<p><em>Last updated: 18 June 2026</em></p>
+<p><em>Last updated: 24 June 2026</em></p>
 
 <h2>What xcorso is</h2>
 <p>xcorso is a free orienteering course-planning tool. You can use it without an account. Creating an account enables cloud sync so your projects are available across devices.</p>
@@ -29,13 +29,22 @@
   <li>Your <strong>project data</strong> (course layouts, control positions) and <strong>map files</strong> you upload — stored on Cloudflare R2 in Europe.</li>
   <li>A <strong>session cookie</strong> (JWT) — strictly necessary for authentication. It expires when you sign out. No other cookies are used.</li>
 </ul>
-<p>We do not sell, share, or use your data for anything other than providing the service. We do not run analytics or tracking. We do not access your projects unless required to debug a problem you report.</p>
+<p>We do not sell, share, or use your data for anything other than providing the service. We do not access your projects unless required to debug a problem you report.</p>
 
 <h2>Retention</h2>
 <p>Your data is kept until you delete your account. There is no automatic expiry.</p>
 
+<h2>Error monitoring</h2>
+<p>We use <a href="https://sentry.io/privacy/" target="_blank" rel="noopener">Sentry</a> to detect and fix software errors (legal basis: legitimate interest, Art. 6(1)(f) GDPR). When an error occurs, Sentry receives the error message, stack trace, browser type, and operating system. No personal data, email addresses, or project content is sent to Sentry. You can opt out by using a browser extension that blocks requests to <code>sentry.io</code>.</p>
+
 <h2>Sub-processors</h2>
-<p>Your data is stored on <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">Cloudflare</a> infrastructure (R2 storage, KV, Workers). Login emails are sent via <a href="https://resend.com/legal/privacy-policy" target="_blank" rel="noopener">Resend</a>. No other third parties receive your data.</p>
+<p>Your data is processed by the following third parties solely to provide the service:</p>
+<ul>
+  <li><a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">Cloudflare</a> — hosting, storage (R2, KV, Workers).</li>
+  <li><a href="https://resend.com/legal/privacy-policy" target="_blank" rel="noopener">Resend</a> — login emails.</li>
+  <li><a href="https://sentry.io/privacy/" target="_blank" rel="noopener">Sentry</a> — error monitoring (anonymous technical data only).</li>
+</ul>
+<p>No other third parties receive your data.</p>
 
 <h2>Your rights</h2>
 <p>Under the GDPR you have the right to access, rectify, erase, and port your personal data. You can exercise these directly in the app:</p>

@@ -76,6 +76,7 @@ export function SidePanel() {
               {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
                 <button
                   key={t}
+                  data-tour={t === 'courses' ? 'courses-tab' : t === 'layout' ? 'layout-tab' : undefined}
                   onClick={() => { switchMode(t); setTab(t) }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors capitalize ${
                     tab === t

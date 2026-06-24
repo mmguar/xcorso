@@ -1032,6 +1032,7 @@ export function LayoutPanel() {
           <p className="text-[11px] text-red-600 mb-2">{exportError}</p>
         )}
         <button
+          data-tour="export-pdf"
           onClick={handleExport}
           disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
           className="w-full bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"

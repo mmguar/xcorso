@@ -7,6 +7,7 @@ import { Header } from './ui/Header'
 import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
 import { OverlaySettingsPanel, AnnotationSettingsPanel } from './panels/OverlaySettingsPanel'
+import { OnboardingTour } from './OnboardingTour'
 
 const shortcuts: [string, string][] = [
   ['V', 'Select / Pan'],
@@ -147,6 +148,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
         <SidePanel />
       </div>
       {showShortcuts && <ShortcutsOverlay onClose={closeShortcuts} />}
+      <OnboardingTour />
     </div>
   )
 }

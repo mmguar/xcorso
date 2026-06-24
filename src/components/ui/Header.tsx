@@ -400,6 +400,7 @@ export function Header({ onGoHome, onLogin }: Props) {
         {/* Export dropdown (save .oco, export IOF, replace map) */}
         <div className="relative" ref={exportRef}>
           <button
+            data-tour="export-menu"
             onClick={() => setExportOpen(o => !o)}
             className="flex items-center gap-1 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-2.5 py-1.5 transition-colors"
           >
@@ -416,6 +417,7 @@ export function Header({ onGoHome, onLogin }: Props) {
                 Save .oco
               </button>
               <button
+                data-tour="export-xml"
                 onClick={handleExportIof}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
               >
