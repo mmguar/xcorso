@@ -8,9 +8,12 @@ interface Props {
 export function ScaleInputDialog({ onConfirm, onCancel }: Props) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  // ponytail: block backdrop dismiss on the same tick that opens the dialog (touch devices fire a click from the pointerup that triggered mount)
+  const ready = useRef(false)
 
   useEffect(() => {
     inputRef.current?.focus()
+    requestAnimationFrame(() => { ready.current = true })
   }, [])
 
   function handleSubmit() {
@@ -19,7 +22,7 @@ export function ScaleInputDialog({ onConfirm, onCancel }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { if (ready.current) onCancel() }}>
       <div
         className="bg-white rounded-xl shadow-xl p-5 w-72 flex flex-col gap-4"
         onClick={e => e.stopPropagation()}

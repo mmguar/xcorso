@@ -388,6 +388,14 @@ export function Header({ onGoHome, onLogin }: Props) {
             <span className="hidden sm:inline">Sign in</span>
           </button>
         )}
+        {!canSync && (
+          <span
+            className="flex items-center gap-1 text-xs text-gray-300 border border-gray-100 rounded-lg px-2 py-1.5 cursor-not-allowed"
+            title="Cloud sync is only available for OCAD maps"
+          >
+            <CloudOff size={14} />
+          </span>
+        )}
 
         {/* Export dropdown (save .oco, export IOF, replace map) */}
         <div className="relative" ref={exportRef}>

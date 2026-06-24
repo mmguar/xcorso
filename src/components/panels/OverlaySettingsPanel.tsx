@@ -479,8 +479,7 @@ export function AnnotationSettingsPanel() {
   if (!ann || (ann.type !== 'north_arrow' && ann.type !== 'out_of_bounds')) return null
 
   return (
-    // top-12 on mobile clears the fixed MobileTopBar (h-10) overlaying the canvas
-    <div className="absolute top-12 md:top-2 left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
+    <div className="absolute top-[var(--ui-top)] left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
       {ann.type === 'north_arrow' && <NorthArrowSettings key={ann.id} ann={ann} />}
       {ann.type === 'out_of_bounds' && <OobSettings key={ann.id} ann={ann} />}
     </div>
@@ -500,8 +499,7 @@ export function OverlaySettingsPanel() {
   if (!sb && !tl && !img) return null
 
   return (
-    // top-12 on mobile clears the fixed MobileTopBar (h-10) overlaying the canvas
-    <div className="absolute top-12 md:top-2 left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
+    <div className="absolute top-[var(--ui-top)] left-2 z-30 bg-white/95 backdrop-blur border border-gray-200 shadow-lg rounded-xl px-3 py-2.5 w-56">
       {sb && <ScaleBarSettings key={sb.id} sb={sb} />}
       {tl && <TextLabelSettings key={tl.id} tl={tl} />}
       {img && <ImageOverlaySettings key={img.id} img={img} />}

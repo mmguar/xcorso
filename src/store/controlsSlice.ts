@@ -81,6 +81,9 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
           course.controls = course.controls.filter(cc => cc.controlId !== id)
         })
       })
+      _set(state => ({
+        editor: { ...state.editor, selectedControlId: state.editor.selectedControlId === id ? null : state.editor.selectedControlId },
+      }))
     },
 
     updateControlCode: (id: string, code: number) => {

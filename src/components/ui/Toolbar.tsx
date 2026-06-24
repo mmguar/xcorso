@@ -119,6 +119,7 @@ export function Toolbar() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if ((e.target as Element).closest?.('.fixed.inset-0')) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return }
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -137,13 +138,19 @@ export function Toolbar() {
         const aid = state.editor.selectedAnnotationId
         if (aid) { e.preventDefault(); state.deleteAnnotation(aid); return }
       }
-      if (useStore.getState().editor.layoutMode) {
-        if (e.key === 'Escape') exitLayoutMode()
+      if (e.key === 'Escape') {
+        const st = useStore.getState()
+        if (st.editor.layoutMode) { exitLayoutMode(); return }
+        if (st.editor.pendingAnnotationPoints.length > 0) { st.cancelAnnotation(); return }
+        if (st.editor.selectedControlId) { st.setSelectedControl(null); return }
+        if (st.editor.selectedOverlayId) { st.setSelectedOverlay(null); return }
+        if (st.editor.selectedAnnotationId) { st.setSelectedAnnotation(null); return }
+        if (selectedCourseId) { setSelectedCourse(null); return }
         return
       }
+      if (useStore.getState().editor.layoutMode) return
       if (selectedCourseId) {
-        if (e.key === 'Escape') setSelectedCourse(null)
-        else if (e.key.toLowerCase() === 'g') setActiveTool(activeTool === 'gap' ? 'select' : 'gap')
+        if (e.key.toLowerCase() === 'g') setActiveTool(activeTool === 'gap' ? 'select' : 'gap')
         else if (e.key.toLowerCase() === 'b') setActiveTool(activeTool === 'bend' ? 'select' : 'bend')
         return
       }
