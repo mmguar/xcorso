@@ -409,6 +409,8 @@ export async function mapGet(request: Request, env: Env, params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
+  if (!/^[0-9a-f]{64}$/.test(params.hash)) return Response.json({ error: 'Invalid hash' }, { status: 400 })
+
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -441,6 +443,8 @@ export async function historyGet(request: Request, env: Env, params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
+  if (!/^\d{1,3}$/.test(params.version)) return Response.json({ error: 'Invalid version' }, { status: 400 })
+
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -456,6 +460,8 @@ export async function historyGet(request: Request, env: Env, params: Params) {
 export async function historyRestore(request: Request, env: Env, params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  if (!/^\d{1,3}$/.test(params.version)) return Response.json({ error: 'Invalid version' }, { status: 400 })
 
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })

@@ -45,6 +45,7 @@ export interface SyncConflict {
 export interface AppState {
   projectId: string | null
   project: Project | null
+  projectRevision: number
   mapFileData: ArrayBuffer | null
   loadedMap: LoadedMap | null
   undoStack: Project[]

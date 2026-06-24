@@ -24,6 +24,7 @@ interface Props {
   appearance: AppearanceSettings
   projectSpec?: EventSpec
   selectedSubmapIndex?: number | null
+  _rev?: number
 }
 
 const BEND_HANDLE_R_MM = 0.8
@@ -192,7 +193,7 @@ function renderLegs(
   return elements
 }
 
-export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, handlesOnly = false, appearance, projectSpec, selectedSubmapIndex }: Props) {
+export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, handlesOnly = false, appearance, projectSpec, selectedSubmapIndex, _rev: _ }: Props) {
   useRenderTracker('LegsLayer')
   const draggingControlId = useStore(s => s.editor.draggingControlId)
   const controlMap = useMemo(() => controlsById(controls), [controls])

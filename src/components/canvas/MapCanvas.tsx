@@ -104,7 +104,7 @@ function MeasureLegPanel({ course, controls }: { course: Course; controls: Contr
   const allShown = hidden.length === 0
 
   return (
-    <div data-ui-panel className="absolute top-12 right-2 sm:top-2 w-40 max-h-[60vh] flex flex-col bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-200 z-10 overflow-hidden">
+    <div data-ui-panel className="absolute top-[var(--ui-top)] right-2 w-40 max-h-[60vh] flex flex-col bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-200 z-10 overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 border-b border-gray-100">
         <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Legs</span>
         <button
@@ -272,6 +272,7 @@ export function MapCanvas({ loadedMap }: Props) {
   // ── Store ──────────────────────────────────────────────────────────────────
   const controls = useStore(s => s.project!.controls)
   const courses = useStore(s => s.project!.courses)
+  const projectRevision = useStore(s => s.projectRevision)
   const annotations = useStore(s => s.project!.annotations)
   const map = useStore(s => s.project!.map)
   const scaleBars = useStore(s => s.project!.scaleBars)
@@ -583,28 +584,43 @@ export function MapCanvas({ loadedMap }: Props) {
       if (pos.size >= 2) multiTouch = true
 
       longPressFired = false
-      if (e.pointerType === 'touch' && pos.size === 1 && !useStore.getState().editor.layoutMode && !useStore.getState().editor.measureMode) {
+      if (e.pointerType === 'touch' && pos.size === 1 && !useStore.getState().editor.layoutMode) {
         const state = useStore.getState()
+        const rect = getRect()
+        const proj = state.project
         const cid = state.editor.selectedCourseId
-        if (cid) {
-          const rect = getRect()
-          const proj = state.project
-          if (proj) {
-            const hit = findControlAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, cid, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
-            if (hit) {
-              longPressTimer = setTimeout(() => {
-                longPressTimer = null
-                longPressFired = true
-                const course = useStore.getState().project?.courses.find(c => c.id === cid)
-                if (!course) return
-                for (let i = course.controls.length - 1; i >= 0; i--) {
-                  if (course.controls[i].controlId === hit.id) {
-                    useStore.getState().removeControlFromCourse(cid, course.controls[i].id)
-                    return
-                  }
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+
+        if (state.editor.measureMode) {
+          // handled separately above
+        } else if (state.editor.activeTool === 'gap' && proj && cid) {
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null
+            longPressFired = true
+            handleGapRightClick(sx, sy, vpRef.current, proj, cid)
+          }, 500)
+        } else if (state.editor.activeTool === 'bend' && proj && cid) {
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null
+            longPressFired = true
+            handleBendRightClick(sx, sy, vpRef.current, proj, cid)
+          }, 500)
+        } else if (cid && proj) {
+          const hit = findControlAt(sx, sy, vpRef.current, proj, cid, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
+          if (hit) {
+            longPressTimer = setTimeout(() => {
+              longPressTimer = null
+              longPressFired = true
+              const course = useStore.getState().project?.courses.find(c => c.id === cid)
+              if (!course) return
+              for (let i = course.controls.length - 1; i >= 0; i--) {
+                if (course.controls[i].controlId === hit.id) {
+                  useStore.getState().removeControlFromCourse(cid, course.controls[i].id)
+                  return
                 }
-              }, 500)
-            }
+              }
+            }, 500)
           }
         }
       }
@@ -1093,6 +1109,7 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!dragStarted) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          clearLongPress()
           useStore.getState().beginMoveControl()
           useStore.getState().setDraggingControl(dragControlId)
           dragStarted = true
@@ -1328,10 +1345,12 @@ export function MapCanvas({ loadedMap }: Props) {
           const v = vpRef.current
           const centerX = (rect.width / 2 - v.x) / v.scale
           const centerY = (rect.height / 2 - v.y) / v.scale
-          // mapCenter is still the pre-drag value here (only written below), so
-          // snapshot now — undo then restores it and the snap effect re-centers.
-          st.beginLayoutDrag()
-          st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY }, st.editor.layoutSubmapIndex)
+          const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
+          const oldCenter = course?.layout ? submapLayoutView(course.layout, st.editor.layoutSubmapIndex)?.mapCenter : null
+          if (!oldCenter || Math.abs(centerX - oldCenter.x) > 1 || Math.abs(centerY - oldCenter.y) > 1) {
+            st.beginLayoutDrag()
+            st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY }, st.editor.layoutSubmapIndex)
+          }
         }
       }
 
@@ -1873,10 +1892,12 @@ export function MapCanvas({ loadedMap }: Props) {
                 appearance={appearance}
                 projectSpec={projectSpec}
                 selectedSubmapIndex={selectedSubmapIndex}
+                _rev={projectRevision}
               />
               <ControlsLayer
                 controls={layoutControls}
                 course={selectedCourse}
+                _rev={projectRevision}
               />
             </g>
           )}
@@ -1914,6 +1935,7 @@ export function MapCanvas({ loadedMap }: Props) {
               appearance={appearance}
               projectSpec={projectSpec}
               selectedSubmapIndex={selectedSubmapIndex}
+              _rev={projectRevision}
             />
           )}
           {import.meta.env.DEV && (
@@ -1953,10 +1975,12 @@ export function MapCanvas({ loadedMap }: Props) {
               appearance={appearance}
               projectSpec={projectSpec}
               selectedSubmapIndex={selectedSubmapIndex}
+              _rev={projectRevision}
             />
             <ControlsLayer
               controls={layoutControls}
               course={selectedCourse}
+              _rev={projectRevision}
             />
           </g>
         </svg>
@@ -2126,7 +2150,7 @@ export function MapCanvas({ loadedMap }: Props) {
       </svg>
 
       {/* Saturation slider + HD toggle */}
-      <div className="absolute top-14 left-2 md:top-2 flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200 z-10">
+      <div className="absolute top-[var(--ui-top)] left-2 flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200 z-10">
         <span className="text-[10px] text-gray-400 select-none">Map</span>
         <input
           type="range"
@@ -2157,15 +2181,15 @@ export function MapCanvas({ loadedMap }: Props) {
       </div>
 
       {measureStart && !scaleDialogPoints && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-3 py-1 rounded-full pointer-events-none">
+        <div className="absolute top-[var(--ui-top)] left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-3 py-1 rounded-full pointer-events-none z-10">
           Click second point, then enter real distance
         </div>
       )}
 
       {measureMode && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-teal-700/90 text-white text-sm px-3 py-1.5 rounded-full shadow z-10">
+        <div className="absolute top-[var(--ui-top)] left-1/2 -translate-x-1/2 flex items-center gap-3 bg-teal-700/90 text-white text-sm px-3 py-1.5 rounded-full shadow z-10">
           <span className="font-medium">{formatDistance(measureTotal)}</span>
-          <span className="text-teal-100 text-xs hidden sm:inline">Tap a leg to add a point · drag to shape · right-click to remove</span>
+          <span className="text-teal-100 text-xs hidden sm:inline">Tap a leg to add a point · drag to shape · long-press to remove</span>
           <button
             onClick={() => useStore.getState().exitMeasureMode()}
             className="bg-white/20 hover:bg-white/30 transition-colors rounded-full px-2.5 py-0.5 text-xs font-semibold"
@@ -2197,10 +2221,33 @@ export function MapCanvas({ loadedMap }: Props) {
         />
       )}
 
+      {((activeTool === 'forbidden-route' && pendingAnnotationPoints.length >= 2) ||
+        (activeTool === 'out-of-bounds' && pendingAnnotationPoints.length >= 3)) && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-purple-700/90 text-white text-sm px-3 py-1.5 rounded-full shadow z-10">
+          <span className="text-purple-100 text-xs">{pendingAnnotationPoints.length} points</span>
+          <button
+            onClick={() => {
+              const tool = useStore.getState().editor.activeTool
+              if (tool === 'forbidden-route') useStore.getState().commitAnnotation('forbidden_route')
+              else if (tool === 'out-of-bounds') useStore.getState().commitAnnotation('out_of_bounds')
+            }}
+            className="bg-white/20 hover:bg-white/30 transition-colors rounded-full px-2.5 py-0.5 text-xs font-semibold"
+          >
+            Done
+          </button>
+          <button
+            onClick={() => useStore.getState().cancelAnnotation()}
+            className="text-purple-200 hover:text-white transition-colors text-xs"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {splitPrompt && (
         <div
           className="absolute z-20 flex flex-col gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 p-2 text-xs"
-          style={{ left: splitPrompt.sx, top: splitPrompt.sy + 18, transform: 'translateX(-50%)', maxWidth: 260 }}
+          style={{ left: `clamp(130px, ${splitPrompt.sx}px, calc(100% - 130px))`, top: `min(${splitPrompt.sy + 18}px, calc(100% - 80px))`, transform: 'translateX(-50%)', maxWidth: 260 }}
         >
           <div className="text-gray-600 px-1 leading-snug">
             This control is in {splitPrompt.courseCount === 2 ? 'two' : splitPrompt.courseCount} courses

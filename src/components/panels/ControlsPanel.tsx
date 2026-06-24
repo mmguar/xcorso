@@ -73,9 +73,9 @@ function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClos
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-full mb-2 right-0 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
+      className="w-full mt-2 md:absolute md:bottom-full md:mb-2 md:right-0 md:w-64 md:mt-0 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
     >
-      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+      <div className="hidden md:flex items-center justify-between px-3 pt-2.5 pb-1">
         <span className="text-xs font-semibold text-gray-700">Appearance</span>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
       </div>
@@ -157,6 +157,7 @@ export function ControlsPanel() {
           <div className="px-3 py-2 mb-1 text-xs text-gray-500 bg-orange-50 rounded-lg border border-orange-100">
             Click <Plus size={10} className="inline" /> to add a control to <strong>{selectedCourse.name}</strong>.
             Click <Minus size={10} className="inline" /> to remove the last instance.
+            <span className="md:hidden"> Long-press a control on the map to remove it.</span>
           </div>
           {controls.map(control => {
             const count = countInCourse(control.id)
@@ -223,7 +224,10 @@ export function ControlsPanel() {
   const skipCodes = project.skipCodes ?? []
   const updateSkipCodes = useStore(s => s.updateSkipCodes)
   const reassignControlIds = useStore(s => s.reassignControlIds)
+  const skipCodesKey = skipCodes.join(',')
   const [skipCodesText, setSkipCodesText] = useState(() => skipCodes.join(', '))
+
+  useEffect(() => { setSkipCodesText(skipCodes.join(', ')) }, [skipCodesKey])
 
   function commitSkipCodes() {
     const codes = skipCodesText.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)
