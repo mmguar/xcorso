@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { sendCode, verifyCode } from '../lib/sync'
+import { sendCode, verifyCode, TERMS_VERSION } from '../lib/sync'
 import { useStore } from '../store'
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAADnxI0hcBbrG9wCc'
@@ -15,6 +15,7 @@ export function LoginModal({ onClose }: Props) {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [agreed, setAgreed] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const turnstileRef = useRef<HTMLDivElement>(null)
   const widgetId = useRef<string | null>(null)
@@ -65,7 +66,7 @@ export function LoginModal({ onClose }: Props) {
   async function handleVerify() {
     if (code.length < 6) { setError('Enter the 6-digit code'); return }
     setLoading(true); setError(null)
-    const user = await verifyCode(email.trim().toLowerCase(), code.trim())
+    const user = await verifyCode(email.trim().toLowerCase(), code.trim(), TERMS_VERSION)
     setLoading(false)
     if (user) { setCloudUser(user); onClose() }
     else setError('Invalid or expired code')
@@ -80,19 +81,25 @@ export function LoginModal({ onClose }: Props) {
 
         {step === 'email' ? (
           <>
-            <p className="text-xs text-gray-500">
-              We'll send a login code to your email. By signing in you agree to our{' '}
-              <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">terms &amp; privacy policy</a>.
-            </p>
+            <p className="text-xs text-gray-500">We'll send a login code to your email.</p>
             <input
               ref={inputRef}
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSendCode() }}
+              onKeyDown={e => { if (e.key === 'Enter' && agreed) handleSendCode() }}
               placeholder="you@example.com"
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
+            <label className="flex items-start gap-2 text-xs text-gray-500 cursor-pointer select-none">
+              <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-0.5 accent-orange-600" />
+              <span>
+                I agree to the{' '}
+                <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">Terms of Service</a>
+                {' '}and{' '}
+                <a href="/privacy.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">Privacy Policy</a>
+              </span>
+            </label>
           </>
         ) : (
           <>
@@ -124,7 +131,7 @@ export function LoginModal({ onClose }: Props) {
           </button>
           <button
             onClick={step === 'email' ? handleSendCode : handleVerify}
-            disabled={loading}
+            disabled={loading || (step === 'email' && !agreed)}
             className="px-3 py-1.5 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-40"
           >
             {loading ? 'Sending...' : step === 'email' ? 'Send code' : 'Verify'}
