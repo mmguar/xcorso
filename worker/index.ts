@@ -22,6 +22,7 @@ const ROUTES: [string, string, Handler][] = [
   ['POST', '/api/auth/verify', routes.authVerify],
   ['GET', '/api/auth/me', routes.authMe],
   ['DELETE', '/api/auth/account', routes.authDeleteAccount],
+  ['POST', '/api/auth/accept-terms', routes.authAcceptTerms],
   ['POST', '/api/auth/logout', routes.authLogout],
   ['GET', '/api/projects', routes.projectsList],
   ['POST', '/api/projects', routes.projectsCreate],

@@ -139,7 +139,7 @@ export async function authSend(request: Request, env: Env, _params: Params) {
 }
 
 export async function authVerify(request: Request, env: Env, _params: Params) {
-  const body = await request.json() as { email?: string; code?: string }
+  const body = await request.json() as { email?: string; code?: string; termsVersion?: string }
   const email = body.email?.trim().toLowerCase()
   const code = body.code?.trim()
   if (!email || !code) {
@@ -160,17 +160,22 @@ export async function authVerify(request: Request, env: Env, _params: Params) {
   await env.KV.delete(`auth:code:${email}`)
   await env.KV.delete(`auth:attempts:${email}`)
 
-  let user = await env.KV.get(`users:email:${email}`, 'json') as { userId: string; createdAt: string } | null
+  let user = await env.KV.get(`users:email:${email}`, 'json') as { userId: string; createdAt: string; termsVersion?: string } | null
   if (!user) {
     const userId = crypto.randomUUID()
     const createdAt = new Date().toISOString()
-    user = { userId, createdAt }
+    user = { userId, createdAt, termsVersion: body.termsVersion }
     await env.KV.put(`users:email:${email}`, JSON.stringify(user))
-    await env.KV.put(`users:id:${userId}`, JSON.stringify({ email, createdAt }))
+    await env.KV.put(`users:id:${userId}`, JSON.stringify({ email, createdAt, termsVersion: body.termsVersion }))
+  } else if (body.termsVersion && user.termsVersion !== body.termsVersion) {
+    user.termsVersion = body.termsVersion
+    await env.KV.put(`users:email:${email}`, JSON.stringify(user))
+    const idRecord = await env.KV.get(`users:id:${user.userId}`, 'json') as Record<string, unknown> | null
+    if (idRecord) await env.KV.put(`users:id:${user.userId}`, JSON.stringify({ ...idRecord, termsVersion: body.termsVersion }))
   }
 
   const token = await createToken(env, user.userId, email)
-  return Response.json({ ok: true, userId: user.userId, email }, {
+  return Response.json({ ok: true, userId: user.userId, email, termsVersion: user.termsVersion }, {
     headers: { 'Set-Cookie': tokenCookie(token) },
   })
 }
@@ -178,7 +183,22 @@ export async function authVerify(request: Request, env: Env, _params: Params) {
 export async function authMe(request: Request, env: Env, _params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ user: null })
-  return Response.json({ user: { userId: user.sub, email: user.email } })
+  const record = await env.KV.get(`users:email:${user.email}`, 'json') as { termsVersion?: string } | null
+  return Response.json({ user: { userId: user.sub, email: user.email, termsVersion: record?.termsVersion } })
+}
+
+export async function authAcceptTerms(request: Request, env: Env, _params: Params) {
+  const user = await getUser(request, env)
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  const body = await request.json() as { termsVersion?: string }
+  if (!body.termsVersion) return Response.json({ error: 'Missing termsVersion' }, { status: 400 })
+
+  const emailRecord = await env.KV.get(`users:email:${user.email}`, 'json') as Record<string, unknown> | null
+  if (emailRecord) await env.KV.put(`users:email:${user.email}`, JSON.stringify({ ...emailRecord, termsVersion: body.termsVersion }))
+  const idRecord = await env.KV.get(`users:id:${user.sub}`, 'json') as Record<string, unknown> | null
+  if (idRecord) await env.KV.put(`users:id:${user.sub}`, JSON.stringify({ ...idRecord, termsVersion: body.termsVersion }))
+
+  return Response.json({ ok: true, termsVersion: body.termsVersion })
 }
 
 export async function authDeleteAccount(request: Request, env: Env, _params: Params) {
