@@ -16,7 +16,7 @@ import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
+import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView, IOF_PURPLE } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec, Course } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
@@ -387,6 +387,19 @@ export function MapCanvas({ loadedMap }: Props) {
       scale: desiredScale,
     })
   }, [layoutMode, layoutCourseId, layoutSubmapIndex, layoutCourse, map, layoutSnapRequest])
+
+  useEffect(() => {
+    if (!layoutMode) return
+    let timer: ReturnType<typeof setTimeout>
+    function onResize() {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        useStore.setState(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
+      }, 200)
+    }
+    window.addEventListener('resize', onResize)
+    return () => { window.removeEventListener('resize', onResize); clearTimeout(timer) }
+  }, [layoutMode])
 
   // ── Pan to a requested control (sidebar / clue sheet click) ──────────────
   const centerRequest = useStore(s => s.editor.centerRequest)
@@ -2062,13 +2075,13 @@ export function MapCanvas({ loadedMap }: Props) {
                     <circle
                       cx={x} cy={y - totalHH - handleR * 2}
                       r={handleR}
-                      fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                      fill={IOF_PURPLE} stroke="white" strokeWidth={strokeW}
                     />
                     <rect
                       x={x - handleR} y={y + totalHH + handleR}
                       width={handleR * 2} height={handleR * 2}
                       rx={strokeW * 2}
-                      fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                      fill={IOF_PURPLE} stroke="white" strokeWidth={strokeW}
                     />
                   </g>
                 )
@@ -2104,7 +2117,7 @@ export function MapCanvas({ loadedMap }: Props) {
                     {ann.points.map((p, i) => (
                       <circle key={i}
                         cx={p.x} cy={p.y} r={handleR}
-                        fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                        fill={IOF_PURPLE} stroke="white" strokeWidth={strokeW}
                         style={{ cursor: 'move' }}
                       />
                     ))}
@@ -2120,7 +2133,7 @@ export function MapCanvas({ loadedMap }: Props) {
                   {pendingAnnotationPoints.map((p, i) => (
                     <circle key={i}
                       cx={p.x} cy={p.y} r={handleR}
-                      fill="#a626ff" stroke="white" strokeWidth={strokeW}
+                      fill={IOF_PURPLE} stroke="white" strokeWidth={strokeW}
                       style={{ cursor: 'move' }}
                     />
                   ))}

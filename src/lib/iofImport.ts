@@ -1,4 +1,5 @@
 import type { Control, Course, CourseControl, RaceClass, MapConfig, ControlType } from '../types'
+import { IOF_PURPLE } from './courseUtils'
 
 export interface IofImportResult {
   controls: Control[]
@@ -28,7 +29,7 @@ function childEls(el: Element, tag: string): Element[] {
   return [...el.children].filter(c => c.localName === tag)
 }
 
-const COURSE_COLORS = ['#a626ff', '#e63946', '#2a9d8f', '#264653', '#e9c46a', '#f4a261', '#457b9d']
+const COURSE_COLORS = [IOF_PURPLE, '#e63946', '#2a9d8f', '#264653', '#e9c46a', '#f4a261', '#457b9d']
 
 export function importIofXml(xmlString: string, map: MapConfig): IofImportResult {
   const doc = new DOMParser().parseFromString(xmlString, 'application/xml')

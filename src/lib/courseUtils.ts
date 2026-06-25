@@ -2,6 +2,9 @@ import type { Control, Course, CourseControl, CourseLoop, CourseVariation, MapCo
 import { getSymbolDims, symbolScaleFactor, symbolLabelOffset } from './symbolSpec'
 import { distance } from './geometry'
 
+// IOF CMYK 35/85/0/0 converted to sRGB via US SWOP profile (same method as Purple Pen).
+export const IOF_PURPLE = '#AA499B'
+
 export function controlsById(controls: Control[]): Map<string, Control> {
   return new Map(controls.map(c => [c.id, c]))
 }

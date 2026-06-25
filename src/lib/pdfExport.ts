@@ -6,7 +6,7 @@ import type { Project, Course, Control, MapPoint, MapConfig, ScaleBar, TextLabel
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById } from './courseUtils'
+import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById, IOF_PURPLE } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
@@ -394,7 +394,7 @@ function allControlsBoundsMm(
 }
 
 // ponytail: greedy graph coloring by proximity — not optimal 4-color but good enough
-export const MULTICOLOR_PALETTE = ['#a626ff', '#d946a8', '#a31515', '#e6199e'] as const
+export const MULTICOLOR_PALETTE = [IOF_PURPLE, '#d946a8', '#a31515', '#e6199e'] as const
 
 export function assignControlColors(controls: Control[]): Map<string, number> {
   if (controls.length === 0) return new Map()
@@ -1285,8 +1285,8 @@ export async function exportCoursePdf(
           await embedMap(toPage, pw, ph)
 
           const mapScale = acScale
-          const ctrlColor = '#a626ff'
-          const annColor = '#a626ff'
+          const ctrlColor = IOF_PURPLE
+          const annColor = IOF_PURPLE
           const allCtrlSpec = resolveSpec(project.spec)
 
           const colorMap = options.allControlsMulticolor ? assignControlColors(project.controls) : null
@@ -1441,7 +1441,7 @@ export async function exportCoursePdf(
           await embedMap(toPage, cpw, cph)
 
           const mapScale = courseScale
-          const annColor = '#a626ff'
+          const annColor = IOF_PURPLE
           const courseSpec = resolveSpec(project.spec, course.spec)
           overprintPass(doc, courseOverprint, () => {
           setColor(doc, annColor)

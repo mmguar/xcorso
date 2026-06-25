@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 import type { Control, Course, CourseControl, CircleGap, AppearanceSettings, MapPoint } from '../../types'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
-import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps } from '../../lib/courseUtils'
+import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps, IOF_PURPLE } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
 import { startTriangleVertices, exchangeTriangleVertices } from '../../lib/symbolGeometry'
 import type { SymbolDims } from '../../lib/symbolSpec'
@@ -294,7 +294,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         } else if (colorMap) {
           color = MULTICOLOR_PALETTE[colorMap.get(control.id) ?? 0]
         } else {
-          color = '#a626ff'
+          color = IOF_PURPLE
         }
 
         let label: string
