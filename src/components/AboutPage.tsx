@@ -12,8 +12,11 @@ export function AboutPage({ onBack }: Props) {
         <h1 className="text-2xl font-bold text-gray-900">xcorso</h1>
       </div>
 
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        {/* Populate this section with your content */}
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col gap-3">
+        <div className="flex gap-4 text-sm">
+          <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">Terms of Service</a>
+          <a href="/privacy.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">Privacy Policy</a>
+        </div>
       </div>
 
       <button

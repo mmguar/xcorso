@@ -5,7 +5,7 @@ import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml } from '../../lib/iofExport'
 import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
-import { logout as cloudLogout, addShare, removeShare, listShares, type ShareEntry } from '../../lib/sync'
+import { logout as cloudLogout, addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { EventSpec, MapType } from '../../types'
 
@@ -305,7 +305,19 @@ export function Header({ onGoHome, onLogin }: Props) {
         )}
 
         {/* Sync + Versions (grouped) */}
-        {!isViewer && cloudUser && canSync && (
+        {!isViewer && cloudUser && canSync && cloudUser.termsVersion !== TERMS_VERSION && (
+          <button
+            onClick={async () => {
+              if (await acceptTerms(TERMS_VERSION)) setCloudUser({ ...cloudUser, termsVersion: TERMS_VERSION })
+            }}
+            className="flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-800 border border-orange-200 hover:border-orange-300 rounded-lg px-2 py-1.5 transition-colors"
+            title="Our terms have been updated — accept to resume syncing"
+          >
+            <AlertTriangle size={14} />
+            <span className="hidden sm:inline">Accept updated terms</span>
+          </button>
+        )}
+        {!isViewer && cloudUser && canSync && cloudUser.termsVersion === TERMS_VERSION && (
           <div className="flex items-center border border-gray-200 rounded-lg">
             <button
               onClick={() => syncProject()}

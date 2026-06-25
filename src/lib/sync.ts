@@ -4,9 +4,12 @@ const API = '/api'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
+export const TERMS_VERSION = '2025-06-24'
+
 export interface CloudUser {
   userId: string
   email: string
+  termsVersion?: string
 }
 
 export async function fetchUser(): Promise<CloudUser | null> {
@@ -30,16 +33,26 @@ export async function sendCode(email: string, cfToken?: string): Promise<{ ok: b
   return { ok: res.ok }
 }
 
-export async function verifyCode(email: string, code: string): Promise<CloudUser | null> {
+export async function verifyCode(email: string, code: string, termsVersion: string): Promise<CloudUser | null> {
   const res = await fetch(`${API}/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ email, code }),
+    body: JSON.stringify({ email, code, termsVersion }),
   })
   if (!res.ok) return null
-  const data = await res.json() as { userId: string; email: string }
-  return { userId: data.userId, email: data.email }
+  const data = await res.json() as { userId: string; email: string; termsVersion?: string }
+  return { userId: data.userId, email: data.email, termsVersion: data.termsVersion }
+}
+
+export async function acceptTerms(termsVersion: string): Promise<boolean> {
+  const res = await fetch(`${API}/auth/accept-terms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ termsVersion }),
+  })
+  return res.ok
 }
 
 export async function logout(): Promise<void> {
