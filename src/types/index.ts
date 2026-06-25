@@ -134,7 +134,7 @@ export interface Course {
   climb?: number             // metres, manually set
   manualLength?: number      // metres — manual override of computed length (wins over measured/straight)
   finishType?: FinishType    // IOF 16.1/16.2/16.3 — defaults to 'taped'
-  color: string              // overprint color, default '#a626ff' (CMYK 35/85/0/0)
+  color: string              // overprint color, default IOF_PURPLE
   showPoints?: boolean       // display [points] next to controls on map
   loops?: CourseLoop[]
   variations?: CourseVariation[]

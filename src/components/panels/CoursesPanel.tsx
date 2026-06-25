@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, Pencil, Copy, FileText } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Pencil, Copy, FileText, Check, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
 import { SPEC_LABELS } from '../../lib/symbolSpec'
 import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
-
-const IOF_PURPLE = '#a626ff'
+import { IOF_PURPLE } from '../../lib/courseUtils'
 
 function ClueSheetColorPicker({ label, value, onChange }: {
   label: string
@@ -69,7 +68,7 @@ function ClueSheetOptionsPanel() {
         >
           <option value={5}>Small</option>
           <option value={7}>Medium</option>
-          <option value={10}>Large</option>
+          <option value={9}>Large</option>
         </select>
       </label>
       <label className="flex items-center gap-2 text-xs text-gray-600 select-none cursor-pointer">
@@ -159,6 +158,7 @@ function CourseEditor({ course }: { course: Course }) {
   const handleReorder = useCallback((reordered: CourseControl[]) => reorderCourseControls(course.id, reordered), [reorderCourseControls, course.id])
 
   const [codesInput, setCodesInput] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   return (
     <div className="border border-orange-200 rounded-xl rounded-t-none border-t-0 overflow-hidden mb-2">
@@ -186,12 +186,25 @@ function CourseEditor({ course }: { course: Course }) {
         >
           <Copy size={13} />
         </button>
-        <button
-          onClick={() => deleteCourse(course.id)}
-          className="text-gray-300 hover:text-red-500 transition-colors"
-        >
-          <Trash2 size={13} />
-        </button>
+        {confirmingDelete ? (
+          <>
+            <span className="text-[10px] font-bold text-red-500">Delete?</span>
+            <button onClick={() => deleteCourse(course.id)} className="text-red-500 hover:text-red-700 transition-colors" title="Confirm delete">
+              <Check size={13} />
+            </button>
+            <button onClick={() => setConfirmingDelete(false)} className="text-gray-400 hover:text-gray-600 transition-colors" title="Cancel">
+              <X size={13} />
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setConfirmingDelete(true)}
+            className="text-gray-300 hover:text-red-500 transition-colors"
+            title="Delete course"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
       </div>
 
       {/* Course toggles */}

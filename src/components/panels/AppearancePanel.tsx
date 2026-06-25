@@ -1,6 +1,7 @@
 import { RotateCcw } from 'lucide-react'
 import { useStore } from '../../store'
 import type { OverprintMode } from '../../types'
+import { IOF_PURPLE } from '../../lib/courseUtils'
 
 const OVERPRINT_OPTIONS: { value: OverprintMode; label: string; hint: string }[] = [
   { value: 'simulated', label: 'Simulated overprint', hint: 'Purple multiplies over the map' },
@@ -77,7 +78,7 @@ export function AppearancePanel() {
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={appearance.color || '#a626ff'}
+            value={appearance.color || IOF_PURPLE}
             onChange={e => setAppearance({ color: e.target.value })}
             className="w-7 h-7 rounded border border-gray-200 cursor-pointer p-0"
           />

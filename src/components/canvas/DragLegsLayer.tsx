@@ -4,7 +4,7 @@ import { unitsPerMm, controlsById } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
 import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
 
-const LIGHT_PURPLE = '#c4a0e0'
+const LIGHT_PURPLE = '#d4a0c8'
 const ARROW_LEN_MM = 2
 const ARROW_WIDTH_MM = 1.4
 const LABEL_PX = 25

@@ -1,6 +1,6 @@
 import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
-import { defaultControlLabel, generateAllPermutations } from '../lib/courseUtils'
+import { defaultControlLabel, generateAllPermutations, IOF_PURPLE } from '../lib/courseUtils'
 
 function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
   const getType = (id: string) => controls.find(c => c.id === id)?.type
@@ -20,7 +20,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (starts.length === 1) controls.push({ id: crypto.randomUUID(), controlId: starts[0].id })
         if (finishes.length === 1) controls.push({ id: crypto.randomUUID(), controlId: finishes[0].id })
       }
-      const course: Course = { id: crypto.randomUUID(), name, type, controls, color: '#a626ff' }
+      const course: Course = { id: crypto.randomUUID(), name, type, controls, color: IOF_PURPLE }
       h.mutateProject(p => { p.courses.push(course) })
       set(state => ({
         editor: {

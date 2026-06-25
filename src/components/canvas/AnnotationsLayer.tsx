@@ -7,7 +7,7 @@
 
 import { memo, useId } from 'react'
 import type { Annotation, MapConfig, MapPoint, EventSpec } from '../../types'
-import { unitsPerMm } from '../../lib/courseUtils'
+import { unitsPerMm, IOF_PURPLE } from '../../lib/courseUtils'
 import { useRenderTracker } from '../../lib/perf'
 import { walkPath } from '../../lib/geometry'
 import { darkenHex } from '../../lib/color'
@@ -179,7 +179,7 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
 
 export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId, render }: Props) {
   useRenderTracker('AnnotationsLayer')
-  const color = '#a626ff'
+  const color = IOF_PURPLE
   const baseId = useId()
   const upm = unitsPerMm(map)
   const scale = map.scale
