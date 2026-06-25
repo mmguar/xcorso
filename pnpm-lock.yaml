@@ -33,8 +33,8 @@ importers:
         specifier: ^1.11.0
         version: 1.17.0(react@19.2.7)
       ocad2geojson:
-        specifier: ^2.1.20
-        version: 2.1.21
+        specifier: ^2.1.22
+        version: 2.1.22
       pdfjs-dist:
         specifier: ^5.6.205
         version: 5.7.284
@@ -1377,8 +1377,8 @@ packages:
     resolution: {integrity: sha512-9miFgM2OFba7hB+pRgvtV84pYTBaoTHohvmIgiRt6dRIzbwEOIaNaP+dIlGs2fNFoB0SeISs0Jz5WFVRid6Xyg==}
     engines: {node: '>=12.20.0'}
 
-  ocad2geojson@2.1.21:
-    resolution: {integrity: sha512-+cAn4EGUh73fJkZzrTcdeA9qbusTC57Tut8Wmn/6q5ARBA1WNbDObx5i75+XGmrgk/0bh9M2MX8ZwMNhwrsZxQ==}
+  ocad2geojson@2.1.22:
+    resolution: {integrity: sha512-bM+IIGjReBjZhGSPqWhAmsfcmls0tD8JImwIUTi2TcHtiSxWRwlCF9/1z+fcx5YQ3xDpus+THaIGAz4YEuhvsQ==}
     hasBin: true
 
   open@7.4.2:
@@ -1455,8 +1455,13 @@ packages:
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
-  proj4@2.20.8:
-    resolution: {integrity: sha512-1C8sfT4xY4PAPwk0MroFBTGF4R4bzDXdmPQTGYVLsoNssrZ9odzObxS2dTeGBty8jW8KO7h16C1Hs2JP+ctfFw==}
+  proj4@2.20.9:
+    resolution: {integrity: sha512-GLBGqXaTcdWnppre3o1sMmy4DcMGSGq/ng+9k2MTNddarRK6SveINqlqYzi3xEXuy06ljY1TTrC6H9C4f360IQ==}
+    peerDependencies:
+      geotiff: '*'
+    peerDependenciesMeta:
+      geotiff:
+        optional: true
 
   protocol-buffers-schema@3.6.1:
     resolution: {integrity: sha512-VG2K63Igkiv9p76tk1lilczEK1cT+kCjKtkdhw1dQZV3k3IXJbd3o6Ho8b9zJZaHSnT2hKe4I+ObmX9w6m5SmQ==}
@@ -3064,7 +3069,7 @@ snapshots:
 
   obug@2.1.3: {}
 
-  ocad2geojson@2.1.21:
+  ocad2geojson@2.1.22:
     dependencies:
       '@turf/line-offset': 7.3.5
       '@turf/meta': 7.3.5
@@ -3079,6 +3084,8 @@ snapshots:
       uuid: 3.4.0
       vt-pbf: 3.1.3
       xmldom: 0.6.0
+    transitivePeerDependencies:
+      - geotiff
 
   open@7.4.2:
     dependencies:
@@ -3161,7 +3168,7 @@ snapshots:
 
   process-nextick-args@2.0.1: {}
 
-  proj4@2.20.8:
+  proj4@2.20.9:
     dependencies:
       mgrs: 1.0.0
       wkt-parser: 1.5.5
@@ -3207,7 +3214,9 @@ snapshots:
       event-stream: 4.0.1
       geojson-stream: 0.1.0
       minimist: 1.2.8
-      proj4: 2.20.8
+      proj4: 2.20.9
+    transitivePeerDependencies:
+      - geotiff
 
   resolve-protobuf-schema@2.1.0:
     dependencies:
