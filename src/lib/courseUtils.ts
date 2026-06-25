@@ -62,7 +62,7 @@ export interface Submap {
   label: string
 }
 
-export function computeSubmaps(course: Course, _controls?: Control[]): Submap[] {
+export function computeSubmaps(course: Course): Submap[] {
   const exchangeIndices: number[] = []
   for (let i = 0; i < course.controls.length; i++) {
     if (course.controls[i].exchangeMode) exchangeIndices.push(i)

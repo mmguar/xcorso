@@ -116,7 +116,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
         const c = p.controls.find(c => c.id === id)
         if (!c) return
         if (!c.description) c.description = {}
-        ;(c.description as any)[field] = value
+        ;(c.description as Record<string, string | undefined>)[field] = value
         if (Object.values(c.description).every(v => v === undefined)) {
           c.description = undefined
         }

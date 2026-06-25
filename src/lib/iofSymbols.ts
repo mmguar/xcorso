@@ -542,7 +542,7 @@ function makeEndSymbols(): SymbolDef[] {
     ['W', 'West', 0, 0, 'M 60 0 L -40 0', 'M -40 -30 L -40 30'],
     ['NW', 'North-west', 0, 0, 'M 35 40 L -35 -40', 'M -55 -15 L -15 -55'],
   ]
-  return dirs.map(([d, name, _dx, _dy, path1, path2]) => ({
+  return dirs.map(([d, name, , , path1, path2]) => ({
     code: `11.8${d}`, name: `${name} end`, column: 'G' as IofColumn,
     paths: [path1, path2],
   }))

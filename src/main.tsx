@@ -3,6 +3,7 @@ import { Buffer } from 'buffer'
 globalThis.Buffer = Buffer
 
 // Polyfill Promise.withResolvers for Safari < 17.4 / iOS < 17.4
+/* eslint-disable @typescript-eslint/no-explicit-any -- polyfill for missing API */
 if (typeof (Promise as any).withResolvers === 'undefined') {
   (Promise as any).withResolvers = function <T>() {
     let resolve!: (value: T | PromiseLike<T>) => void
@@ -11,11 +12,18 @@ if (typeof (Promise as any).withResolvers === 'undefined') {
     return { promise, resolve, reject }
   }
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
+import * as Sentry from '@sentry/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+
+Sentry.init({
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  enabled: import.meta.env.PROD,
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

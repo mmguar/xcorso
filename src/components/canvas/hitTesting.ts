@@ -60,7 +60,7 @@ function hiddenSubmapControlIds(project: Project, selectedCourseId: string | nul
   if (selectedCourseId == null || selectedSubmapIndex == null) return null
   const course = project.courses.find(c => c.id === selectedCourseId)
   if (!course) return null
-  const submaps = computeSubmaps(course, project.controls)
+  const submaps = computeSubmaps(course)
   if (selectedSubmapIndex >= submaps.length) return null
   const visible = new Set(submaps[selectedSubmapIndex].controls.map(cc => cc.controlId))
   const hidden = new Set<string>()

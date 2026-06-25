@@ -13,9 +13,11 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   const [segLen, setSegLen] = useState(String(sb.segmentLengthM))
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- sync prop→state */
     setSegments(String(sb.segments))
     setScale(String(sb.scale))
     setSegLen(String(sb.segmentLengthM))
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [sb.id, sb.segments, sb.scale, sb.segmentLengthM])
 
   return (
@@ -237,8 +239,10 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
   const aspect = img.widthMm / img.heightMm
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- sync prop→state */
     setWidth(String(Math.round(img.widthMm * 10) / 10))
     setHeight(String(Math.round(img.heightMm * 10) / 10))
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [img.id, img.widthMm, img.heightMm])
 
   return (
@@ -382,8 +386,10 @@ function NorthArrowSettings({ ann }: { ann: Annotation }) {
   const [angleVal, setAngleVal] = useState(String(Math.round(rotation)))
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- sync prop→state */
     setSizeVal(String(Math.round((ann.scale ?? 1) * 100) / 100))
     setAngleVal(String(Math.round(ann.rotation ?? 0)))
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [ann.id, ann.scale, ann.rotation])
 
   return (
