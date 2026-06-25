@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { ActiveTool } from '../../types'
+import { IOF_PURPLE } from '../../lib/courseUtils'
 
 type ToolEntry = { tool: ActiveTool; label: string; shortcut?: string }
 
@@ -252,7 +253,7 @@ export function Toolbar() {
       ">
         <div
           className="w-3 h-3 rounded-full shrink-0"
-          style={{ background: selectedCourse?.color ?? '#a626ff' }}
+          style={{ background: selectedCourse?.color ?? IOF_PURPLE }}
         />
         {activeTool === 'gap' && gapRebuild ? (
           <span className="text-xs md:text-sm text-green-700">

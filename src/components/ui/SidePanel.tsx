@@ -25,6 +25,9 @@ export function SidePanel() {
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
 
+  const projectId = useStore(s => s.projectId)
+  useEffect(() => { setTab('controls') }, [projectId])
+
   const [collapsed, setCollapsed] = useState(() =>
     typeof window !== 'undefined' && SIDEBAR_W > window.innerWidth / 3
   )
@@ -48,6 +51,15 @@ export function SidePanel() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-switch tab on layout mode
     if (layoutMode) setTab('layout')
   }, [layoutMode])
+
+  const tourPanel = useStore(s => s.editor.tourPanel)
+  useEffect(() => {
+    if (!tourPanel) return
+    /* eslint-disable react-hooks/set-state-in-effect -- tour requests panel open */
+    setTab(tourPanel)
+    setCollapsed(false)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [tourPanel])
 
   function switchMode(t: Tab) {
     if (t === 'controls') {
