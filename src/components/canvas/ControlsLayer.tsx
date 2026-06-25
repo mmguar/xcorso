@@ -200,7 +200,8 @@ interface Props {
   _rev?: number
 }
 
-export const ControlsLayer = memo(function ControlsLayer({ controls, course: selectedCourse, _rev: _ }: Props) {
+export const ControlsLayer = memo(function ControlsLayer({ controls, course: selectedCourse, _rev: _rev }: Props) {
+  void _rev
   useRenderTracker('ControlsLayer')
   const map = useStore(s => s.project!.map)
   const upm = unitsPerMm(map)
@@ -240,14 +241,14 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
   const submapInfo = useMemo(() => {
     if (!selectedCourse || selectedSubmapIndex == null) return null
-    const submaps = computeSubmaps(selectedCourse, controls)
+    const submaps = computeSubmaps(selectedCourse)
     if (selectedSubmapIndex >= submaps.length) return null
     const submap = submaps[selectedSubmapIndex]
     const controlIds = new Set(submap.controls.map(cc => cc.controlId))
     const firstCcId = submap.controls[0]?.controlId
     const lastCcId = submap.controls[submap.controls.length - 1]?.controlId
     return { controlIds, firstCcId, lastCcId }
-  }, [selectedCourse, selectedSubmapIndex, controls])
+  }, [selectedCourse, selectedSubmapIndex])
 
   const globalExchangeIds = useMemo(() => {
     if (selectedCourse) return null

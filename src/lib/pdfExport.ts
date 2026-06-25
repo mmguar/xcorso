@@ -762,6 +762,7 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
   }
 
   // Save state, build clipping path, draw hatching, restore
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jsPDF undocumented internal API
   const internal = (doc as any).internal
   internal.write('q')
 
@@ -840,6 +841,7 @@ function drawNorthArrow(
   doc.moveTo(apex.x, apex.y)
   doc.lineTo(br.x, br.y)
   doc.lineTo(bl.x, bl.y)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jsPDF undocumented internal API
   ;(doc as any).internal.write('h')
   doc.fillStroke()
 
@@ -1112,11 +1114,11 @@ export async function exportCoursePdf(
     const b = loadedMap.bounds
     try {
       svgBaseCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, mapOverprint)
-    } catch {}
+    } catch { /* raster fallback not critical */ }
     if (belowActive) {
       try {
         svgTopCache = await prepareSvgRasterCache(svgEl, b, mapOpacity, false, { keepColors: belowColors, transparent: true })
-      } catch {}
+      } catch { /* raster fallback not critical */ }
     }
   }
 
@@ -1344,7 +1346,7 @@ export async function exportCoursePdf(
 
     const descMode: DescMode = layout?.descMode ?? (layout?.clueSheet.visible ? 'on-map' : options.descModes?.[oKey] ?? 'none')
 
-    const submaps = computeSubmaps(course, project.controls)
+    const submaps = computeSubmaps(course)
     const hasSubmaps = submaps.length > 1
     const submapSlices = hasSubmaps ? submaps : [{ index: 0, controls: course.controls, label: '' }]
     const fullCourseDistance = hasSubmaps ? resolveCourseLength(course, computeCourseDistances(course, project.controls, project.map, project.measuredLegs)) : 0

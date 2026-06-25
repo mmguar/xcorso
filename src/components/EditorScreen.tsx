@@ -7,6 +7,7 @@ import { Header } from './ui/Header'
 import { SidePanel } from './ui/SidePanel'
 import { Toolbar } from './ui/Toolbar'
 import { OverlaySettingsPanel, AnnotationSettingsPanel } from './panels/OverlaySettingsPanel'
+import { OnboardingTour } from './OnboardingTour'
 
 const shortcuts: [string, string][] = [
   ['V', 'Select / Pan'],
@@ -85,7 +86,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
 
   useEffect(() => {
     if (!mapFileData && mapStorageMode === 'reference') {
-      setError('Map file not loaded. Open the .oco file from the same folder as your map.')
+      setError('Map file not loaded. Open the .oco file from the same folder as your map.') // eslint-disable-line react-hooks/set-state-in-effect -- sync error check before async load
       return
     }
     if (!mapFileData) {
@@ -147,6 +148,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
         <SidePanel />
       </div>
       {showShortcuts && <ShortcutsOverlay onClose={closeShortcuts} />}
+      <OnboardingTour />
     </div>
   )
 }

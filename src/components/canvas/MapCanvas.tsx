@@ -40,8 +40,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 function LayoutScaleInput({ courseId, printScale }: { courseId: string; printScale: number }) {
   const [value, setValue] = useState(String(printScale))
   const prevScale = useRef(printScale)
-  if (printScale !== prevScale.current) {
-    prevScale.current = printScale
+  if (printScale !== prevScale.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
+    prevScale.current = printScale // eslint-disable-line react-hooks/refs
     setValue(String(printScale))
   }
   function commit() {
@@ -1743,7 +1743,7 @@ export function MapCanvas({ loadedMap }: Props) {
       div.removeEventListener('contextmenu',  onContextMenu)
       div.removeEventListener('pointerleave', onLeave)
     }
-  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   function getAnnotationType(): AnnotationType | null {
     if (activeTool === 'forbidden-route')    return 'forbidden_route'
@@ -1998,6 +1998,7 @@ export function MapCanvas({ loadedMap }: Props) {
       )}
 
       {/* Layout mode page overlay (border mask) */}
+      {/* eslint-disable-next-line react-hooks/refs -- reading cached DOM rect is harmless */}
       {layoutMode && layoutCourse?.layout && (() => {
         const submaps = computeSubmaps(layoutCourse)
         const submapLayout = submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout

@@ -32,8 +32,8 @@ function ScaleInput({
 }) {
   const [value, setValue] = useState(String(externalValue))
   const prevScale = useRef(externalValue)
-  if (externalValue !== prevScale.current) {
-    prevScale.current = externalValue
+  if (externalValue !== prevScale.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
+    prevScale.current = externalValue // eslint-disable-line react-hooks/refs
     setValue(String(externalValue))
   }
   function commit() {
@@ -75,8 +75,8 @@ function MmInput({
   const display = Math.round(externalValue * 10) / 10
   const [text, setText] = useState(String(display))
   const prevVal = useRef(externalValue)
-  if (externalValue !== prevVal.current) {
-    prevVal.current = externalValue
+  if (externalValue !== prevVal.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
+    prevVal.current = externalValue // eslint-disable-line react-hooks/refs
     setText(String(Math.round(externalValue * 10) / 10))
   }
   function commit() {
@@ -388,6 +388,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
   // Per-submap layout scoping. The expanded controls edit the submap selected in
   // layout mode (submap 0 when the course has no exchanges/flips).
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const submaps = useMemo(() => computeSubmaps(course), [course])
   const hasSubmaps = submaps.length > 1
   const activeSubmap = isActive ? Math.min(layoutSubmapIndex, submaps.length - 1) : 0
@@ -901,6 +902,7 @@ export function LayoutPanel() {
 
   useEffect(() => {
     if (courses.length > 0) ensureAllCourseLayouts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when course count changes, not on every action ref update
   }, [courses.length])
 
   function isIncluded(c: typeof courses[0]) {
@@ -1015,7 +1017,7 @@ export function LayoutPanel() {
           includedOverride={isViewer ? !viewerExclusions.has(course.id) : undefined}
           onToggleIncluded={isViewer ? () => setViewerExclusions(s => {
             const next = new Set(s)
-            next.has(course.id) ? next.delete(course.id) : next.add(course.id)
+            if (next.has(course.id)) next.delete(course.id); else next.add(course.id)
             return next
           }) : undefined}
         />
@@ -1032,6 +1034,7 @@ export function LayoutPanel() {
           <p className="text-[11px] text-red-600 mb-2">{exportError}</p>
         )}
         <button
+          data-tour="export-pdf"
           onClick={handleExport}
           disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
           className="w-full bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"

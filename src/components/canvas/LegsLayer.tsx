@@ -193,7 +193,8 @@ function renderLegs(
   return elements
 }
 
-export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, handlesOnly = false, appearance, projectSpec, selectedSubmapIndex, _rev: _ }: Props) {
+export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBendHandles = false, handlesOnly = false, appearance, projectSpec, selectedSubmapIndex, _rev: _rev }: Props) {
+  void _rev
   useRenderTracker('LegsLayer')
   const draggingControlId = useStore(s => s.editor.draggingControlId)
   const controlMap = useMemo(() => controlsById(controls), [controls])
@@ -202,7 +203,7 @@ export const LegsLayer = memo(function LegsLayer({ course, controls, map, showBe
 
   let effectiveCourse = course
   if (selectedSubmapIndex != null) {
-    const submaps = computeSubmaps(course, controls)
+    const submaps = computeSubmaps(course)
     if (selectedSubmapIndex < submaps.length) {
       effectiveCourse = { ...course, controls: submaps[selectedSubmapIndex].controls }
     }

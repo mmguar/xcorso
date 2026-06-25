@@ -308,7 +308,7 @@ export function Toolbar() {
   }
 
   return (
-<div className="
+<div data-tour="toolbar" className="
   /* Position and Centering */
   absolute bottom-4 left-0 right-0 mx-auto w-fit
   

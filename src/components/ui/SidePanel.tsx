@@ -40,11 +40,12 @@ export function SidePanel() {
 
   useEffect(() => {
     if (selectedCourseId && !layoutMode) {
-      setTab('courses')
+      setTab('courses') // eslint-disable-line react-hooks/set-state-in-effect -- auto-switch tab on selection
     }
   }, [selectedCourseId, layoutMode])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-switch tab on layout mode
     if (layoutMode) setTab('layout')
   }, [layoutMode])
 
@@ -76,6 +77,7 @@ export function SidePanel() {
               {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
                 <button
                   key={t}
+                  data-tour={t === 'courses' ? 'courses-tab' : t === 'layout' ? 'layout-tab' : undefined}
                   onClick={() => { switchMode(t); setTab(t) }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors capitalize ${
                     tab === t
