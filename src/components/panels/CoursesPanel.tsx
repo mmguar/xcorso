@@ -523,6 +523,7 @@ export function CoursesPanel() {
 
   useEffect(() => {
     if (selectedCourseId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-expand selected course
       setExpanded(prev => {
         if (prev.has(selectedCourseId)) return prev
         return new Set([...prev, selectedCourseId])

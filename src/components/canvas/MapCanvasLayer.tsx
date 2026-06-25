@@ -13,7 +13,7 @@ const MAX_CANVAS_DIM = 8192
 export function MapCanvasLayer({ loadedMap, onPixelSize, srcOverride }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const onPixelSizeRef = useRef(onPixelSize)
-  onPixelSizeRef.current = onPixelSize
+  onPixelSizeRef.current = onPixelSize // eslint-disable-line react-hooks/refs -- sync callback ref
 
   useEffect(() => {
     let cancelled = false

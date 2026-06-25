@@ -94,11 +94,11 @@ describe('computeCourseDistances', () => {
 
 describe('resolveCourseLength', () => {
   test('uses computed when no manual length', () => {
-    const course = { manualLength: undefined } as any
+    const course = { manualLength: undefined } as unknown as Course
     expect(resolveCourseLength(course, { legs: [], total: 1234 })).toBe(1234)
   })
   test('uses manual length when set', () => {
-    const course = { manualLength: 5000 } as any
+    const course = { manualLength: 5000 } as unknown as Course
     expect(resolveCourseLength(course, { legs: [], total: 1234 })).toBe(5000)
   })
 })

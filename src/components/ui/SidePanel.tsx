@@ -40,11 +40,12 @@ export function SidePanel() {
 
   useEffect(() => {
     if (selectedCourseId && !layoutMode) {
-      setTab('courses')
+      setTab('courses') // eslint-disable-line react-hooks/set-state-in-effect -- auto-switch tab on selection
     }
   }, [selectedCourseId, layoutMode])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-switch tab on layout mode
     if (layoutMode) setTab('layout')
   }, [layoutMode])
 

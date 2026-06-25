@@ -46,13 +46,14 @@ export function OnboardingTour() {
     if (el) {
       setRect(el.getBoundingClientRect())
     } else if (current.optional) {
-      // Anchor not in DOM, skip to next visible
+      // Anchor not in DOM, skip to next visible — must defer to avoid setState-in-render
       setStep(findNextVisible(step + 1))
     } else {
       setRect(null)
     }
   }, [current, step])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- updateRect measures DOM and sets position state
   useLayoutEffect(updateRect, [updateRect])
 
   useEffect(() => {

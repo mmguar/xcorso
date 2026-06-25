@@ -101,6 +101,14 @@ export function ControlsPanel() {
   const [showAppearance, setShowAppearance] = useState(false)
   const appearanceBtnRef = useRef<HTMLButtonElement>(null)
 
+  const updateSkipCodes = useStore(s => s.updateSkipCodes)
+  const reassignControlIds = useStore(s => s.reassignControlIds)
+  const skipCodes = project.skipCodes ?? []
+  const skipCodesKey = skipCodes.join(',')
+  const [skipCodesText, setSkipCodesText] = useState(() => skipCodes.join(', '))
+
+  useEffect(() => { setSkipCodesText(skipCodes.join(', ')) }, [skipCodesKey]) // eslint-disable-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+
   const controls = project.controls
   const selectedCourse = selectedCourseId
     ? project.courses.find(c => c.id === selectedCourseId) ?? null
@@ -220,14 +228,6 @@ export function ControlsPanel() {
       </div>
     )
   }
-
-  const skipCodes = project.skipCodes ?? []
-  const updateSkipCodes = useStore(s => s.updateSkipCodes)
-  const reassignControlIds = useStore(s => s.reassignControlIds)
-  const skipCodesKey = skipCodes.join(',')
-  const [skipCodesText, setSkipCodesText] = useState(() => skipCodes.join(', '))
-
-  useEffect(() => { setSkipCodesText(skipCodes.join(', ')) }, [skipCodesKey])
 
   function commitSkipCodes() {
     const codes = skipCodesText.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)

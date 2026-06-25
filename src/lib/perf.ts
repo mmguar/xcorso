@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs, react-hooks/purity -- intentional: render-time profiling */
 import { useRef } from 'react'
 
 const ENABLED = import.meta.env.DEV
@@ -64,6 +65,7 @@ export function perfReport() {
 }
 
 if (ENABLED) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__perfReport = perfReport
   console.log('[perf] Profiling enabled. Call __perfReport() in console for stats.')
 }
