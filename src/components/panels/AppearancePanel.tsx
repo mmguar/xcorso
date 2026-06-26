@@ -1,15 +1,17 @@
 import { RotateCcw } from 'lucide-react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import type { OverprintMode } from '../../types'
 import { IOF_PURPLE } from '../../lib/courseUtils'
 
 const OVERPRINT_OPTIONS: { value: OverprintMode; label: string; hint: string }[] = [
-  { value: 'simulated', label: 'Simulated overprint', hint: 'Purple multiplies over the map' },
-  { value: 'none', label: 'No overprint', hint: 'Always printed on top' },
-  { value: 'below', label: 'Below black/brown/blue', hint: 'Purple under 100% map colours (HD & export)' },
+  { value: 'simulated', label: 'appearance.simulated', hint: 'appearance.simulatedHint' },
+  { value: 'none', label: 'appearance.noOverprint', hint: 'appearance.noOverprintHint' },
+  { value: 'below', label: 'appearance.belowBlack', hint: 'appearance.belowBlackHint' },
 ]
 
 export function AppearancePanel() {
+  const t = useT()
   const appearance = useStore(s => s.editor.appearance)
   const setAppearance = useStore(s => s.setAppearance)
   const overprint = useStore(s => s.project?.overprint ?? 1)
@@ -22,7 +24,7 @@ export function AppearancePanel() {
   return (
     <div className="p-3 space-y-4 text-sm">
       {/* Control size */}
-      <Section label="Control size">
+      <Section label={t('appearance.controlSize')}>
         <SliderRow
           value={appearance.controlScale}
           min={0.5} max={2.5} step={0.1}
@@ -32,7 +34,7 @@ export function AppearancePanel() {
       </Section>
 
       {/* Overprint — how course / control / annotation ink sits over the map */}
-      <Section label="Overprint">
+      <Section label={t('appearance.overprint')}>
         <div className="space-y-1">
           {OVERPRINT_OPTIONS.map(opt => (
             <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
@@ -44,15 +46,15 @@ export function AppearancePanel() {
                 className="accent-orange-600 mt-0.5"
               />
               <span className="text-xs text-gray-600 leading-tight">
-                {opt.label}
-                <span className="block text-[10px] text-gray-400">{opt.hint}</span>
+                {t(opt.label)}
+                <span className="block text-[10px] text-gray-400">{t(opt.hint)}</span>
               </span>
             </label>
           ))}
         </div>
         {overprintMode !== 'none' && (
           <div className="mt-2 pl-1">
-            <div className="text-[10px] text-gray-400 mb-1">Intensity</div>
+            <div className="text-[10px] text-gray-400 mb-1">{t('appearance.intensity')}</div>
             <SliderRow
               value={overprint}
               min={0} max={1} step={0.05}
@@ -64,7 +66,7 @@ export function AppearancePanel() {
       </Section>
 
       {/* Line width */}
-      <Section label="Line width">
+      <Section label={t('appearance.lineWidth')}>
         <SliderRow
           value={appearance.lineWidth}
           min={0.3} max={3} step={0.1}
@@ -74,7 +76,7 @@ export function AppearancePanel() {
       </Section>
 
       {/* Color override */}
-      <Section label="Color">
+      <Section label={t('appearance.color')}>
         <div className="flex items-center gap-2">
           <input
             type="color"
@@ -83,21 +85,21 @@ export function AppearancePanel() {
             className="w-7 h-7 rounded border border-gray-200 cursor-pointer p-0"
           />
           <span className="text-xs text-gray-500 flex-1">
-            {appearance.color ? 'Custom' : 'Default (per course)'}
+            {appearance.color ? t('appearance.custom') : t('appearance.defaultPerCourse')}
           </span>
           {appearance.color && (
             <button
               onClick={() => setAppearance({ color: '' })}
               className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
             >
-              Reset
+              {t('appearance.reset')}
             </button>
           )}
         </div>
       </Section>
 
       {/* Outline */}
-      <Section label="Outline">
+      <Section label={t('appearance.outline')}>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -105,7 +107,7 @@ export function AppearancePanel() {
             onChange={e => setAppearance({ outlineEnabled: e.target.checked })}
             className="accent-orange-600"
           />
-          <span className="text-xs text-gray-600">Enable outline</span>
+          <span className="text-xs text-gray-600">{t('appearance.enableOutline')}</span>
         </label>
         {appearance.outlineEnabled && (
           <div className="mt-2 space-y-2 pl-1">
@@ -116,7 +118,7 @@ export function AppearancePanel() {
                 onChange={e => setAppearance({ outlineColor: e.target.value })}
                 className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
               />
-              <span className="text-xs text-gray-500">Color</span>
+              <span className="text-xs text-gray-500">{t('appearance.color')}</span>
             </div>
             <SliderRow
               value={appearance.outlineWidth}
@@ -129,7 +131,7 @@ export function AppearancePanel() {
       </Section>
 
       {/* Submap labelling */}
-      <Section label="Submaps">
+      <Section label={t('appearance.submaps')}>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -137,7 +139,7 @@ export function AppearancePanel() {
             onChange={e => updateLabelSubmapStart(e.target.checked)}
             className="accent-orange-600"
           />
-          <span className="text-xs text-gray-600">Label first control of submap</span>
+          <span className="text-xs text-gray-600">{t('appearance.labelSubmap')}</span>
         </label>
       </Section>
 
@@ -147,7 +149,7 @@ export function AppearancePanel() {
         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-orange-600 transition-colors pt-1"
       >
         <RotateCcw size={12} />
-        Reset to standard
+        {t('appearance.resetStandard')}
       </button>
     </div>
   )

@@ -9,6 +9,10 @@ const DEFAULT_CELL = 7
 let CELL = DEFAULT_CELL
 let INK: [number, number, number] = [0, 0, 0]
 
+// ponytail: module-level translator, set via setDescTranslator before export
+let _t: ((key: string) => string) | null = null
+export function setDescTranslator(t: (key: string) => string) { _t = t }
+
 function setInkColor(hex?: string) {
   if (!hex) { INK = [0, 0, 0]; return }
   INK = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
@@ -220,7 +224,7 @@ function buildDescriptionText(desc: ControlDescription): string {
       const value = desc[columnFields[col]]
       if (!value) return null
       const sym = getSymbol(value)
-      return sym ? sym.name : value
+      return sym ? (_t ? _t('iof.' + sym.code) : sym.name) : value
     })
     .filter(Boolean)
     .join(', ')

@@ -5,10 +5,11 @@
 import { useRef, useState, useEffect } from 'react'
 import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut, RefreshCw, Copy } from 'lucide-react'
 import { useStore } from '../store'
+import { useT, LanguageSwitcher, type TFn } from '../i18n'
 import { loadProjectFile } from '../lib/projectFile'
 import { loadMap } from '../lib/mapLoader'
 import { importIofXml } from '../lib/iofImport'
-import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta } from '../lib/persistence'
+import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
 import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, type SyncMeta, type SharedProject } from '../lib/sync'
 import { SPEC_LABELS } from '../lib/symbolSpec'
@@ -23,19 +24,20 @@ interface Props {
 type Step = 'landing' | 'new-project'
 const MAP_FILE_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, t: TFn): string {
   const ms = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(ms / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1) return t('welcome.justNow')
+  if (mins < 60) return t('welcome.minsAgo', { mins })
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
+  if (hrs < 24) return t('welcome.hrsAgo', { hrs })
   const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days}d ago`
+  if (days < 30) return t('welcome.daysAgo', { days })
   return new Date(iso).toLocaleDateString()
 }
 
 export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
+  const t = useT()
   const [step, setStep] = useState<Step>('landing')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -44,6 +46,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
+  const [cloudVersions, setCloudVersions] = useState<Map<string, number>>(new Map())
 
   const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
@@ -74,6 +77,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     setSyncing(true)
     try {
       const [cloud, shared] = await Promise.all([fetchCloudProjects(), fetchSharedProjects()])
+      setCloudVersions(new Map(cloud.map(c => [c.id, c.version])))
       const localCloudIds = new Set(local.map(p => p.sync?.cloudId).filter(Boolean))
       const cloudOnly: ProjectSummary[] = cloud
         .filter(c => !localCloudIds.has(c.id))
@@ -94,7 +98,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
       loadProject(project, mapData)
       onProjectLoaded()
     } catch (e) {
-      setError(`Failed to open file: ${e instanceof Error ? e.message : String(e)}`)
+      setError(t('welcome.failedOpenFile', { error: e instanceof Error ? e.message : String(e) }))
     } finally {
       setLoading(false)
     }
@@ -105,21 +109,37 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     try {
       const cloudId = p.sync?.cloudId
       const isLocallyAvailable = await loadPersistedProject(p.id)
-      if (isLocallyAvailable) {
+      if (isLocallyAvailable && cloudId && cloudUser) {
+        // Check if remote is newer before loading stale local data
+        const localSync = await getSyncMeta(p.id)
+        const remoteVersion = cloudVersions.get(cloudId)
+        if (localSync && remoteVersion != null && remoteVersion > localSync.syncVersion) {
+          const result = await downloadProject(cloudId, localSync.mapHash)
+          if (result) {
+            const mapData = result.mapData ?? isLocallyAvailable.mapFileData
+            await saveProject(p.id, result.project, mapData)
+            await setSyncMeta(p.id, { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash })
+            loadProject(result.project, mapData, p.id)
+            onProjectLoaded()
+            return
+          }
+        }
+        await switchProject(p.id)
+      } else if (isLocallyAvailable) {
         await switchProject(p.id)
       } else if (cloudId) {
         const result = await downloadProject(cloudId, null)
-        if (!result) throw new Error('Download failed')
+        if (!result) throw new Error(t('welcome.downloadFailed'))
         await saveProject(p.id, result.project, result.mapData)
         const sync: SyncMeta = { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash }
         await setSyncMeta(p.id, sync)
         loadProject(result.project, result.mapData, p.id)
       } else {
-        throw new Error('Project not found')
+        throw new Error(t('welcome.projectNotFound'))
       }
       onProjectLoaded()
     } catch (e) {
-      setError(`Failed to open project: ${e instanceof Error ? e.message : String(e)}`)
+      setError(t('welcome.failedOpenProject', { error: e instanceof Error ? e.message : String(e) }))
     } finally {
       setLoading(false)
     }
@@ -129,7 +149,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     setLoading(true); setError(null)
     try {
       const saved = await loadPersistedProject(p.id)
-      if (!saved) throw new Error('Project not found locally')
+      if (!saved) throw new Error(t('welcome.projectNotFoundLocally'))
       const newId = crypto.randomUUID()
       const dup = structuredClone(saved.project)
       dup.meta.name = `${dup.meta.name} (copy)`
@@ -138,7 +158,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
       loadProject(dup, saved.mapFileData, newId)
       onProjectLoaded()
     } catch (e) {
-      setError(`Failed to duplicate: ${e instanceof Error ? e.message : String(e)}`)
+      setError(t('welcome.failedDuplicate', { error: e instanceof Error ? e.message : String(e) }))
     } finally {
       setLoading(false)
     }
@@ -148,11 +168,11 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     setLoading(true); setError(null)
     try {
       const result = await downloadProject(sp.projectId, null)
-      if (!result) throw new Error('Download failed')
+      if (!result) throw new Error(t('welcome.downloadFailed'))
       loadProject(result.project, result.mapData, sp.projectId, sp.role)
       onProjectLoaded()
     } catch (e) {
-      setError(`Failed to open shared project: ${e instanceof Error ? e.message : String(e)}`)
+      setError(t('welcome.failedOpenShared', { error: e instanceof Error ? e.message : String(e) }))
     } finally {
       setLoading(false)
     }
@@ -174,7 +194,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     try {
       const ext = mapFile.name.split('.').pop()?.toLowerCase() ?? ''
       if (!MAP_FILE_EXTENSIONS.has(ext)) {
-        throw new Error('Unsupported map format. Please select an OCAD, PDF, or image file.')
+        throw new Error(t('welcome.unsupportedFormat'))
       }
 
       const data = await mapFile.arrayBuffer()
@@ -211,7 +231,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
       onProjectLoaded()
     } catch (e) {
-      setError(`Failed to load map: ${e instanceof Error ? e.message : String(e)}`)
+      setError(t('welcome.failedLoadMap', { error: e instanceof Error ? e.message : String(e) }))
     } finally {
       setLoading(false)
     }
@@ -229,7 +249,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               <button
                 onClick={() => { cloudLogout(); setCloudUser(null) }}
                 className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
-                title="Sign out"
+                title={t('welcome.signOut')}
               >
                 <LogOut size={14} />
               </button>
@@ -239,22 +259,22 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     onClick={async () => { await deleteAccount(); setCloudUser(null); setConfirmDeleteAccount(false) }}
                     className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
                   >
-                    Confirm delete
+                    {t('welcome.confirmDelete')}
                   </button>
                   <button
                     onClick={() => setConfirmDeleteAccount(false)}
                     className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500"
                   >
-                    Cancel
+                    {t('welcome.cancel')}
                   </button>
                 </span>
               ) : (
                 <button
                   onClick={() => setConfirmDeleteAccount(true)}
                   className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1"
-                  title="Delete account and all cloud data"
+                  title={t('welcome.deleteAccountTitle')}
                 >
-                  Delete account
+                  {t('welcome.deleteAccount')}
                 </button>
               )}
             </div>
@@ -264,7 +284,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-orange-600 transition-colors"
             >
               <LogIn size={14} />
-              Sign in
+              {t('welcome.signIn')}
             </button>
           )}
         </div>
@@ -275,8 +295,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">xcorso</h1>
           <p className="text-gray-500 text-center max-w-sm text-sm">
-            Orienteering course planning for desktop and mobile.
-            Open an OCAD, PDF, or image map to get started.
+            {t('welcome.subtitle')}
           </p>
         </div>
 
@@ -285,14 +304,14 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           <div className="w-full max-w-sm flex flex-col gap-1.5">
             <div className="flex items-center gap-2 px-1">
               <h2 className="text-xs font-medium text-gray-400">
-                {syncing ? 'Syncing…' : 'Recent projects'}
+                {syncing ? t('welcome.syncing') : t('welcome.recentProjects')}
               </h2>
               {cloudUser && (
                 <button
                   onClick={loadProjectList}
                   disabled={syncing}
                   className="p-0.5 rounded text-gray-300 hover:text-orange-500 transition-colors disabled:opacity-40"
-                  title="Refresh cloud projects"
+                  title={t('welcome.refreshCloud')}
                 >
                   <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
                 </button>
@@ -314,7 +333,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     {p.sync && <Cloud size={12} className={p.id === activeProjectId ? 'text-orange-200' : 'text-gray-300'} />}
                   </div>
                   <div className={`text-xs ${p.id === activeProjectId ? 'text-orange-200' : 'text-gray-400'}`}>
-                    {timeAgo(p.updatedAt)}
+                    {timeAgo(p.updatedAt, t)}
                   </div>
                 </div>
                 {confirmDeleteId === p.id ? (
@@ -323,7 +342,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                       onClick={() => handleDeleteProject(p.id)}
                       className="text-xs px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600"
                     >
-                      Delete
+                      {t('welcome.delete')}
                     </button>
                     <button
                       onClick={() => setConfirmDeleteId(null)}
@@ -331,7 +350,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                         p.id === activeProjectId ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'
                       }`}
                     >
-                      Cancel
+                      {t('welcome.cancel')}
                     </button>
                   </div>
                 ) : (
@@ -343,7 +362,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                           ? 'hover:bg-orange-500 text-orange-200'
                           : 'hover:bg-gray-100 text-gray-300 hover:text-gray-500'
                       }`}
-                      title="Duplicate"
+                      title={t('welcome.duplicate')}
                     >
                       <Copy size={14} />
                     </button>
@@ -354,7 +373,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                           ? 'hover:bg-orange-500 text-orange-200'
                           : 'hover:bg-gray-100 text-gray-300 hover:text-red-400'
                       }`}
-                      title="Delete"
+                      title={t('welcome.delete')}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -368,7 +387,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
         {/* Shared with me */}
         {sharedProjects.length > 0 && (
           <div className="w-full max-w-sm flex flex-col gap-1.5">
-            <h2 className="text-xs font-medium text-gray-400 px-1">Shared with me</h2>
+            <h2 className="text-xs font-medium text-gray-400 px-1">{t('welcome.sharedWithMe')}</h2>
             {sharedProjects.map(sp => (
               <div
                 key={sp.projectId}
@@ -381,7 +400,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 font-medium">{sp.role}</span>
                   </div>
                   <div className="text-xs text-gray-400">
-                    {sp.ownerEmail} · {timeAgo(sp.updatedAt)}
+                    {sp.ownerEmail} · {timeAgo(sp.updatedAt, t)}
                   </div>
                 </div>
               </div>
@@ -395,8 +414,8 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
             className="flex-1 flex flex-col items-center gap-2 p-6 bg-white border-2 border-orange-200 hover:border-orange-400 rounded-2xl transition-all cursor-pointer shadow-sm hover:shadow-md"
           >
             <FileUp size={24} className="text-orange-600" />
-            <span className="font-semibold text-gray-800">New Project</span>
-            <span className="text-xs text-gray-400 text-center">Open a map file and start planning</span>
+            <span className="font-semibold text-gray-800">{t('welcome.newProject')}</span>
+            <span className="text-xs text-gray-400 text-center">{t('welcome.newProjectDesc')}</span>
           </button>
 
           <button
@@ -404,20 +423,23 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
             className="flex-1 flex flex-col items-center gap-2 p-6 bg-white border-2 border-gray-200 hover:border-gray-400 rounded-2xl transition-all cursor-pointer shadow-sm hover:shadow-md"
           >
             <FolderOpen size={24} className="text-gray-600" />
-            <span className="font-semibold text-gray-800">Open .oco</span>
-            <span className="text-xs text-gray-400 text-center">Import a project file</span>
+            <span className="font-semibold text-gray-800">{t('welcome.openOco')}</span>
+            <span className="text-xs text-gray-400 text-center">{t('welcome.openOcoDesc')}</span>
           </button>
         </div>
 
         {error && <p className="text-red-500 text-sm">{error}</p>}
-        {loading && <p className="text-gray-400 text-sm">Loading…</p>}
+        {loading && <p className="text-gray-400 text-sm">{t('welcome.loading')}</p>}
 
-        <button
-          onClick={onAbout}
-          className="text-xs text-gray-400 hover:text-orange-600 transition-colors"
-        >
-          About xcorso
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onAbout}
+            className="text-xs text-gray-400 hover:text-orange-600 transition-colors"
+          >
+            {t('welcome.about')}
+          </button>
+          <LanguageSwitcher />
+        </div>
 
         <input
           ref={openFileRef}
@@ -432,11 +454,11 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   return (
     <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-8">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col gap-5">
-        <h2 className="text-lg font-bold text-gray-900">New Project</h2>
+        <h2 className="text-lg font-bold text-gray-900">{t('welcome.newProject')}</h2>
 
         {/* Project name */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Event name</label>
+          <label className="text-xs font-medium text-gray-500">{t('welcome.eventName')}</label>
           <input
             type="text" value={projectName}
             onChange={e => setProjectName(e.target.value)}
@@ -446,7 +468,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
         {/* Event specification */}
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-medium text-gray-500">Event type</label>
+          <label className="text-xs font-medium text-gray-500">{t('welcome.eventType')}</label>
           <div className="flex gap-3">
             {(['isom-2017', 'issprm-2019'] as const).map(spec => (
               <button
@@ -461,8 +483,8 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                 <div className="font-semibold mb-0.5">{SPEC_LABELS[spec]}</div>
                 <div className="text-gray-400 leading-relaxed">
                   {spec === 'isom-2017'
-                    ? 'Forest orienteering, base scale 1:15000'
-                    : 'Sprint orienteering, base scale 1:4000'}
+                    ? t('welcome.forestDesc')
+                    : t('welcome.sprintDesc')}
                 </div>
               </button>
             ))}
@@ -471,7 +493,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
         {/* Map file */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Map file</label>
+          <label className="text-xs font-medium text-gray-500">{t('welcome.mapFile')}</label>
           <button
             onClick={() => mapFileRef.current?.click()}
             className="border-2 border-dashed border-gray-200 hover:border-orange-300 rounded-xl px-4 py-5 text-sm text-gray-400 hover:text-orange-600 transition-colors text-center"
@@ -479,7 +501,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
             {mapFile ? (
               <span className="text-gray-700 font-medium">{mapFile.name}</span>
             ) : (
-              <>Click to select OCAD (.ocd), PDF, or image file</>
+              <>{t('welcome.mapFilePrompt')}</>
             )}
           </button>
           <input
@@ -495,23 +517,23 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           />
           {mapFile && !mapFile.name.toLowerCase().endsWith('.ocd') && (
             <p className="text-[11px] text-amber-600 mt-1">
-              PDF and image maps are saved locally only. Use an OCAD file (.ocd) for cloud sync and sharing.
+              {t('welcome.localOnlyWarning')}
             </p>
           )}
         </div>
 
         {/* IOF XML import */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500">Import courses <span className="font-normal text-gray-400">(optional)</span></label>
+          <label className="text-xs font-medium text-gray-500">{t('welcome.importCourses')} <span className="font-normal text-gray-400">{t('welcome.optional')}</span></label>
           <div className="flex items-center gap-2">
             <button
               onClick={() => iofFileRef.current?.click()}
               className="flex-1 border border-dashed border-gray-200 hover:border-orange-300 rounded-lg px-3 py-2 text-xs text-gray-400 hover:text-orange-600 transition-colors text-left truncate"
             >
-              {iofFile ? iofFile.name : 'IOF XML v3 — from Condes, Purple Pen, etc.'}
+              {iofFile ? iofFile.name : t('welcome.iofXmlHint')}
             </button>
             {iofFile && (
-              <button onClick={() => setIofFile(null)} className="text-xs text-gray-400 hover:text-red-400 px-1">Clear</button>
+              <button onClick={() => setIofFile(null)} className="text-xs text-gray-400 hover:text-red-400 px-1">{t('welcome.clear')}</button>
             )}
           </div>
           <input
@@ -523,7 +545,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
         {/* Storage mode */}
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-medium text-gray-500">Map storage in project file</label>
+          <label className="text-xs font-medium text-gray-500">{t('welcome.storageLabel')}</label>
           <div className="flex gap-3">
             {(['embedded', 'reference'] as const).map(mode => (
               <button
@@ -535,11 +557,11 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     : 'border-gray-200 text-gray-500 hover:border-gray-300'
                 }`}
               >
-                <div className="font-semibold capitalize mb-0.5">{mode}</div>
+                <div className="font-semibold mb-0.5">{t('welcome.' + mode)}</div>
                 <div className="text-gray-400 leading-relaxed">
                   {mode === 'embedded'
-                    ? 'Map file copied into .oco — easy to share & use on mobile'
-                    : 'Map stays as a separate file — smaller project file'}
+                    ? t('welcome.embeddedDesc')
+                    : t('welcome.referenceDesc')}
                 </div>
               </button>
             ))}
@@ -553,14 +575,14 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
             onClick={() => { setStep('landing'); setError(null) }}
             className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm hover:bg-gray-50 transition-colors"
           >
-            Back
+            {t('welcome.back')}
           </button>
           <button
             onClick={handleCreateProject}
             disabled={!mapFile || loading}
             className="flex-1 bg-orange-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'Loading map…' : 'Create Project'}
+            {loading ? t('welcome.loadingMap') : t('welcome.createProject')}
           </button>
         </div>
       </div>

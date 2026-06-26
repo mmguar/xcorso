@@ -16,6 +16,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
+import { useT } from '../i18n'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields, isDimensionText, getSymbol } from '../lib/iofSymbols'
 import { defaultControlLabel, computeSubmaps, controlsById } from '../lib/courseUtils'
@@ -45,6 +46,7 @@ interface RowData {
 
 export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
+  const t = useT()
   const controls = useStore(s => s.project!.controls)
   const projectName = useStore(s => s.project!.meta.name)
   const mapConfig = useStore(s => s.project!.map)
@@ -178,7 +180,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                             : 'text-orange-600 hover:bg-orange-50'
                         }`}
                       >
-                        All
+                        {t('controlDesc.all')}
                       </button>
                     )}
                   </td>
@@ -188,7 +190,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
               {rows.length === 0 && !finishRow ? (
                 <tr>
                   <td colSpan={8} className="text-center text-xs text-gray-400 py-3">
-                    Click controls on the map to add them.
+                    {t('controlDesc.clickToAdd')}
                   </td>
                   {showExtraCol && <td />}
                 </tr>
@@ -288,6 +290,7 @@ function SortableDescRow({
   submapButton?: SubmapButtonProps
   exchangeSeparator?: ExchangeSeparatorProps
 }) {
+  const t = useT()
   const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const requestCenterOnControl = useStore(s => s.requestCenterOnControl)
@@ -338,7 +341,7 @@ function SortableDescRow({
           className={`${BORDER} text-center font-mono cursor-pointer hover:bg-orange-50`}
           style={{ height: CELL }}
           onClick={() => requestCenterOnControl(ctrl.id)}
-          title="Show on map"
+          title={t('controlDesc.showOnMap')}
         >
           {defaultControlLabel(ctrl)}
         </td>
@@ -357,7 +360,7 @@ function SortableDescRow({
               onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
             >
               {value && (textDescriptions && sym
-                ? <span className="text-[8px] leading-tight px-0.5">{sym.name}</span>
+                ? <span className="text-[8px] leading-tight px-0.5">{t('iof.' + sym.code)}</span>
                 : isDimText
                   ? <span className="text-[9px] font-bold leading-none">{value}</span>
                   : <IofSymbolIcon code={value} size={CELL - 4} />
@@ -382,7 +385,7 @@ function SortableDescRow({
             {ctrl.type === 'control' && onToggleExchange && (
               <button
                 onClick={() => onToggleExchange(cc.id)}
-                title={cc.exchangeMode ? 'Remove exchange' : 'Set as exchange'}
+                title={cc.exchangeMode ? t('controlDesc.removeExchange') : t('controlDesc.setExchange')}
                 className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity z-10 ${
                   cc.exchangeMode
                     ? 'bg-orange-500 text-white opacity-100'
@@ -427,7 +430,7 @@ function SortableDescRow({
                 onChange={() => onToggleLoop?.(courseId, ctrl.id)}
                 className="accent-orange-600"
               />
-              Butterfly loop
+              {t('controlDesc.butterflyLoop')}
             </label>
           </td>
         </tr>
@@ -463,6 +466,7 @@ function ExchangeRow({
   onModeChange: (mode: 'exchange' | 'flip') => void
   showExtraCol: boolean
 }) {
+  const t = useT()
   return (
     <tr className="group">
       <td colSpan={8} className={`${BORDER} relative`} style={{ height: CELL, padding: 0 }}>
@@ -490,8 +494,8 @@ function ExchangeRow({
             onChange={e => onModeChange(e.target.value as 'exchange' | 'flip')}
             className="text-[10px] border border-gray-300 rounded px-1 py-0.5 bg-white opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <option value="exchange">Exchange</option>
-            <option value="flip">Flip</option>
+            <option value="exchange">{t('controlDesc.exchange')}</option>
+            <option value="flip">{t('controlDesc.flip')}</option>
           </select>
         </div>
       </td>
@@ -772,6 +776,7 @@ function SymbolPicker({
   onClear: () => void
   onClose: () => void
 }) {
+  const t = useT()
   const symbols = getColumnSymbols(column)
   const [search, setSearch] = useState('')
   const currentIsDimension = column === 'F' && current != null && isDimensionText(current)
@@ -782,7 +787,7 @@ function SymbolPicker({
   const normalize = (s: string) => s.toLowerCase().replace(/[\s-]+/g, '')
   const searchNorm = normalize(search)
   const filtered = search
-    ? symbols.filter(s => normalize(s.name).includes(searchNorm) || s.code.includes(search))
+    ? symbols.filter(s => normalize(s.name).includes(searchNorm) || normalize(t('iof.' + s.code)).includes(searchNorm) || s.code.includes(search))
     : symbols
 
   const grouped = column === 'G' ? groupLocationSymbols(filtered)
@@ -795,7 +800,7 @@ function SymbolPicker({
         {column !== 'F' && (
           <input
             type="text"
-            placeholder="Search..."
+            placeholder={t('controlDesc.search')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
@@ -804,21 +809,21 @@ function SymbolPicker({
         )}
         {current && (
           <button onClick={onClear} className="text-xs text-red-500 hover:text-red-700 shrink-0">
-            Clear
+            {t('controlDesc.clear')}
           </button>
         )}
         <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-600 shrink-0">
-          Close
+          {t('controlDesc.close')}
         </button>
       </div>
 
       {column === 'F' && (
         <div className="mb-2">
-          <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">Dimensions</div>
+          <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">{t('controlDesc.dimensions')}</div>
           <div className="flex items-center gap-1">
             <input
               type="text"
-              placeholder="e.g. 2.5 or 8 x 4"
+              placeholder={t('controlDesc.dimensionPlaceholder')}
               value={dimValue}
               onChange={e => setDimValue(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && dimValue.trim()) onSelect(dimValue.trim()) }}
@@ -829,15 +834,15 @@ function SymbolPicker({
               onClick={() => { if (dimValue.trim()) onSelect(dimValue.trim()) }}
               className="text-xs bg-orange-500 text-white rounded px-2 py-1 hover:bg-orange-600 shrink-0"
             >
-              Set
+              {t('controlDesc.set')}
             </button>
           </div>
-          <div className="text-[9px] text-gray-400 mt-0.5 px-1">Height/depth, size (W×H), or slope (e.g. 0.5 / 3)</div>
+          <div className="text-[9px] text-gray-400 mt-0.5 px-1">{t('controlDesc.dimensionHint')}</div>
         </div>
       )}
 
       {column === 'F' && (
-        <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">Combinations</div>
+        <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">{t('controlDesc.combinations')}</div>
       )}
 
       {grouped ? (
@@ -859,13 +864,14 @@ function SymbolGrid({ symbols, current, onSelect }: {
   current?: string
   onSelect: (code: string) => void
 }) {
+  const t = useT()
   return (
     <div className="flex flex-wrap gap-0.5">
       {symbols.map(sym => (
         <button
           key={sym.code}
           onClick={() => onSelect(sym.code)}
-          title={`${sym.name} (${sym.code})`}
+          title={`${t('iof.' + sym.code)} (${sym.code})`}
           className={`flex items-center justify-center rounded border transition-colors ${
             sym.code === current
               ? 'border-orange-500 bg-orange-100'

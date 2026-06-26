@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { Check, Trash2, X, RefreshCw } from 'lucide-react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import type { Annotation, ScaleBar, TextLabel, ImageOverlay } from '../../types'
 
 function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
+  const t = useT()
   const updateScaleBar = useStore(s => s.updateScaleBar)
   const deleteScaleBar = useStore(s => s.deleteScaleBar)
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
+  const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
 
   const [segments, setSegments] = useState(String(sb.segments))
   const [scale, setScale] = useState(String(sb.scale))
@@ -23,12 +26,12 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-700">Scale Bar</span>
+        <span className="text-xs font-semibold text-gray-700">{t('overlay.scaleBar')}</span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => { deleteScaleBar(sb.id) }}
             className="text-gray-400 hover:text-red-500 transition-colors"
-            title="Delete"
+            title={t('overlay.delete')}
           >
             <Trash2 size={13} />
           </button>
@@ -42,7 +45,7 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
       </div>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Scale 1:</span>
+        <span className="w-16 shrink-0">{t('overlay.scaleLabel')}</span>
         <input
           type="number"
           min={100}
@@ -60,7 +63,7 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Segments</span>
+        <span className="w-16 shrink-0">{t('overlay.segments')}</span>
         <input
           type="number"
           min={1}
@@ -78,7 +81,7 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">1 cm segs</span>
+        <span className="w-16 shrink-0">{t('overlay.fixedCmSegs')}</span>
         <input
           type="checkbox"
           checked={!!sb.fixedCmSegments}
@@ -86,13 +89,13 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
           className="accent-orange-600"
         />
         <span className="text-[10px] text-gray-400">
-          {sb.fixedCmSegments ? `${Math.round(sb.scale / 100)} m each` : ''}
+          {sb.fixedCmSegments ? t('overlay.segmentEach', { meters: Math.round(sb.scale / 100) }) : ''}
         </span>
       </label>
 
       {!sb.fixedCmSegments && (
         <label className="flex items-center gap-2 text-xs text-gray-600">
-          <span className="w-16 shrink-0">Segment (m)</span>
+          <span className="w-16 shrink-0">{t('overlay.segmentM')}</span>
           <input
             type="number"
             min={1}
@@ -110,14 +113,15 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
       )}
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Background</span>
+        <span className="w-16 shrink-0">{t('overlay.background')}</span>
         <input
           type="range"
           min={0}
           max={1}
           step={0.05}
           value={sb.bgAlpha}
-          onChange={e => updateScaleBar(sb.id, { bgAlpha: parseFloat(e.target.value) })}
+          onPointerDown={beginMoveOverlay}
+          onChange={e => updateScaleBar(sb.id, { bgAlpha: parseFloat(e.target.value) }, true)}
           className="flex-1 min-w-0 h-1 accent-orange-600"
         />
         <span className="text-[10px] text-gray-400 w-8 text-right">
@@ -129,9 +133,11 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
 }
 
 function TextLabelSettings({ tl }: { tl: TextLabel }) {
+  const t = useT()
   const updateTextLabel = useStore(s => s.updateTextLabel)
   const deleteTextLabel = useStore(s => s.deleteTextLabel)
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
+  const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
 
   const [text, setText] = useState(tl.text)
   const [fontSize, setFontSize] = useState(String(tl.fontSizeMm))
@@ -139,12 +145,12 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-700">Text Label</span>
+        <span className="text-xs font-semibold text-gray-700">{t('overlay.textLabel')}</span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => { deleteTextLabel(tl.id) }}
             className="text-gray-400 hover:text-red-500 transition-colors"
-            title="Delete"
+            title={t('overlay.delete')}
           >
             <Trash2 size={13} />
           </button>
@@ -159,14 +165,14 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
 
       <div className="flex flex-col gap-1 text-xs text-gray-600">
         <div className="flex items-center justify-between">
-          <span>Text</span>
+          <span>{t('overlay.text')}</span>
           {text !== tl.text && (
             <button
               onClick={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
               className="flex items-center gap-0.5 text-[10px] text-orange-600 hover:text-orange-700 font-medium"
             >
               <Check size={11} />
-              Apply
+              {t('overlay.apply')}
             </button>
           )}
         </div>
@@ -180,7 +186,7 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
       </div>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Size (mm)</span>
+        <span className="w-16 shrink-0">{t('overlay.sizeMm')}</span>
         <input
           type="number"
           min={0.5}
@@ -199,7 +205,7 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Color</span>
+        <span className="w-16 shrink-0">{t('overlay.color')}</span>
         <input
           type="color"
           value={tl.color}
@@ -210,14 +216,15 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Background</span>
+        <span className="w-16 shrink-0">{t('overlay.background')}</span>
         <input
           type="range"
           min={0}
           max={1}
           step={0.05}
           value={tl.bgAlpha}
-          onChange={e => updateTextLabel(tl.id, { bgAlpha: parseFloat(e.target.value) })}
+          onPointerDown={beginMoveOverlay}
+          onChange={e => updateTextLabel(tl.id, { bgAlpha: parseFloat(e.target.value) }, true)}
           className="flex-1 min-w-0 h-1 accent-orange-600"
         />
         <span className="text-[10px] text-gray-400 w-8 text-right">
@@ -229,9 +236,11 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
 }
 
 function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
+  const t = useT()
   const updateImageOverlay = useStore(s => s.updateImageOverlay)
   const deleteImageOverlay = useStore(s => s.deleteImageOverlay)
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
+  const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
   const replaceInputRef = useRef<HTMLInputElement>(null)
 
   const [width, setWidth] = useState(String(Math.round(img.widthMm * 10) / 10))
@@ -248,19 +257,19 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-700">Image</span>
+        <span className="text-xs font-semibold text-gray-700">{t('overlay.image')}</span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => { replaceInputRef.current!.value = ''; replaceInputRef.current!.click() }}
             className="text-gray-400 hover:text-orange-600 transition-colors"
-            title="Replace image"
+            title={t('overlay.replaceImage')}
           >
             <RefreshCw size={13} />
           </button>
           <button
             onClick={() => { deleteImageOverlay(img.id) }}
             className="text-gray-400 hover:text-red-500 transition-colors"
-            title="Delete"
+            title={t('overlay.delete')}
           >
             <Trash2 size={13} />
           </button>
@@ -301,7 +310,7 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
       <span className="text-[10px] text-gray-400 truncate" title={img.filename}>{img.filename}</span>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Width (mm)</span>
+        <span className="w-16 shrink-0">{t('overlay.widthMm')}</span>
         <input
           type="number"
           min={1}
@@ -319,7 +328,7 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Height (mm)</span>
+        <span className="w-16 shrink-0">{t('overlay.heightMm')}</span>
         <input
           type="number"
           min={1}
@@ -337,14 +346,15 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
       </label>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Background</span>
+        <span className="w-16 shrink-0">{t('overlay.background')}</span>
         <input
           type="range"
           min={0}
           max={1}
           step={0.05}
           value={img.bgAlpha}
-          onChange={e => updateImageOverlay(img.id, { bgAlpha: parseFloat(e.target.value) })}
+          onPointerDown={beginMoveOverlay}
+          onChange={e => updateImageOverlay(img.id, { bgAlpha: parseFloat(e.target.value) }, true)}
           className="flex-1 min-w-0 h-1 accent-orange-600"
         />
         <span className="text-[10px] text-gray-400 w-8 text-right">
@@ -356,11 +366,12 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
 }
 
 function OobSettings({ ann }: { ann: Annotation }) {
+  const t = useT()
   const deleteAnnotation = useStore(s => s.deleteAnnotation)
 
   return (
     <div className="flex items-center justify-between">
-      <span className="text-xs font-semibold text-gray-700">Out of Bounds</span>
+      <span className="text-xs font-semibold text-gray-700">{t('overlay.outOfBounds')}</span>
       <button
         onClick={() => deleteAnnotation(ann.id)}
         className="text-gray-400 hover:text-red-500 transition-colors"
@@ -400,7 +411,7 @@ function NorthArrowSettings({ ann }: { ann: Annotation }) {
           <button
             onClick={() => deleteAnnotation(ann.id)}
             className="text-gray-400 hover:text-red-500 transition-colors"
-            title="Delete"
+            title={t('overlay.delete')}
           >
             <Trash2 size={13} />
           </button>

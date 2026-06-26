@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronRight, Pencil, Copy, FileText, Check, X } from 'lucide-react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
@@ -46,6 +47,7 @@ function ClueSheetColorPicker({ label, value, onChange }: {
 }
 
 function ClueSheetOptionsPanel() {
+  const t = useT()
   const clueSheetFontSize = useStore(s => s.project!.clueSheetFontSize)
   const clueSheetHideSubmapRestart = useStore(s => s.project!.clueSheetHideSubmapRestart)
   const clueSheetSplitSubmaps = useStore(s => s.project!.clueSheetSplitSubmaps)
@@ -60,15 +62,18 @@ function ClueSheetOptionsPanel() {
   return (
     <div className="px-3 py-2 flex flex-col gap-2">
       <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">Font size</span>
+        <span className="w-16 shrink-0">{t('clueSheet.fontSize')}</span>
         <select
           value={clueSheetFontSize ?? 7}
           onChange={e => updateClueSheetFontSize(Number(e.target.value))}
           className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
         >
-          <option value={5}>Small</option>
-          <option value={7}>Medium</option>
-          <option value={9}>Large</option>
+          <option value={5}>5</option>
+          <option value={6}>6</option>
+          <option value={7}>7</option>
+          <option value={8}>8</option>
+          <option value={9}>9</option>
+          <option value={10}>10</option>
         </select>
       </label>
       <label className="flex items-center gap-2 text-xs text-gray-600 select-none cursor-pointer">
@@ -78,7 +83,7 @@ function ClueSheetOptionsPanel() {
           onChange={e => updateClueSheetHideSubmapRestart(e.target.checked)}
           className="accent-orange-600"
         />
-        Hide first control on submaps
+        {t('clueSheet.hideFirstControl')}
       </label>
       <label className="flex items-center gap-2 text-xs text-gray-600 select-none cursor-pointer">
         <input
@@ -87,15 +92,16 @@ function ClueSheetOptionsPanel() {
           onChange={e => updateClueSheetSplitSubmaps(e.target.checked)}
           className="accent-orange-600"
         />
-        Split clue sheets for submaps
+        {t('clueSheet.splitSubmaps')}
       </label>
-      <ClueSheetColorPicker label="On-map" value={overlayColor} onChange={updateOverlayColor} />
-      <ClueSheetColorPicker label="Separate" value={separateColor} onChange={updateSeparateColor} />
+      <ClueSheetColorPicker label={t('clueSheet.onMap')} value={overlayColor} onChange={updateOverlayColor} />
+      <ClueSheetColorPicker label={t('clueSheet.separate')} value={separateColor} onChange={updateSeparateColor} />
     </div>
   )
 }
 
 function ClueSheetPopover({ open, onClose, anchorRef }: { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLButtonElement | null> }) {
+  const t = useT()
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -117,7 +123,7 @@ function ClueSheetPopover({ open, onClose, anchorRef }: { open: boolean; onClose
       className="absolute bottom-full mb-2 right-0 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
     >
       <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
-        <span className="text-xs font-semibold text-gray-700">Clue sheet options</span>
+        <span className="text-xs font-semibold text-gray-700">{t('courses.clueSheetOptions')}</span>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
       </div>
       <ClueSheetOptionsPanel />
@@ -126,6 +132,7 @@ function ClueSheetPopover({ open, onClose, anchorRef }: { open: boolean; onClose
 }
 
 function CourseEditor({ course }: { course: Course }) {
+  const t = useT()
   useRenderTracker('CourseEditor')
   // Narrow selectors: subscribing to the whole project would re-render this
   // editor (and the heavy ControlDescriptionGrid) on every store mutation,
@@ -165,15 +172,15 @@ function CourseEditor({ course }: { course: Course }) {
       {/* Course metadata toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
         <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border">
-          {course.type === 'score' ? 'Score-O' : 'Linear'}
+          {course.type === 'score' ? t('courses.scoreO') : t('panel.linear')}
         </span>
         <select
           value={course.spec ?? ''}
           onChange={e => updateCourseSpec(course.id, (e.target.value || undefined) as EventSpec | undefined)}
           className="text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 max-w-[5.5rem]"
-          title="Course specification (inherits from project if blank)"
+          title={t('courses.courseSpec')}
         >
-          <option value="">Project default</option>
+          <option value="">{t('courses.projectDefault')}</option>
           {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
           ))}
@@ -182,17 +189,17 @@ function CourseEditor({ course }: { course: Course }) {
         <button
           onClick={() => duplicateCourse(course.id)}
           className="text-gray-300 hover:text-orange-600 transition-colors"
-          title="Duplicate course"
+          title={t('courses.duplicateCourse')}
         >
           <Copy size={13} />
         </button>
         {confirmingDelete ? (
           <>
-            <span className="text-[10px] font-bold text-red-500">Delete?</span>
-            <button onClick={() => deleteCourse(course.id)} className="text-red-500 hover:text-red-700 transition-colors" title="Confirm delete">
+            <span className="text-[10px] font-bold text-red-500">{t('courses.deleteConfirm')}</span>
+            <button onClick={() => deleteCourse(course.id)} className="text-red-500 hover:text-red-700 transition-colors" title={t('courses.confirmDelete')}>
               <Check size={13} />
             </button>
-            <button onClick={() => setConfirmingDelete(false)} className="text-gray-400 hover:text-gray-600 transition-colors" title="Cancel">
+            <button onClick={() => setConfirmingDelete(false)} className="text-gray-400 hover:text-gray-600 transition-colors" title={t('courses.cancel')}>
               <X size={13} />
             </button>
           </>
@@ -200,7 +207,7 @@ function CourseEditor({ course }: { course: Course }) {
           <button
             onClick={() => setConfirmingDelete(true)}
             className="text-gray-300 hover:text-red-500 transition-colors"
-            title="Delete course"
+            title={t('courses.deleteCourse')}
           >
             <Trash2 size={13} />
           </button>
@@ -217,7 +224,7 @@ function CourseEditor({ course }: { course: Course }) {
               onChange={e => updateCourseShowPoints(course.id, e.target.checked)}
               className="accent-orange-600"
             />
-            Show points on map
+            {t('courses.showPoints')}
           </label>
         )}
         <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
@@ -227,7 +234,7 @@ function CourseEditor({ course }: { course: Course }) {
             onChange={e => updateCourseTextDescriptions(course.id, e.target.checked)}
             className="accent-orange-600"
           />
-          Text descriptions
+          {t('courses.textDescriptions')}
         </label>
       </div>
 
@@ -244,15 +251,15 @@ function CourseEditor({ course }: { course: Course }) {
               setCodesInput('')
             }
           }}
-          placeholder="Type codes: 31,32,S1"
+          placeholder={t('courses.codesPlaceholder')}
           className="flex-1 min-w-0 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
         />
         <button
           onClick={() => addAllControlsToCourse(course.id)}
           className="text-xs text-orange-600 hover:text-orange-800 font-medium whitespace-nowrap transition-colors"
-          title="Add all controls sorted by code"
+          title={t('courses.addAllTitle')}
         >
-          + All
+          {t('courses.addAll')}
         </button>
       </div>
 
@@ -271,13 +278,13 @@ function CourseEditor({ course }: { course: Course }) {
       {/* Length: computed/measured total + manual override + measure mode */}
       {computedTotal > 0 && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
-          <span className="text-xs text-gray-500">Length</span>
+          <span className="text-xs text-gray-500">{t('courses.length')}</span>
           <input
             type="text"
             inputMode="numeric"
             value={course.manualLength ?? ''}
             placeholder={String(Math.round(computedTotal))}
-            title={course.manualLength != null ? 'Manual override — clear to use measured/computed length' : 'Computed length (type to override)'}
+            title={course.manualLength != null ? t('courses.manualOverride') : t('courses.computedLength')}
             onChange={e => {
               const v = e.target.value === '' ? undefined : parseInt(e.target.value)
               setManualCourseLength(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
@@ -290,9 +297,9 @@ function CourseEditor({ course }: { course: Course }) {
           <button
             onClick={() => enterMeasureMode(course.id)}
             className="text-[11px] font-medium text-orange-600 hover:text-orange-800 transition-colors"
-            title="Trace the real route per leg to measure actual distance"
+            title={t('courses.measureTitle')}
           >
-            Measure…
+            {t('courses.measure')}
           </button>
         </div>
       )}
@@ -302,7 +309,7 @@ function CourseEditor({ course }: { course: Course }) {
         <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
           {distances.total > 0 && (
             <label className="flex items-center gap-1 text-xs text-gray-500">
-              <span>Climb</span>
+              <span>{t('courses.climb')}</span>
               <input
                 type="text"
                 inputMode="numeric"
@@ -319,15 +326,15 @@ function CourseEditor({ course }: { course: Course }) {
           )}
           {course.controls.some(cc => controls.find(c => c.id === cc.controlId)?.type === 'finish') && (
             <label className="flex items-center gap-1 text-xs text-gray-500">
-              <span>Finish</span>
+              <span>{t('courses.finish')}</span>
               <select
                 value={course.finishType ?? 'navigate'}
                 onChange={e => updateCourseFinishType(course.id, e.target.value as FinishType)}
                 className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
               >
-                <option value="navigate">Navigate</option>
-                <option value="funnel">Funnel</option>
-                <option value="taped">Taped</option>
+                <option value="navigate">{t('courses.finishNavigate')}</option>
+                <option value="funnel">{t('courses.finishFunnel')}</option>
+                <option value="taped">{t('courses.finishTaped')}</option>
               </select>
             </label>
           )}
@@ -338,6 +345,7 @@ function CourseEditor({ course }: { course: Course }) {
 }
 
 function VariationsSection({ course }: { course: Course }) {
+  const t = useT()
   const variations = course.variations
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
   const setSelectedVariation = useStore(s => s.setSelectedVariation)
@@ -346,7 +354,7 @@ function VariationsSection({ course }: { course: Course }) {
 
   return (
     <div className="px-3 py-1.5 border-t border-gray-100">
-      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Variations</div>
+      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('courses.variations')}</div>
       <div className="flex flex-wrap gap-1">
         <button
           onClick={() => setSelectedVariation(null)}
@@ -356,7 +364,7 @@ function VariationsSection({ course }: { course: Course }) {
               : 'border-gray-200 text-gray-500 hover:border-orange-300'
           }`}
         >
-          Master
+          {t('courses.master')}
         </button>
         {variations.map(v => (
           <button
@@ -377,6 +385,7 @@ function VariationsSection({ course }: { course: Course }) {
 }
 
 function ClassesSection() {
+  const t = useT()
   const classes = useStore(s => s.project!.classes)
   const courses = useStore(s => s.project!.courses)
   const addClass = useStore(s => s.addClass)
@@ -394,7 +403,7 @@ function ClassesSection() {
         onClick={() => setShowClasses(true)}
         className="flex items-center gap-1 text-xs text-gray-400 hover:text-orange-600 px-3 py-2 transition-colors"
       >
-        <Plus size={12} /> Add race classes
+        <Plus size={12} /> {t('courses.addClasses')}
       </button>
     )
   }
@@ -402,18 +411,18 @@ function ClassesSection() {
   return (
     <div data-tour="classes" className="border-t border-gray-200 pt-2">
       <div className="flex items-center justify-between px-3 py-1">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Classes</span>
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t('courses.classes')}</span>
         <button
           onClick={() => addClass(`Class ${classes.length + 1}`, courses[0].id)}
           className="text-xs text-orange-600 hover:text-orange-800 font-medium transition-colors"
         >
-          + Add
+          {t('courses.classAdd')}
         </button>
       </div>
       <div className="flex flex-col gap-1 px-2 pb-2">
         {classes.length === 0 ? (
           <div className="text-xs text-gray-400 px-1 py-1">
-            No classes yet. Click "+ Add" above.
+            {t('courses.noClasses')}
           </div>
         ) : (
           classes.map(rc => (
@@ -423,7 +432,7 @@ function ClassesSection() {
                 value={rc.name}
                 onChange={e => updateClassName(rc.id, e.target.value)}
                 className="flex-1 min-w-0 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                placeholder="Class name"
+                placeholder={t('courses.className')}
               />
               <select
                 value={rc.courseId}
@@ -455,6 +464,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
   onToggleExpand: () => void
   onToggleSelect: () => void
 }) {
+  const t = useT()
   const updateCourseName = useStore(s => s.updateCourseName)
   const updateCourseColor = useStore(s => s.updateCourseColor)
   const [editingName, setEditingName] = useState(false)
@@ -481,7 +491,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
             value={course.color}
             onChange={e => updateCourseColor(course.id, e.target.value)}
             className="w-4 h-4 rounded cursor-pointer border-0 p-0 shrink-0"
-            title="Course color"
+            title={t('courses.courseColor')}
             onClick={e => e.stopPropagation()}
           />
         ) : (
@@ -514,7 +524,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
               />
             </span>
           )}
-          <span className="text-xs text-gray-400 shrink-0">{Math.max(0, course.controls.length-2)} ctrls</span>
+          <span className="text-xs text-gray-400 shrink-0">{t('courses.ctrls', { count: Math.max(0, course.controls.length-2) })}</span>
         </div>
       </div>
       {isExpanded && <CourseEditor course={course} />}
@@ -523,6 +533,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
 }
 
 export function CoursesPanel() {
+  const t = useT()
   useRenderTracker('CoursesPanel')
   const courses = useStore(s => s.project!.courses)
   const controlCount = useStore(s => s.project!.controls.length)
@@ -551,13 +562,13 @@ export function CoursesPanel() {
           onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors"
         >
-          <Plus size={13} /> Linear course
+          <Plus size={13} /> {t('courses.linearCourse')}
         </button>
         <button
           onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-500 text-white rounded-lg px-3 py-1.5 hover:bg-orange-600 transition-colors"
         >
-          <Plus size={13} /> Score-O
+          <Plus size={13} /> {t('courses.scoreO')}
         </button>
       </div>
 
@@ -573,14 +584,14 @@ export function CoursesPanel() {
             }`}
           >
             <div className="w-3 h-3 rounded-full bg-orange-600" />
-            <span className="text-sm font-medium flex-1">All controls</span>
-            <span className="text-xs text-gray-400">{controlCount} controls</span>
+            <span className="text-sm font-medium flex-1">{t('courses.allControls')}</span>
+            <span className="text-xs text-gray-400">{t('courses.controls', { count: controlCount })}</span>
           </div>
         )}
 
         {courses.length === 0 && controlCount === 0 ? (
           <div className="text-sm text-gray-400 text-center py-6">
-            No courses yet. Create one above.
+            {t('courses.noCourses')}
           </div>
         ) : (
           courses.map(course => (
@@ -625,7 +636,7 @@ export function CoursesPanel() {
           }`}
         >
           <FileText size={13} />
-          Clue sheet options
+          {t('courses.clueSheetOptions')}
         </button>
         <ClueSheetPopover open={showClueOpts} onClose={() => setShowClueOpts(false)} anchorRef={clueOptsBtnRef} />
       </div>

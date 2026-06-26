@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { sendCode, verifyCode, TERMS_VERSION } from '../lib/sync'
 import { useStore } from '../store'
+import { useT } from '../i18n'
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAADnxI0hcBbrG9wCc'
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function LoginModal({ onClose }: Props) {
+  const t = useT()
   const setCloudUser = useStore(s => s.setCloudUser)
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [email, setEmail] = useState('')
@@ -50,60 +52,60 @@ export function LoginModal({ onClose }: Props) {
   useEffect(() => { inputRef.current?.focus() }, [step])
 
   async function handleSendCode() {
-    if (!email.includes('@')) { setError('Enter a valid email'); return }
+    if (!email.includes('@')) { setError(t('login.errInvalidEmail')); return }
     setLoading(true); setError(null)
     const result = await sendCode(email.trim().toLowerCase(), cfToken.current || undefined)
     setLoading(false)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const t = (window as any).turnstile
-    if (widgetId.current && t) t.reset(widgetId.current)
+    const ts = (window as any).turnstile
+    if (widgetId.current && ts) ts.reset(widgetId.current)
     if (result.ok) setStep('code')
-    else if (result.throttled) setError('Wait a minute before requesting a new code')
-    else if (result.blocked) setError('Verification failed — try disabling ad blockers or privacy extensions')
-    else setError('Failed to send code')
+    else if (result.throttled) setError(t('login.errThrottle'))
+    else if (result.blocked) setError(t('login.errBlocked'))
+    else setError(t('login.errSendFailed'))
   }
 
   async function handleVerify() {
-    if (code.length < 6) { setError('Enter the 6-digit code'); return }
+    if (code.length < 6) { setError(t('login.errCodeLength')); return }
     setLoading(true); setError(null)
     const user = await verifyCode(email.trim().toLowerCase(), code.trim(), TERMS_VERSION)
     setLoading(false)
     if (user) { setCloudUser(user); onClose() }
-    else setError('Invalid or expired code')
+    else setError(t('login.errInvalidCode'))
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl p-5 w-80 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
         <h3 className="text-sm font-semibold text-gray-800">
-          {step === 'email' ? 'Sign in to sync' : 'Enter code'}
+          {step === 'email' ? t('login.signIn') : t('login.enterCode')}
         </h3>
 
         {step === 'email' ? (
           <>
-            <p className="text-xs text-gray-500">We'll send a login code to your email.</p>
+            <p className="text-xs text-gray-500">{t('login.sendPrompt')}</p>
             <input
               ref={inputRef}
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && agreed) handleSendCode() }}
-              placeholder="you@example.com"
+              placeholder={t('login.emailPlaceholder')}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
             <label className="flex items-start gap-2 text-xs text-gray-500 cursor-pointer select-none">
               <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-0.5 accent-orange-600" />
               <span>
-                I agree to the{' '}
-                <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">Terms of Service</a>
+                {t('login.agree')}{' '}
+                <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">{t('login.terms')}</a>
                 {' '}and{' '}
-                <a href="/privacy.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">Privacy Policy</a>
+                <a href="/privacy.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">{t('login.privacy')}</a>
               </span>
             </label>
           </>
         ) : (
           <>
-            <p className="text-xs text-gray-500">Check <strong>{email}</strong> for a 6-digit code.</p>
+            <p className="text-xs text-gray-500">{t('login.checkEmail', { email })}</p>
             <input
               ref={inputRef}
               type="text"
@@ -112,7 +114,7 @@ export function LoginModal({ onClose }: Props) {
               value={code}
               onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
               onKeyDown={e => { if (e.key === 'Enter') handleVerify() }}
-              placeholder="000000"
+              placeholder={t('login.codePlaceholder')}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-[0.3em] font-mono focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
           </>
@@ -127,14 +129,14 @@ export function LoginModal({ onClose }: Props) {
             onClick={step === 'code' ? () => { setStep('email'); setCode(''); setError(null) } : onClose}
             className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            {step === 'code' ? 'Back' : 'Cancel'}
+            {step === 'code' ? t('login.back') : t('login.cancel')}
           </button>
           <button
             onClick={step === 'email' ? handleSendCode : handleVerify}
             disabled={loading || (step === 'email' && !agreed)}
             className="px-3 py-1.5 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-40"
           >
-            {loading ? 'Sending...' : step === 'email' ? 'Send code' : 'Verify'}
+            {loading ? t('login.sending') : step === 'email' ? t('login.sendCode') : t('login.verify')}
           </button>
         </div>
       </div>
