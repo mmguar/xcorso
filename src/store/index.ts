@@ -52,6 +52,7 @@ export const useStore = create<Store>((set, get) => {
     projectId: null,
     project: null,
     projectRevision: 0,
+    loadedRevision: 0,
     mapFileData: null,
     loadedMap: null,
     undoStack: [],
@@ -83,7 +84,8 @@ export const useStore = create<Store>((set, get) => {
         overprint: 1,
         overprintMode: 'simulated',
       }
-      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
+      const rev = get().projectRevision + 1
+      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], projectRevision: rev, loadedRevision: rev })
       setActiveId(id).catch(() => {})
     },
 
@@ -96,7 +98,8 @@ export const useStore = create<Store>((set, get) => {
       if (!project.textLabels) project.textLabels = []
       if (!project.imageOverlays) project.imageOverlays = []
       const projectId = id ?? get().projectId ?? crypto.randomUUID()
-      set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner' })
+      const rev = get().projectRevision + 1
+      set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner', projectRevision: rev, loadedRevision: rev })
       setActiveId(projectId).catch(() => {})
     },
 

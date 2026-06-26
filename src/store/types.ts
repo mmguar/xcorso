@@ -46,6 +46,7 @@ export interface AppState {
   projectId: string | null
   project: Project | null
   projectRevision: number
+  loadedRevision: number
   mapFileData: ArrayBuffer | null
   loadedMap: LoadedMap | null
   undoStack: Project[]

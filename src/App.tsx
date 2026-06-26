@@ -66,8 +66,8 @@ export default function App() {
 
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
-      const { project, syncStatus, cloudUser } = useStore.getState()
-      if (project && cloudUser && syncStatus !== 'synced') {
+      const { project, syncStatus, cloudUser, projectRevision, loadedRevision } = useStore.getState()
+      if (project && cloudUser && syncStatus !== 'synced' && projectRevision !== loadedRevision) {
         e.preventDefault()
       }
     }
