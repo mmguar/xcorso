@@ -59,8 +59,8 @@ export function useLocale() {
 
 // ponytail: add entries here as translation files are created
 export const LOCALES: { code: string; label: string }[] = [
-  { code: 'en', label: 'English' },
-  { code: 'it', label: 'Italiano' },
+  { code: 'en', label: 'en' },
+  { code: 'it', label: 'it' },
 ]
 
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
