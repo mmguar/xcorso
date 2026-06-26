@@ -47,9 +47,31 @@ function matchRoute(method: string, pathname: string): [Handler, Record<string, 
   return null
 }
 
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://challenges.cloudflare.com https://*.sentry.io",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' blob: data:",
+  "font-src 'self'",
+  "connect-src 'self' https://*.sentry.io",
+  "frame-src https://challenges.cloudflare.com",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join('; ')
+
+const SECURITY_HEADERS = {
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Content-Security-Policy-Report-Only': CSP,
+} as const
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+    let res: Response
 
     if (url.pathname.startsWith('/api/')) {
       const matched = matchRoute(request.method, url.pathname)
@@ -57,9 +79,13 @@ export default {
       const [handler, params] = matched
 
       // ponytail: rate limiting moved to Cloudflare WAF rules, saves 2 KV ops per request
-      return handler(request, env, params)
+      res = await handler(request, env, params)
+    } else {
+      res = await env.ASSETS.fetch(request)
     }
 
-    return env.ASSETS.fetch(request)
+    const patched = new Response(res.body, res)
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) patched.headers.set(k, v)
+    return patched
   },
 }
