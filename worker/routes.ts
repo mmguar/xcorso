@@ -54,14 +54,19 @@ async function putSharedWithMe(env: Env, userId: string, refs: SharedRef[]): Pro
   else await env.KV.put(`projects:shared:${userId}`, JSON.stringify(refs))
 }
 
-// Resolve access: returns ownerId + role, or null if no access
-async function resolveAccess(env: Env, userId: string, projectId: string): Promise<{ ownerId: string; role: ShareRole | 'owner' } | null> {
+interface Access { ownerId: string; role: ShareRole | 'owner'; index: ProjectMeta[] }
+
+// Resolve access: returns ownerId + role + the owner's index (avoids a second KV read)
+async function resolveAccess(env: Env, userId: string, projectId: string): Promise<Access | null> {
   const ownedIndex = await getIndex(env, userId)
-  if (ownedIndex.find(p => p.id === projectId)) return { ownerId: userId, role: 'owner' }
+  if (ownedIndex.find(p => p.id === projectId)) return { ownerId: userId, role: 'owner', index: ownedIndex }
 
   const sharedRefs = await getSharedWithMe(env, userId)
   const ref = sharedRefs.find(r => r.projectId === projectId)
-  if (ref) return { ownerId: ref.ownerId, role: ref.role }
+  if (ref) {
+    const ownerIndex = await getIndex(env, ref.ownerId)
+    return { ownerId: ref.ownerId, role: ref.role, index: ownerIndex }
+  }
 
   return null
 }
@@ -325,7 +330,7 @@ export async function projectPut(request: Request, env: Env, params: Params) {
 
   const prefix = r2Prefix(access.ownerId, params.id)
 
-  const index = await getIndex(env, access.ownerId)
+  const { index } = access
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -402,8 +407,7 @@ export async function projectDelete(request: Request, env: Env, params: Params) 
     await env.BUCKET.delete(listed.objects.map((o: R2Object) => o.key))
   }
 
-  const index = await getIndex(env, user.sub)
-  const filtered = index.filter(p => p.id !== params.id)
+  const filtered = access.index.filter(p => p.id !== params.id)
   await putIndex(env, user.sub, filtered)
 
   return Response.json({ ok: true })
@@ -472,8 +476,7 @@ export async function historyList(request: Request, env: Env, params: Params) {
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  const index = await getIndex(env, access.ownerId)
-  const meta = index.find(p => p.id === params.id)
+  const meta = access.index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
   return Response.json({ history: meta.history ?? [] })
@@ -514,7 +517,7 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   if (!snapshot) return Response.json({ error: 'Version not found' }, { status: 404 })
   const snapshotBytes = await snapshot.arrayBuffer()
 
-  const index = await getIndex(env, access.ownerId)
+  const { index } = access
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Project not found' }, { status: 404 })
 
