@@ -3,7 +3,7 @@ import type { Project } from '../types'
 import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
-import { uploadProject, downloadProject, createCloudProject, hashMap, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
+import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
@@ -314,6 +314,13 @@ export const useStore = create<Store>((set, get) => {
         }
 
         const localMapHash = mapFileData ? await hashMap(mapFileData) : null
+        const localProjectHash = await hashProject(project)
+
+        // ponytail: skip upload if nothing changed since last sync
+        if (syncMeta.syncVersion > 0 && localProjectHash === syncMeta.projectHash && localMapHash === syncMeta.mapHash) {
+          set({ syncStatus: 'synced' })
+          return
+        }
 
         const result = await uploadProject(
           syncMeta.cloudId, project, mapFileData,
@@ -326,6 +333,7 @@ export const useStore = create<Store>((set, get) => {
             syncVersion: result.version,
             syncedAt: new Date().toISOString(),
             mapHash: localMapHash,
+            projectHash: localProjectHash,
           }
           await setSyncMeta(projectId, updated)
           set({ syncStatus: 'synced' })
@@ -541,7 +549,7 @@ useStore.subscribe((state, prev) => {
     const isProjectSwitch = !prev.project || state.projectId !== prev.projectId
     if (state.cloudUser && !isProjectSwitch && state.project.map.type === 'ocad') {
       if (syncTimer) clearTimeout(syncTimer)
-      syncTimer = setTimeout(() => { syncTimer = null; state.syncProject() }, 60_000)
+      syncTimer = setTimeout(() => { syncTimer = null; state.syncProject() }, 300_000)
     }
   }
 })

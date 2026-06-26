@@ -29,7 +29,7 @@ function childEls(el: Element, tag: string): Element[] {
   return [...el.children].filter(c => c.localName === tag)
 }
 
-const COURSE_COLORS = [IOF_PURPLE, '#e63946', '#2a9d8f', '#264653', '#e9c46a', '#f4a261', '#457b9d']
+const DEFAULT_COURSE_COLOR = IOF_PURPLE
 
 export function importIofXml(xmlString: string, map: MapConfig): IofImportResult {
   const doc = new DOMParser().parseFromString(xmlString, 'application/xml')
@@ -117,7 +117,7 @@ export function importIofXml(xmlString: string, map: MapConfig): IofImportResult
       name,
       type: isScore ? 'score' : 'linear',
       controls: courseControls,
-      color: COURSE_COLORS[courses.length % COURSE_COLORS.length],
+      color: DEFAULT_COURSE_COLOR,
       ...(climbText ? { climb: parseInt(climbText) } : {}),
     })
   }

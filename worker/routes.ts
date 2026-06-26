@@ -54,14 +54,19 @@ async function putSharedWithMe(env: Env, userId: string, refs: SharedRef[]): Pro
   else await env.KV.put(`projects:shared:${userId}`, JSON.stringify(refs))
 }
 
-// Resolve access: returns ownerId + role, or null if no access
-async function resolveAccess(env: Env, userId: string, projectId: string): Promise<{ ownerId: string; role: ShareRole | 'owner' } | null> {
+interface Access { ownerId: string; role: ShareRole | 'owner'; index: ProjectMeta[] }
+
+// Resolve access: returns ownerId + role + the owner's index (avoids a second KV read)
+async function resolveAccess(env: Env, userId: string, projectId: string): Promise<Access | null> {
   const ownedIndex = await getIndex(env, userId)
-  if (ownedIndex.find(p => p.id === projectId)) return { ownerId: userId, role: 'owner' }
+  if (ownedIndex.find(p => p.id === projectId)) return { ownerId: userId, role: 'owner', index: ownedIndex }
 
   const sharedRefs = await getSharedWithMe(env, userId)
   const ref = sharedRefs.find(r => r.projectId === projectId)
-  if (ref) return { ownerId: ref.ownerId, role: ref.role }
+  if (ref) {
+    const ownerIndex = await getIndex(env, ref.ownerId)
+    return { ownerId: ref.ownerId, role: ref.role, index: ownerIndex }
+  }
 
   return null
 }
@@ -87,6 +92,12 @@ async function getIndex(env: Env, userId: string): Promise<ProjectMeta[]> {
 
 async function putIndex(env: Env, userId: string, index: ProjectMeta[]): Promise<void> {
   await env.KV.put(`projects:index:${userId}`, JSON.stringify(index))
+}
+
+async function computeIndexEtag(index: ProjectMeta[]): Promise<string> {
+  const body = JSON.stringify({ projects: index })
+  const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))
+  return `"${[...new Uint8Array(hashBuf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)}"`
 }
 
 // --- Auth ---
@@ -183,8 +194,16 @@ export async function authVerify(request: Request, env: Env, _params: Params) {
 export async function authMe(request: Request, env: Env, _params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ user: null })
-  const record = await env.KV.get(`users:email:${user.email}`, 'json') as { termsVersion?: string } | null
-  return Response.json({ user: { userId: user.sub, email: user.email, termsVersion: record?.termsVersion } })
+  const [record, index] = await Promise.all([
+    env.KV.get(`users:email:${user.email}`, 'json') as Promise<{ termsVersion?: string } | null>,
+    getIndex(env, user.sub),
+  ])
+  const etag = await computeIndexEtag(index)
+  return Response.json({
+    user: { userId: user.sub, email: user.email, termsVersion: record?.termsVersion },
+    projects: index,
+    indexEtag: etag,
+  })
 }
 
 export async function authAcceptTerms(request: Request, env: Env, _params: Params) {
@@ -251,7 +270,12 @@ export async function projectsList(request: Request, env: Env, _params: Params) 
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const index = await getIndex(env, user.sub)
-  return Response.json({ projects: index })
+  const etag = await computeIndexEtag(index)
+
+  if (request.headers.get('If-None-Match') === etag) {
+    return new Response(null, { status: 304, headers: { ETag: etag } })
+  }
+  return Response.json({ projects: index }, { headers: { ETag: etag } })
 }
 
 export async function projectsCreate(request: Request, env: Env, _params: Params) {
@@ -306,7 +330,7 @@ export async function projectPut(request: Request, env: Env, params: Params) {
 
   const prefix = r2Prefix(access.ownerId, params.id)
 
-  const index = await getIndex(env, access.ownerId)
+  const { index } = access
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -357,7 +381,8 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   }
 
   await putIndex(env, access.ownerId, index)
-  return Response.json({ version: newVersion })
+  const indexEtag = await computeIndexEtag(index)
+  return Response.json({ version: newVersion, indexEtag })
 }
 
 export async function projectDelete(request: Request, env: Env, params: Params) {
@@ -382,8 +407,7 @@ export async function projectDelete(request: Request, env: Env, params: Params) 
     await env.BUCKET.delete(listed.objects.map((o: R2Object) => o.key))
   }
 
-  const index = await getIndex(env, user.sub)
-  const filtered = index.filter(p => p.id !== params.id)
+  const filtered = access.index.filter(p => p.id !== params.id)
   await putIndex(env, user.sub, filtered)
 
   return Response.json({ ok: true })
@@ -452,8 +476,7 @@ export async function historyList(request: Request, env: Env, params: Params) {
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  const index = await getIndex(env, access.ownerId)
-  const meta = index.find(p => p.id === params.id)
+  const meta = access.index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
   return Response.json({ history: meta.history ?? [] })
@@ -494,7 +517,7 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   if (!snapshot) return Response.json({ error: 'Version not found' }, { status: 404 })
   const snapshotBytes = await snapshot.arrayBuffer()
 
-  const index = await getIndex(env, access.ownerId)
+  const { index } = access
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Project not found' }, { status: 404 })
 
@@ -526,7 +549,8 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   } catch { /* keep existing */ }
 
   await putIndex(env, access.ownerId, index)
-  return Response.json({ version: newVersion })
+  const indexEtag = await computeIndexEtag(index)
+  return Response.json({ version: newVersion, indexEtag })
 }
 
 // --- Sharing ---
