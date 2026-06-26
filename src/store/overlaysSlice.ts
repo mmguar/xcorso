@@ -12,8 +12,9 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
       return sb
     },
 
-    updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>) => {
-      h.mutateProject(p => {
+    updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>, silent?: boolean) => {
+      const mutate = silent ? h.mutateProjectSilent : h.mutateProject
+      mutate(p => {
         const i = p.scaleBars.findIndex(s => s.id === id)
         if (i !== -1) p.scaleBars[i] = { ...p.scaleBars[i], ...updates }
       })
@@ -45,8 +46,9 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
       return tl
     },
 
-    updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>) => {
-      h.mutateProject(p => {
+    updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>, silent?: boolean) => {
+      const mutate = silent ? h.mutateProjectSilent : h.mutateProject
+      mutate(p => {
         const i = p.textLabels.findIndex(t => t.id === id)
         if (i !== -1) p.textLabels[i] = { ...p.textLabels[i], ...updates }
       })
@@ -79,8 +81,9 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
       return img
     },
 
-    updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>) => {
-      h.mutateProject(p => {
+    updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>, silent?: boolean) => {
+      const mutate = silent ? h.mutateProjectSilent : h.mutateProject
+      mutate(p => {
         const i = p.imageOverlays.findIndex(o => o.id === id)
         if (i !== -1) p.imageOverlays[i] = { ...p.imageOverlays[i], ...updates }
       })

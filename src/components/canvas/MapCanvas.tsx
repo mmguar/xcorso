@@ -328,6 +328,19 @@ export function MapCanvas({ loadedMap }: Props) {
   const gapRingRef = useRef<SVGGElement>(null)
   const [oobCursorPoint, setOobCursorPoint] = useState<MapPoint | null>(null)
 
+  // ponytail: dismiss split prompt on any interaction outside it or any store change
+  useEffect(() => {
+    if (!splitPrompt) return
+    const dismiss = () => setSplitPrompt(null)
+    const onDown = (e: PointerEvent) => {
+      if ((e.target as HTMLElement).closest?.('[data-split-prompt]')) return
+      dismiss()
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    const unsub = useStore.subscribe(dismiss)
+    return () => { document.removeEventListener('pointerdown', onDown, true); unsub() }
+  }, [splitPrompt])
+
   // ── Fit to screen on map load ──────────────────────────────────────────────
   useLayoutEffect(() => {
     const el = divRef.current
@@ -407,14 +420,17 @@ export function MapCanvas({ loadedMap }: Props) {
     if (!centerRequest) return
     const el = divRef.current
     if (!el) return
-    const { width, height } = el.getBoundingClientRect()
-    // Pan only — keep the user's zoom level.
+    const rect = el.getBoundingClientRect()
+    let cx = rect.width / 2
+    let cy = rect.height / 2
+    // On mobile, the panel overlaps the canvas top — shift center into visible area
+    const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
+    if (mp) {
+      const overlap = Math.max(0, mp.getBoundingClientRect().bottom - rect.top)
+      cy = (overlap + rect.height) / 2
+    }
     const v = vpRef.current
-    setVp({
-      ...v,
-      x: width / 2 - centerRequest.point.x * v.scale,
-      y: height / 2 - centerRequest.point.y * v.scale,
-    })
+    setVp({ ...v, x: cx - centerRequest.point.x * v.scale, y: cy - centerRequest.point.y * v.scale })
   }, [centerRequest])
 
   // Keep <g> transforms in sync after any React re-render
@@ -2260,6 +2276,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
       {splitPrompt && (
         <div
+          data-split-prompt
           className="absolute z-20 flex flex-col gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 p-2 text-xs"
           style={{ left: `clamp(130px, ${splitPrompt.sx}px, calc(100% - 130px))`, top: `min(${splitPrompt.sy + 18}px, calc(100% - 80px))`, transform: 'translateX(-50%)', maxWidth: 260 }}
         >

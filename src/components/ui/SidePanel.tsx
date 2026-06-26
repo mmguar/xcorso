@@ -6,6 +6,7 @@
 import { Fragment, useEffect, useLayoutEffect, useState } from 'react'
 import { MapPin, Navigation, LayoutPanelLeft, PanelRightClose, PanelRight, Plus } from 'lucide-react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import { computeSubmaps } from '../../lib/courseUtils'
 import { ControlsPanel } from '../panels/ControlsPanel'
 import { CoursesPanel } from '../panels/CoursesPanel'
@@ -18,6 +19,7 @@ const SIDEBAR_W = 352 // w-88 = 22 rem = 352px
 
 
 export function SidePanel() {
+  const t = useT()
   const [tab, setTab] = useState<Tab>('controls')
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const layoutMode = useStore(s => s.editor.layoutMode)
@@ -61,13 +63,13 @@ export function SidePanel() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [tourPanel])
 
-  function switchMode(t: Tab) {
-    if (t === 'controls') {
+  function switchMode(tabKey: Tab) {
+    if (tabKey === 'controls') {
       if (layoutMode) exitLayoutMode()
       if (selectedCourseId) setSelectedCourse(null)
-    } else if (t === 'courses') {
+    } else if (tabKey === 'courses') {
       if (layoutMode) exitLayoutMode()
-    } else if (t === 'layout') {
+    } else if (tabKey === 'layout') {
       if (selectedCourseId && !layoutMode) enterLayoutMode(selectedCourseId)
     }
   }
@@ -86,25 +88,25 @@ export function SidePanel() {
         ) : (
           <>
             <div className="flex border-b border-gray-200">
-              {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
+              {(['controls', 'courses', 'layout'] as Tab[]).map(tabKey => (
                 <button
-                  key={t}
-                  data-tour={t === 'courses' ? 'courses-tab' : t === 'layout' ? 'layout-tab' : undefined}
-                  onClick={() => { switchMode(t); setTab(t) }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors capitalize ${
-                    tab === t
+                  key={tabKey}
+                  data-tour={tabKey === 'courses' ? 'courses-tab' : tabKey === 'layout' ? 'layout-tab' : undefined}
+                  onClick={() => { switchMode(tabKey); setTab(tabKey) }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ${
+                    tab === tabKey
                       ? 'border-b-2 border-orange-600 text-orange-700 bg-orange-50/50'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {t === 'controls' ? <MapPin size={13} /> : t === 'courses' ? <Navigation size={13} /> : <LayoutPanelLeft size={13} />}
-                  {t}
+                  {tabKey === 'controls' ? <MapPin size={13} /> : tabKey === 'courses' ? <Navigation size={13} /> : <LayoutPanelLeft size={13} />}
+                  {t('panel.' + tabKey)}
                 </button>
               ))}
               <button
                 onClick={() => setCollapsed(true)}
                 className="px-2 text-gray-300 hover:text-gray-500 transition-colors"
-                title="Close panel"
+                title={t('panel.closePanel')}
               >
                 <PanelRightClose size={14} />
               </button>
@@ -118,6 +120,7 @@ export function SidePanel() {
 
       {/* Mobile/tablet: top bar */}
       <MobileTopBar tab={tab} setTab={setTab} switchMode={switchMode} />
+
     </>
   )
 }
@@ -169,6 +172,7 @@ function SubmapChips({ course }: { course: Course }) {
 }
 
 function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
+  const t = useT()
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
@@ -180,7 +184,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
       <button
         onClick={onExpand}
         className="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors shrink-0"
-        title="Open Course Panel"
+        title={t('panel.openPanel')}
       >
         <PanelRight size={22} />
       </button>
@@ -199,7 +203,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
                       if (isActive) { setSelectedCourse(null) }
                       else { setSelectedCourse(course.id) }
                     }}
-                    title={isActive ? `${course.name} (click to deselect)` : course.name}
+                    title={isActive ? t('panel.clickToDeselect', { name: course.name }) : course.name}
                     className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 ${
                       isActive
                         ? 'ring-2 ring-orange-500 ring-offset-1 scale-110'
@@ -228,13 +232,13 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
                   onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
                 >
-                  Linear
+                  {t('panel.linear')}
                 </button>
                 <button
                   onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setSelectedCourse(c.id); setShowNewMenu(false) }}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
                 >
-                  Score-O
+                  {t('panel.scoreO')}
                 </button>
               </div>
             )}
@@ -246,6 +250,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
 }
 
 function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) => void; switchMode: (t: Tab) => void }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const [showNewMenu, setShowNewMenu] = useState(false)
   const courses = useStore(s => s.project?.courses ?? [])
@@ -254,7 +259,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
   const addCourse = useStore(s => s.addCourse)
 
   return (
-    <div className={`
+    <div data-mobile-panel className={`
       md:hidden fixed top-12 left-0 right-0 z-30
       bg-white border-b border-gray-200 shadow-2xl
       transition-all duration-300 ease-out
@@ -262,18 +267,18 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
     `}>
       {/* Icon tabs + course chips */}
       <div className="flex items-center gap-1.5 h-10 px-2 shrink-0">
-        {(['controls', 'courses', 'layout'] as Tab[]).map(t => (
+        {(['controls', 'courses', 'layout'] as Tab[]).map(tabKey => (
           <button
-            key={t}
-            onClick={() => { if (t !== tab) switchMode(t); setTab(t); setExpanded(e => t === tab ? !e : true) }}
-            title={t}
+            key={tabKey}
+            onClick={() => { if (tabKey !== tab) switchMode(tabKey); setTab(tabKey); setExpanded(e => tabKey === tab ? !e : true) }}
+            title={t('panel.' + tabKey)}
             className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
-              tab === t && expanded
+              tab === tabKey && expanded
                 ? 'bg-orange-100 text-orange-700'
                 : 'text-gray-400 hover:text-gray-600'
             }`}
           >
-            {t === 'controls' ? <MapPin size={15} /> : t === 'courses' ? <Navigation size={15} /> : <LayoutPanelLeft size={15} />}
+            {tabKey === 'controls' ? <MapPin size={15} /> : tabKey === 'courses' ? <Navigation size={15} /> : <LayoutPanelLeft size={15} />}
           </button>
         ))}
 
@@ -321,13 +326,13 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
                 onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
               >
-                Linear
+                {t('panel.linear')}
               </button>
               <button
                 onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setSelectedCourse(c.id); setShowNewMenu(false) }}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
               >
-                Score-O
+                {t('panel.scoreO')}
               </button>
             </div>
           )}
