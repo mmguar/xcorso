@@ -421,7 +421,7 @@ export function MapCanvas({ loadedMap }: Props) {
     const el = divRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    let cx = rect.width / 2
+    const cx = rect.width / 2
     let cy = rect.height / 2
     // On mobile, the panel overlaps the canvas top — shift center into visible area
     const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
