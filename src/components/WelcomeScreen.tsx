@@ -46,7 +46,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
-  const [cloudVersions, setCloudVersions] = useState<Map<string, number>>(new Map())
+  const [cloudVersions, setCloudVersions] = useState<Record<string, number>>({})
 
   const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
@@ -77,7 +77,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     setSyncing(true)
     try {
       const [cloud, shared] = await Promise.all([fetchCloudProjects(), fetchSharedProjects()])
-      setCloudVersions(new Map(cloud.map(c => [c.id, c.version])))
+      setCloudVersions(Object.fromEntries(cloud.map(c => [c.id, c.version])))
       const localCloudIds = new Set(local.map(p => p.sync?.cloudId).filter(Boolean))
       const cloudOnly: ProjectSummary[] = cloud
         .filter(c => !localCloudIds.has(c.id))
@@ -112,7 +112,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
       if (isLocallyAvailable && cloudId && cloudUser) {
         // Check if remote is newer before loading stale local data
         const localSync = await getSyncMeta(p.id)
-        const remoteVersion = cloudVersions.get(cloudId)
+        const remoteVersion = cloudVersions[cloudId]
         if (localSync && remoteVersion != null && remoteVersion > localSync.syncVersion) {
           const result = await downloadProject(cloudId, localSync.mapHash)
           if (result) {

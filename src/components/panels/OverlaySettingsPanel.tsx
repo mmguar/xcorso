@@ -384,6 +384,7 @@ function OobSettings({ ann }: { ann: Annotation }) {
 }
 
 function NorthArrowSettings({ ann }: { ann: Annotation }) {
+  const t = useT()
   const updateAnnotation = useStore(s => s.updateAnnotation)
   const deleteAnnotation = useStore(s => s.deleteAnnotation)
   const setSelectedAnnotation = useStore(s => s.setSelectedAnnotation)
