@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useT } from '../i18n'
 
 const STORAGE_KEY = 'xcorso_tour_done'
 
@@ -10,13 +11,13 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { anchor: 'toolbar', text: 'Pick a tool to place controls: Start (S), Control (C), Finish (F). Click on the map to place them.', position: 'top' },
-  { anchor: 'courses-tab', text: 'Create a course here, then add controls by clicking them on the map or typing their code.', position: 'left' },
-  { anchor: 'course-controls', text: 'Drag to reorder. Right-click a control to remove it from the course.', position: 'left', optional: true },
-  { anchor: 'classes', text: 'Add race classes and assign each one to a course for IOF XML export.', position: 'left', optional: true },
-  { anchor: 'layout-tab', text: 'Use the layout tab to format your course for printing.', position: 'left' },
-  { anchor: 'export-pdf', text: 'Export your formatted course as a PDF.', position: 'left', optional: true },
-  { anchor: 'export-menu', text: 'Export IOF XML here for Condes or Purple Pen.', position: 'bottom' },
+  { anchor: 'toolbar', text: 'tour.step.toolbar', position: 'top' },
+  { anchor: 'courses-tab', text: 'tour.step.courses', position: 'left' },
+  { anchor: 'course-controls', text: 'tour.step.reorder', position: 'left', optional: true },
+  { anchor: 'classes', text: 'tour.step.classes', position: 'left', optional: true },
+  { anchor: 'layout-tab', text: 'tour.step.layout', position: 'left' },
+  { anchor: 'export-pdf', text: 'tour.step.pdf', position: 'left', optional: true },
+  { anchor: 'export-menu', text: 'tour.step.xml', position: 'bottom' },
 ]
 
 function findAnchor(anchor: string): Element | null {
@@ -32,6 +33,7 @@ function findNextVisible(from: number): number {
 }
 
 export function OnboardingTour() {
+  const t = useT()
   const [step, setStep] = useState(() =>
     localStorage.getItem(STORAGE_KEY) ? -1 : findNextVisible(0)
   )
@@ -134,13 +136,13 @@ export function OnboardingTour() {
         className="fixed z-[102] bg-white rounded-xl shadow-xl border border-gray-200 p-3 max-w-xs"
         style={style}
       >
-        <p className="text-sm text-gray-700 mb-3">{current.text}</p>
+        <p className="text-sm text-gray-700 mb-3">{t(current.text)}</p>
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-gray-400">{step + 1} / {STEPS.length}</span>
+          <span className="text-[10px] text-gray-400">{t('tour.progress', { step: step + 1, total: STEPS.length })}</span>
           <div className="flex gap-2">
-            <button onClick={dismiss} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">Skip</button>
+            <button onClick={dismiss} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">{t('tour.skip')}</button>
             <button onClick={next} className="text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-3 py-1 transition-colors">
-              {step === STEPS.length - 1 ? 'Done' : 'Next'}
+              {step === STEPS.length - 1 ? t('tour.done') : t('tour.next')}
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { useT } from '../i18n'
 
 function timeStr(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -11,6 +12,7 @@ function summary(p: { controls: unknown[]; courses: unknown[]; meta: { name: str
 }
 
 export function ConflictModal() {
+  const t = useT()
   const conflict = useStore(s => s.syncConflict)
   const project = useStore(s => s.project)
   const resolveConflict = useStore(s => s.resolveConflict)
@@ -22,14 +24,14 @@ export function ConflictModal() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl p-5 w-96 flex flex-col gap-4">
-        <h3 className="text-sm font-semibold text-gray-800">Sync conflict</h3>
+        <h3 className="text-sm font-semibold text-gray-800">{t('conflict.title')}</h3>
         <p className="text-xs text-gray-500">
-          This project was edited on another device. Which version do you want to keep?
+          {t('conflict.desc')}
         </p>
 
         <div className="grid grid-cols-2 gap-3">
-          {[{ label: 'Local (this device)', data: local, action: 'local' as const },
-            { label: 'Remote (cloud)', data: remote, action: 'remote' as const }].map(side => (
+          {[{ label: t('conflict.local'), data: local, action: 'local' as const },
+            { label: t('conflict.remote'), data: remote, action: 'remote' as const }].map(side => (
             <button
               key={side.action}
               onClick={() => resolveConflict(side.action)}
@@ -39,7 +41,7 @@ export function ConflictModal() {
               <div className="text-[10px] text-gray-500 space-y-0.5">
                 <div>{side.data.name}</div>
                 <div>{side.data.updated}</div>
-                <div>{side.data.controls} controls, {side.data.courses} courses</div>
+                <div>{t('conflict.controlsCourses', { controls: side.data.controls, courses: side.data.courses })}</div>
               </div>
             </button>
           ))}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useT } from '../../i18n'
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../../store'
 import {
@@ -7,16 +8,17 @@ import {
 } from '../../lib/pdfExport'
 import { defaultControlLabel, controlsById, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
+import { setDescTranslator } from '../../lib/pdfDescriptionSheet'
 import { getLayoutDefaults } from '../../store/layoutSlice'
 import type { PageSizeKey, Control, DescMode } from '../../types'
 import type { PdfExportOptions } from '../../lib/pdfExport'
 
 const PAGE_SIZE_KEYS: PageSizeKey[] = ['a4', 'a3', 'letter', 'legal']
 const DESC_OPTIONS: { value: DescMode; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'on-map', label: 'On map' },
-  { value: 'separate', label: 'Own page' },
-  { value: 'both', label: 'Both' },
+  { value: 'none', label: 'layout.descNone' },
+  { value: 'on-map', label: 'layout.descOnMap' },
+  { value: 'separate', label: 'layout.descSeparate' },
+  { value: 'both', label: 'layout.descBoth' },
 ]
 
 function ScaleInput({
@@ -111,10 +113,12 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function OverrideTag() {
-  return <span className="text-[9px] text-orange-600 font-medium ml-1">override</span>
+  const t = useT()
+  return <span className="text-[9px] text-orange-600 font-medium ml-1">{t('layout.override')}</span>
 }
 
 function GeneralSection() {
+  const t = useT()
   const project = useStore(s => s.project!)
   const loadedMap = useStore(s => s.loadedMap)
   const updateLayoutDefaults = useStore(s => s.updateLayoutDefaults)
@@ -136,7 +140,7 @@ function GeneralSection() {
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
       >
         {open ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
-        <span className="text-sm font-medium text-gray-700 flex-1">General</span>
+        <span className="text-sm font-medium text-gray-700 flex-1">{t('layout.general')}</span>
         <span className="text-[10px] text-gray-400 tabular-nums">
           {PAGE_SIZES[defaults.pageSize]?.label} · 1:{defaults.printScale.toLocaleString()}
         </span>
@@ -146,7 +150,7 @@ function GeneralSection() {
         <div className="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100">
           {/* Page size */}
           <div>
-            <SectionLabel>Page size</SectionLabel>
+            <SectionLabel>{t('layout.pageSize')}</SectionLabel>
             <div className="flex gap-1 mt-1">
               {PAGE_SIZE_KEYS.map(key => (
                 <button
@@ -166,19 +170,19 @@ function GeneralSection() {
 
           {/* Orientation */}
           <div>
-            <SectionLabel>Orientation</SectionLabel>
+            <SectionLabel>{t('layout.orientation')}</SectionLabel>
             <div className="flex gap-1 mt-1">
               {(['portrait', 'landscape'] as const).map(o => (
                 <button
                   key={o}
                   onClick={() => updateLayoutDefaults({ orientation: o })}
-                  className={`px-2 py-1 text-[11px] rounded capitalize transition-colors ${
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
                     defaults.orientation === o
                       ? 'bg-orange-600 text-white'
                       : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
                   }`}
                 >
-                  {o}
+                  {t('layout.' + o)}
                 </button>
               ))}
             </div>
@@ -186,7 +190,7 @@ function GeneralSection() {
 
           {/* Map scale */}
           <div>
-            <SectionLabel>Map scale</SectionLabel>
+            <SectionLabel>{t('layout.mapScale')}</SectionLabel>
             <ScaleInput
               value={defaults.printScale}
               onChange={v => updateLayoutDefaults({ printScale: v })}
@@ -197,7 +201,7 @@ function GeneralSection() {
           {/* Map opacity */}
           <div>
             <SectionLabel>
-              Map opacity
+              {t('layout.mapOpacity')}
               <span className="text-gray-400 font-normal normal-case tracking-normal"> — {Math.round(defaults.mapOpacity * 100)}%</span>
             </SectionLabel>
             <input
@@ -214,7 +218,7 @@ function GeneralSection() {
           {/* Resolution */}
           {isSvgMap && (
             <div className="flex items-center gap-2">
-              <SectionLabel>Resolution</SectionLabel>
+              <SectionLabel>{t('layout.resolution')}</SectionLabel>
               <select
                 value={defaults.rasterDpi}
                 disabled={defaults.mapRendering === 'vector'}
@@ -233,7 +237,7 @@ function GeneralSection() {
                   onChange={e => updateLayoutDefaults({ mapRendering: e.target.checked ? 'vector' : 'raster' })}
                   className="accent-orange-600"
                 />
-                <span className="text-[11px] text-gray-500">Full SVG</span>
+                <span className="text-[11px] text-gray-500">{t('layout.fullSvg')}</span>
               </label>
             </div>
           )}
@@ -249,8 +253,8 @@ function GeneralSection() {
                 className="accent-orange-600 disabled:opacity-40"
               />
               <span className="text-[11px] text-gray-500">
-                Simulate map overprint
-                {defaults.mapRendering === 'vector' && <span className="text-gray-400"> — raster only</span>}
+                {t('layout.mapOverprint')}
+                {defaults.mapRendering === 'vector' && <span className="text-gray-400"> {t('layout.rasterOnly')}</span>}
               </span>
             </label>
           )}
@@ -263,7 +267,7 @@ function GeneralSection() {
             const border = defaults.mapBorder
             return (
               <div>
-                <SectionLabel>Map border</SectionLabel>
+                <SectionLabel>{t('layout.mapBorder')}</SectionLabel>
                 <div className="flex items-center gap-2 mt-1">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -278,7 +282,7 @@ function GeneralSection() {
                       }}
                       className="accent-orange-600"
                     />
-                    <span className="text-xs text-gray-600">Enabled</span>
+                    <span className="text-xs text-gray-600">{t('layout.enabled')}</span>
                   </label>
                   {border && (
                     <>
@@ -303,7 +307,7 @@ function GeneralSection() {
                 {border && (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-10">Left</span>
+                      <span className="text-[10px] text-gray-500 w-10">{t('layout.left')}</span>
                       <MmInput
                         value={border.x}
                         onChange={v => updateLayoutDefaults({
@@ -311,7 +315,7 @@ function GeneralSection() {
                         })}
                         max={pw - 20 - (pw - border.x - border.width)}
                       />
-                      <span className="text-[10px] text-gray-500 w-10 text-right">Right</span>
+                      <span className="text-[10px] text-gray-500 w-10 text-right">{t('layout.right')}</span>
                       <MmInput
                         value={Math.round((pw - border.x - border.width) * 10) / 10}
                         onChange={v => updateLayoutDefaults({
@@ -321,7 +325,7 @@ function GeneralSection() {
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-10">Top</span>
+                      <span className="text-[10px] text-gray-500 w-10">{t('layout.top')}</span>
                       <MmInput
                         value={border.y}
                         onChange={v => updateLayoutDefaults({
@@ -329,7 +333,7 @@ function GeneralSection() {
                         })}
                         max={ph - 20 - (ph - border.y - border.height)}
                       />
-                      <span className="text-[10px] text-gray-500 w-10 text-right">Bottom</span>
+                      <span className="text-[10px] text-gray-500 w-10 text-right">{t('layout.bottom')}</span>
                       <MmInput
                         value={Math.round((ph - border.y - border.height) * 10) / 10}
                         onChange={v => updateLayoutDefaults({
@@ -344,7 +348,7 @@ function GeneralSection() {
                       })}
                       className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
                     >
-                      Re-center
+                      {t('layout.recenter')}
                     </button>
                   </div>
                 )}
@@ -358,6 +362,7 @@ function GeneralSection() {
 }
 
 function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId: string; includedOverride?: boolean; onToggleIncluded?: () => void }) {
+  const t = useT()
   const project = useStore(s => s.project!)
   const course = project.courses.find(c => c.id === courseId)!
   const controls = project.controls
@@ -500,7 +505,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
             className="text-[10px] border border-gray-200 rounded px-1 py-0.5 text-gray-500 bg-white focus:outline-none focus:border-orange-400 shrink-0"
           >
             {DESC_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>{t(o.label)}</option>
             ))}
           </select>
         )}
@@ -528,7 +533,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
           {/* Submap selector (exchange/flip courses) */}
           {hasSubmaps && (
             <div>
-              <SectionLabel>Maps</SectionLabel>
+              <SectionLabel>{t('layout.maps')}</SectionLabel>
               <div className="flex gap-1 mt-1 flex-wrap">
                 {submaps.map(sm => (
                   <button
@@ -549,7 +554,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
           {/* Page size */}
           <div>
-            <SectionLabel>Page size{isPageSizeOverride && <OverrideTag />}</SectionLabel>
+            <SectionLabel>{t('layout.pageSize')}{isPageSizeOverride && <OverrideTag />}</SectionLabel>
             <div className="flex gap-1 mt-1">
               {PAGE_SIZE_KEYS.map(key => (
                 <button
@@ -569,7 +574,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                   onClick={() => updateCourseLayout(courseId, { pageSize: defaults.pageSize }, activeSubmap)}
                   className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
                 >
-                  Reset
+                  {t('common.reset')}
                 </button>
               )}
             </div>
@@ -577,7 +582,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
           {/* Orientation */}
           <div>
-            <SectionLabel>Orientation{isOrientationOverride && <OverrideTag />}</SectionLabel>
+            <SectionLabel>{t('layout.orientation')}{isOrientationOverride && <OverrideTag />}</SectionLabel>
             <div className="flex gap-1 mt-1">
               {(['portrait', 'landscape'] as const).map(o => (
                 <button
@@ -589,7 +594,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
                   }`}
                 >
-                  {o}
+                  {t('layout.' + o)}
                 </button>
               ))}
               {isOrientationOverride && (
@@ -597,7 +602,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                   onClick={() => updateCourseLayout(courseId, { orientation: defaults.orientation }, activeSubmap)}
                   className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
                 >
-                  Reset
+                  {t('common.reset')}
                 </button>
               )}
             </div>
@@ -605,7 +610,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
           {/* Print scale */}
           <div>
-            <SectionLabel>Print scale{isScaleOverride && <OverrideTag />}</SectionLabel>
+            <SectionLabel>{t('layout.printScale')}{isScaleOverride && <OverrideTag />}</SectionLabel>
             <div className="flex items-center gap-2 mt-1">
               <ScaleInput
                 value={sub.printScale}
@@ -616,7 +621,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                   onClick={() => updateCourseLayout(courseId, { printScale: defaults.printScale }, activeSubmap)}
                   className="text-[10px] text-orange-600 hover:text-orange-800"
                 >
-                  Reset
+                  {t('common.reset')}
                 </button>
               )}
             </div>
@@ -626,14 +631,14 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
           {fitInfo && !fitInfo.fits && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1.5">
               <p className="text-[11px] text-amber-700">
-                Doesn't fit on page at this scale.
+                {t('layout.doesntFit')}
               </p>
               {suggestedScale && (
                 <button
                   onClick={() => updateCourseLayout(courseId, { printScale: suggestedScale }, activeSubmap)}
                   className="text-[11px] text-orange-600 hover:text-orange-800 font-medium"
                 >
-                  Fit at 1:{suggestedScale.toLocaleString()}
+                  {t('layout.fitAt', { scale: suggestedScale.toLocaleString() })}
                 </button>
               )}
               <label className="flex items-center gap-2 cursor-pointer">
@@ -644,9 +649,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                   className="accent-orange-600"
                 />
                 <span className="text-[11px] text-amber-700">
-                  Tile across multiple pages
+                  {t('layout.tilePages')}
                   {tileInfo && tileInfo.totalPages > 1 && (
-                    <span className="text-amber-500"> ({tileInfo.cols}×{tileInfo.rows} pages)</span>
+                    <span className="text-amber-500"> {t('layout.tileInfo', { cols: tileInfo.cols, rows: tileInfo.rows })}</span>
                   )}
                 </span>
               </label>
@@ -655,7 +660,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
           {/* Clue sheet / description mode */}
           <div>
-            <SectionLabel>Clue sheet</SectionLabel>
+            <SectionLabel>{t('layout.clueSheet')}</SectionLabel>
             <div className="flex gap-1 mt-1 flex-wrap">
               {DESC_OPTIONS.map(o => (
                 <button
@@ -667,7 +672,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
                   }`}
                 >
-                  {o.label}
+                  {t(o.label)}
                 </button>
               ))}
             </div>
@@ -700,7 +705,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       const endLabel = defaultControlLabel(resolved[end])
                       return (
                         <div key={p} className="flex items-center gap-1.5 text-[11px] text-gray-600">
-                          <span className="tabular-nums">Part {p + 1}:</span>
+                          <span className="tabular-nums">{t('layout.part', { n: p + 1 })}</span>
                           <span className="text-gray-400">{startLabel} &rarr; {endLabel}</span>
                           {p > 0 && (
                             <button
@@ -724,7 +729,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                     }}
                     className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:border-orange-400 w-full"
                   >
-                    <option value="">Split after...</option>
+                    <option value="">{t('layout.splitAfter')}</option>
                     {eligible.map(({ ctrl, i }) => (
                       <option key={i} value={i}>
                         {defaultControlLabel(ctrl)} ({ctrl.type === 'start' ? 'start' : `#${resolved.slice(0, i + 1).filter(c => c.type === 'control').length}`})
@@ -744,7 +749,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
             const cb = sub.mapBorder
             return (
               <div>
-                <SectionLabel>Map border{isBorderOverride && <OverrideTag />}</SectionLabel>
+                <SectionLabel>{t('layout.mapBorder')}{isBorderOverride && <OverrideTag />}</SectionLabel>
                 <div className="flex items-center gap-2 mt-1">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -764,7 +769,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       }}
                       className="accent-orange-600"
                     />
-                    <span className="text-xs text-gray-600">Enabled</span>
+                    <span className="text-xs text-gray-600">{t('layout.enabled')}</span>
                   </label>
                   {cb && (
                     <>
@@ -798,14 +803,14 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       }}
                       className="text-[10px] text-orange-600 hover:text-orange-800 ml-auto"
                     >
-                      Reset
+                      {t('common.reset')}
                     </button>
                   )}
                 </div>
                 {cb && (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-10">Left</span>
+                      <span className="text-[10px] text-gray-500 w-10">{t('layout.left')}</span>
                       <MmInput
                         value={cb.x}
                         onChange={v => updateCourseLayout(courseId, {
@@ -813,7 +818,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                         }, activeSubmap)}
                         max={pw - 20 - (pw - cb.x - cb.width)}
                       />
-                      <span className="text-[10px] text-gray-500 w-10 text-right">Right</span>
+                      <span className="text-[10px] text-gray-500 w-10 text-right">{t('layout.right')}</span>
                       <MmInput
                         value={Math.round((pw - cb.x - cb.width) * 10) / 10}
                         onChange={v => updateCourseLayout(courseId, {
@@ -823,7 +828,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-500 w-10">Top</span>
+                      <span className="text-[10px] text-gray-500 w-10">{t('layout.top')}</span>
                       <MmInput
                         value={cb.y}
                         onChange={v => updateCourseLayout(courseId, {
@@ -831,7 +836,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                         }, activeSubmap)}
                         max={ph - 20 - (ph - cb.y - cb.height)}
                       />
-                      <span className="text-[10px] text-gray-500 w-10 text-right">Bottom</span>
+                      <span className="text-[10px] text-gray-500 w-10 text-right">{t('layout.bottom')}</span>
                       <MmInput
                         value={Math.round((ph - cb.y - cb.height) * 10) / 10}
                         onChange={v => updateCourseLayout(courseId, {
@@ -846,7 +851,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                       }, activeSubmap)}
                       className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
                     >
-                      Re-center
+                      {t('layout.recenter')}
                     </button>
                   </div>
                 )}
@@ -878,7 +883,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
             }}
             className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
           >
-            {hasSubmaps ? 'Reset to map center' : 'Reset to course center'}
+            {hasSubmaps ? t('layout.resetMapCenter') : t('layout.resetCourseCenter')}
           </button>
         </div>
       )}
@@ -887,6 +892,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 }
 
 export function LayoutPanel() {
+  const t = useT()
   const project = useStore(s => s.project!)
   const courses = project.courses
   const loadedMap = useStore(s => s.loadedMap)
@@ -949,6 +955,7 @@ export function LayoutPanel() {
         overprintMode: currentProject.overprintMode ?? 'simulated',
       }
 
+      setDescTranslator(t)
       const currentMap = useStore.getState().loadedMap
       const blob = await exportCoursePdf(currentProject, options, currentMap)
       downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
@@ -957,8 +964,8 @@ export function LayoutPanel() {
       // A stale dev/PWA page can fail to fetch the lazily-loaded pdf modules;
       // only a reload picks up the fresh chunks.
       setExportError(/dynamically imported module|outdated optimize dep|Importing a module script failed/i.test(msg)
-        ? 'Export to PDF failed. Reload the page and try again.'
-        : `Export failed: ${msg}`)
+        ? t('layout.exportFailed')
+        : t('layout.exportError', { error: msg }))
     } finally {
       setExporting(false)
     }
@@ -967,7 +974,7 @@ export function LayoutPanel() {
   if (courses.length === 0) {
     return (
       <div className="p-4 text-center text-xs text-gray-400">
-        Create a course first to configure its print layout.
+        {t('layout.createCourseFirst')}
       </div>
     )
   }
@@ -978,8 +985,8 @@ export function LayoutPanel() {
 
       <div className="flex items-center justify-between px-1 pt-1">
         <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-          Courses
-          <span className="text-gray-400 font-normal normal-case tracking-normal"> — {includedCount}/{courses.length} included</span>
+          {t('layout.courses')}
+          <span className="text-gray-400 font-normal normal-case tracking-normal"> {t('layout.included', { included: includedCount, total: courses.length })}</span>
         </span>
       </div>
 
@@ -993,17 +1000,17 @@ export function LayoutPanel() {
               className="accent-orange-600 shrink-0"
             />
             <div className="w-3 h-3 rounded-full shrink-0 bg-orange-600" />
-            <span className="text-sm font-medium text-gray-800 flex-1">All controls</span>
+            <span className="text-sm font-medium text-gray-800 flex-1">{t('layout.allControls')}</span>
           </div>
           {allControls && (
             <div className="flex items-center gap-3 px-3 py-1.5 border-t border-gray-100 bg-gray-50">
               <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
                 <input type="checkbox" checked={allControlsMulticolor} onChange={e => useStore.setState(s => ({ project: s.project ? { ...s.project, allControlsMulticolor: e.target.checked || undefined } : s.project }))} className="accent-orange-600" />
-                Multicolor
+                {t('layout.multicolor')}
               </label>
               <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
                 <input type="checkbox" checked={allControlsLinkId} onChange={e => useStore.setState(s => ({ project: s.project ? { ...s.project, allControlsLinkId: e.target.checked || undefined } : s.project }))} className="accent-orange-600" />
-                Link ID
+                {t('layout.linkId')}
               </label>
             </div>
           )}
@@ -1027,7 +1034,7 @@ export function LayoutPanel() {
       <div className="pt-2 border-t border-gray-100 sticky bottom-0 bg-white pb-1">
         {!scalable && (
           <p className="text-[11px] text-amber-600 mb-2">
-            Map has no scale calibration. Use the Measure Scale tool first.
+            {t('layout.noScaleCalibration')}
           </p>
         )}
         {exportError && (
@@ -1039,7 +1046,7 @@ export function LayoutPanel() {
           disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
           className="w-full bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {exporting ? 'Exporting…' : 'Export PDF'}
+          {exporting ? t('layout.exporting') : t('layout.exportPdf')}
         </button>
       </div>
     </div>

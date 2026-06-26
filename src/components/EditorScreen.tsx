@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store'
 import { useRenderTracker } from '../lib/perf'
+import { useT } from '../i18n'
 import { loadMap } from '../lib/mapLoader'
 import { MapCanvas } from './canvas/MapCanvas'
 import { Header } from './ui/Header'
@@ -10,28 +11,30 @@ import { OverlaySettingsPanel, AnnotationSettingsPanel } from './panels/OverlayS
 import { OnboardingTour } from './OnboardingTour'
 
 const shortcuts: [string, string][] = [
-  ['V', 'Select / Pan'],
-  ['S', 'Place Start'],
-  ['F', 'Place Finish'],
-  ['C', 'Place Control'],
-  ['G', 'Gap Tool'],
-  ['D', 'Delete Tool'],
-  ['M', 'Measure Scale'],
-  ['B', 'Forbidden Route'],
-  ['P', 'Crossing Point'],
-  ['O', 'Out of Bounds'],
-  ['K', 'Scale Bar'],
-  ['T', 'Text'],
-  ['N', 'North Arrow'],
-  ['I', 'Image'],
-  ['⌘Z', 'Undo'],
-  ['⌘Y', 'Redo'],
-  ['Del', 'Delete Selected'],
-  ['Esc', 'Deselect / Exit'],
-  ['?', 'This help'],
+  ['V', 'editor.tool.select'],
+  ['S', 'editor.tool.placeStart'],
+  ['F', 'editor.tool.placeFinish'],
+  ['C', 'editor.tool.placeControl'],
+  ['G', 'editor.tool.gap'],
+  ['D', 'editor.tool.delete'],
+  ['M', 'editor.tool.measureScale'],
+  ['B', 'editor.tool.forbiddenRoute'],
+  ['P', 'editor.tool.crossingPoint'],
+  ['O', 'editor.tool.outOfBounds'],
+  ['K', 'editor.tool.scaleBar'],
+  ['T', 'editor.tool.text'],
+  ['N', 'editor.tool.northArrow'],
+  ['I', 'editor.tool.image'],
+  ['⌘Z', 'editor.tool.undo'],
+  ['⌘Y', 'editor.tool.redo'],
+  ['Del', 'editor.tool.deleteSelected'],
+  ['Esc', 'editor.tool.deselect'],
+  ['?', 'editor.tool.thisHelp'],
 ]
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
+  const t = useT()
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); e.stopPropagation(); onClose() }
@@ -43,16 +46,16 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl p-5 w-80" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">Keyboard shortcuts</h3>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('editor.shortcuts')}</h3>
         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           {shortcuts.map(([key, label]) => (
             <div key={key} className="contents">
               <kbd className="text-[11px] font-mono bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 text-center min-w-[2rem]">{key}</kbd>
-              <span className="text-xs text-gray-600 py-0.5">{label}</span>
+              <span className="text-xs text-gray-600 py-0.5">{t(label)}</span>
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-gray-400 mt-3">In course mode: <strong>G</strong> gap, <strong>B</strong> bend</p>
+        <p className="text-[10px] text-gray-400 mt-3">{t('editor.shortcutHint')}</p>
       </div>
     </div>
   )
@@ -62,6 +65,7 @@ interface Props { onGoHome: () => void; onLogin: () => void }
 
 export function EditorScreen({ onGoHome, onLogin }: Props) {
   useRenderTracker('EditorScreen')
+  const t = useT()
   const [showShortcuts, setShowShortcuts] = useState(false)
   const closeShortcuts = useCallback(() => setShowShortcuts(false), [])
 
@@ -86,11 +90,11 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
 
   useEffect(() => {
     if (!mapFileData && mapStorageMode === 'reference') {
-      setError('Map file not loaded. Open the .oco file from the same folder as your map.') // eslint-disable-line react-hooks/set-state-in-effect -- sync error check before async load
+      setError(t('editor.mapNotLoaded')) // eslint-disable-line react-hooks/set-state-in-effect -- sync error check before async load
       return
     }
     if (!mapFileData) {
-      setError('No map data available.')
+      setError(t('editor.noMapData'))
       return
     }
     loadMap(mapFileData, mapFilename)
@@ -107,18 +111,18 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
         }
       })
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
-  }, [mapFileData, mapFilename, mapStorageMode, setLoadedMap])
+  }, [mapFileData, mapFilename, mapStorageMode, setLoadedMap, t])
 
   if (error) {
     return (
       <div className="flex flex-col h-full items-center justify-center gap-3 p-8 text-center">
-        <p className="text-red-500 font-medium">Map loading error</p>
+        <p className="text-red-500 font-medium">{t('editor.mapError')}</p>
         <p className="text-gray-500 text-sm max-w-sm">{error}</p>
         <button
           className="mt-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
           onClick={onGoHome}
         >
-          Back to home
+          {t('app.backHome')}
         </button>
       </div>
     )
@@ -129,7 +133,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-3 border-orange-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500 text-sm">Loading map…</p>
+          <p className="text-gray-500 text-sm">{t('editor.loadingMap')}</p>
         </div>
       </div>
     )

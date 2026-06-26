@@ -3,7 +3,7 @@ import type { Project } from '../types'
 import type { Store, StoreHelpers } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
-import { uploadProject, downloadProject, createCloudProject, hashMap, fetchHistory, restoreVersion as restoreCloudVersion } from '../lib/sync'
+import { uploadProject, downloadProject, createCloudProject, hashMap, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
@@ -456,6 +456,48 @@ export const useStore = create<Store>((set, get) => {
         set({ syncConflict: null, syncStatus: 'error' })
       }
       if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
+    },
+
+    checkForRemoteUpdate: async () => {
+      const { projectId, cloudUser, mapFileData } = get()
+      if (!projectId || !cloudUser) return
+      const syncMeta = await getSyncMeta(projectId)
+      if (!syncMeta) return
+
+      try {
+        const cloudProjects = await fetchCloudProjects()
+        const cp = cloudProjects.find(p => p.id === syncMeta.cloudId)
+        if (!cp || cp.version <= syncMeta.syncVersion) return
+
+        const { project } = get()
+        if (project && project.meta.updatedAt > syncMeta.syncedAt) {
+          // Local unsynced edits + remote newer = conflict
+          const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
+          if (remote) {
+            set({
+              syncConflict: {
+                cloudId: syncMeta.cloudId,
+                serverVersion: cp.version,
+                remoteProject: remote.project,
+              },
+            })
+          }
+          return
+        }
+
+        const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
+        if (!remote) return
+        get().loadProject(remote.project, remote.mapData ?? mapFileData, projectId)
+        await setSyncMeta(projectId, {
+          cloudId: syncMeta.cloudId,
+          syncVersion: remote.version,
+          syncedAt: new Date().toISOString(),
+          mapHash: remote.mapHash,
+        })
+        set({ syncStatus: 'synced' })
+      } catch {
+        // Silently fail — local version is still usable
+      }
     },
 
     // ── Undo / Redo ───────────────────────────────────────────────────────

@@ -10,32 +10,33 @@ import {
   RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers, Eraser,
 } from 'lucide-react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import type { ActiveTool } from '../../types'
 import { IOF_PURPLE } from '../../lib/courseUtils'
 
 type ToolEntry = { tool: ActiveTool; label: string; shortcut?: string }
 
 const tools: ToolEntry[] = [
-  { tool: 'select', label: 'Select / Pan', shortcut: 'V' },
-  { tool: 'place-start', label: 'Place Start', shortcut: 'S' },
-  { tool: 'place-finish', label: 'Place Finish', shortcut: 'F' },
-  { tool: 'place-control', label: 'Place Control', shortcut: 'C' },
-  { tool: 'gap', label: 'Gap (click circle or leg to hide a section)', shortcut: 'G' },
-  { tool: 'delete', label: 'Delete (click control or annotation)', shortcut: 'D' },
-  { tool: 'measure-scale', label: 'Measure Scale', shortcut: 'M' },
+  { tool: 'select', label: 'editor.tool.select', shortcut: 'V' },
+  { tool: 'place-start', label: 'editor.tool.placeStart', shortcut: 'S' },
+  { tool: 'place-finish', label: 'editor.tool.placeFinish', shortcut: 'F' },
+  { tool: 'place-control', label: 'editor.tool.placeControl', shortcut: 'C' },
+  { tool: 'gap', label: 'toolbar.gapClickCircle', shortcut: 'G' },
+  { tool: 'delete', label: 'toolbar.deleteClick', shortcut: 'D' },
+  { tool: 'measure-scale', label: 'editor.tool.measureScale', shortcut: 'M' },
 ]
 
 const annotationTools: ToolEntry[] = [
-  { tool: 'forbidden-route', label: 'Forbidden Route (double-click to finish)', shortcut: 'B' },
-  { tool: 'crossing-point', label: 'Crossing Point', shortcut: 'P' },
-  { tool: 'out-of-bounds', label: 'Out-of-bounds Area (double-click to finish)', shortcut: 'O' },
+  { tool: 'forbidden-route', label: 'toolbar.forbiddenRouteHint', shortcut: 'B' },
+  { tool: 'crossing-point', label: 'editor.tool.crossingPoint', shortcut: 'P' },
+  { tool: 'out-of-bounds', label: 'toolbar.outOfBoundsHint', shortcut: 'O' },
 ]
 
 const overlayTools: ToolEntry[] = [
-  { tool: 'place-scalebar', label: 'Scale Bar', shortcut: 'K' },
-  { tool: 'place-text', label: 'Text', shortcut: 'T' },
-  { tool: 'place-image', label: 'Image', shortcut: 'I' },
-  { tool: 'place-north-arrow', label: 'North Arrow', shortcut: 'N' },
+  { tool: 'place-scalebar', label: 'editor.tool.scaleBar', shortcut: 'K' },
+  { tool: 'place-text', label: 'editor.tool.text', shortcut: 'T' },
+  { tool: 'place-image', label: 'editor.tool.image', shortcut: 'I' },
+  { tool: 'place-north-arrow', label: 'editor.tool.northArrow', shortcut: 'N' },
 ]
 
 const annotationToolSet = new Set<ActiveTool>(annotationTools.map(t => t.tool))
@@ -80,12 +81,13 @@ function GapSizeSlider() {
 }
 
 function GapRebuildToggle() {
+  const t = useT()
   const gapRebuild = useStore(s => s.editor.gapRebuild)
   const setGapRebuild = useStore(s => s.setGapRebuild)
   return (
     <button
       onClick={() => setGapRebuild(!gapRebuild)}
-      title="Rebuild gaps (click a gapped arc or leg to make it visible again)"
+      title={t('toolbar.gapRebuild')}
       className={`w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-xl transition-all ${
         gapRebuild
           ? 'bg-green-600 text-white shadow-inner'
@@ -98,6 +100,7 @@ function GapRebuildToggle() {
 }
 
 export function Toolbar() {
+  const t = useT()
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const layoutMode = useStore(s => s.editor.layoutMode)
@@ -206,12 +209,12 @@ export function Toolbar() {
 
   const undoRedo = (
     <>
-      <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"
+      <button onClick={undo} disabled={!canUndo} title={t('toolbar.undo')}
         className={`${btnClass} text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed`}
       >
         <Undo2 size={18} />
       </button>
-      <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"
+      <button onClick={redo} disabled={!canRedo} title={t('toolbar.redo')}
         className={`${btnClass} text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed`}
       >
         <Redo2 size={18} />
@@ -233,8 +236,8 @@ export function Toolbar() {
           style={{ background: layoutCourse.color }}
         />
         <span className="text-xs md:text-sm text-gray-700">
-          <span className="hidden md:inline">Layout — pan to position map on page</span>
-          <span className="md:hidden">Layout mode</span>
+          <span className="hidden md:inline">{t('toolbar.layoutPan')}</span>
+          <span className="md:hidden">{t('toolbar.layoutMode')}</span>
         </span>
         <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
         {undoRedo}
@@ -257,26 +260,26 @@ export function Toolbar() {
         />
         {activeTool === 'gap' && gapRebuild ? (
           <span className="text-xs md:text-sm text-green-700">
-            Click control to add missing gaps
+            {t('toolbar.gapRebuildClick')}
           </span>
         ) : activeTool === 'gap' ? (
           <span className="text-xs md:text-sm text-gray-700">
-            Click circle or leg to add gap
+            {t('toolbar.gapAddClick')}
           </span>
         ) : activeTool === 'bend' ? (
           <span className="text-xs md:text-sm text-gray-700">
-            <span className="hidden md:inline">Click leg to add bend · drag to move · right-click to remove</span>
-            <span className="md:hidden">Tap leg to bend · drag points</span>
+            <span className="hidden md:inline">{t('toolbar.bendDesktop')}</span>
+            <span className="md:hidden">{t('toolbar.bendMobile')}</span>
           </span>
         ) : (
           <span className="text-xs md:text-sm text-gray-700">
-            <span className="hidden md:inline">Click controls to add · right-click to remove</span>
-            <span className="md:hidden">Tap to add · hold to remove</span>
+            <span className="hidden md:inline">{t('toolbar.courseAddDesktop')}</span>
+            <span className="md:hidden">{t('toolbar.courseAddMobile')}</span>
           </span>
         )}
         <button
           onClick={() => setActiveTool(activeTool === 'gap' ? 'select' : 'gap')}
-          title="Gap tool (G)"
+          title={t('toolbar.gapTool')}
           className={`${btnClass} ${
             activeTool === 'gap'
               ? 'bg-orange-600 text-white shadow-inner'
@@ -293,7 +296,7 @@ export function Toolbar() {
         )}
         <button
           onClick={() => setActiveTool(activeTool === 'bend' ? 'select' : 'bend')}
-          title="Bend leg tool (B)"
+          title={t('toolbar.bendTool')}
           className={`${btnClass} ${
             activeTool === 'bend'
               ? 'bg-orange-600 text-white shadow-inner'
@@ -329,7 +332,7 @@ export function Toolbar() {
         <button
           key={tool}
           onClick={() => setActiveTool(tool)}
-          title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
+          title={`${t(label)}${shortcut ? ` (${shortcut})` : ''}`}
           className={`
             ${btnClass}
             ${activeTool === tool
@@ -345,7 +348,7 @@ export function Toolbar() {
       <div className="relative" ref={annMenuRef}>
         <button
           onClick={() => { setAnnMenuOpen(o => !o); setOverlayMenuOpen(false) }}
-          title="Annotations"
+          title={t('toolbar.annotations')}
           className={`
             ${btnClass}
             ${isAnnotationToolActive
@@ -369,7 +372,7 @@ export function Toolbar() {
                 }`}
               >
                 <span className="w-5 flex justify-center shrink-0">{toolIcons[tool](14)}</span>
-                <span className="flex-1 text-left truncate">{label.replace(/ \(.*\)/, '')}</span>
+                <span className="flex-1 text-left truncate">{t(label).replace(/ \(.*\)/, '')}</span>
                 {shortcut && <span className="text-[10px] text-gray-400 font-mono">{shortcut}</span>}
               </button>
             ))}
@@ -381,7 +384,7 @@ export function Toolbar() {
       <div className="relative" ref={overlayMenuRef}>
         <button
           onClick={() => { setOverlayMenuOpen(o => !o); setAnnMenuOpen(false) }}
-          title="Overlays"
+          title={t('toolbar.overlays')}
           className={`
             ${btnClass}
             ${isOverlayToolActive
@@ -413,7 +416,7 @@ export function Toolbar() {
                 }`}
               >
                 <span className="w-5 flex justify-center shrink-0">{toolIcons[tool](14)}</span>
-                <span className="flex-1 text-left truncate">{label}</span>
+                <span className="flex-1 text-left truncate">{t(label)}</span>
                 {shortcut && <span className="text-[10px] text-gray-400 font-mono">{shortcut}</span>}
               </button>
             ))}

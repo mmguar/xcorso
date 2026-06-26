@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Trash2, MapPin, Plus, Minus, Palette } from 'lucide-react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import { defaultControlLabel } from '../../lib/courseUtils'
 import { AppearancePanel } from './AppearancePanel'
 import type { Control } from '../../types'
@@ -55,6 +56,7 @@ function ControlLabelInput({ control }: { control: Control }) {
 }
 
 function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLButtonElement | null> }) {
+  const t = useT()
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -76,7 +78,7 @@ function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClos
       className="w-full mt-2 md:absolute md:bottom-full md:mb-2 md:right-0 md:w-64 md:mt-0 bg-white rounded-xl shadow-xl border border-gray-200 z-50"
     >
       <div className="hidden md:flex items-center justify-between px-3 pt-2.5 pb-1">
-        <span className="text-xs font-semibold text-gray-700">Appearance</span>
+        <span className="text-xs font-semibold text-gray-700">{t('controls.appearance')}</span>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
       </div>
       <AppearancePanel />
@@ -85,6 +87,7 @@ function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClos
 }
 
 export function ControlsPanel() {
+  const t = useT()
   const project = useStore(s => s.project!)
   const selectedControlId = useStore(s => s.editor.selectedControlId)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
@@ -137,7 +140,7 @@ export function ControlsPanel() {
         }`}
       >
         <Palette size={13} />
-        Appearance
+        {t('controls.appearance')}
       </button>
       <AppearancePopover open={showAppearance} onClose={() => setShowAppearance(false)} anchorRef={appearanceBtnRef} />
     </div>
@@ -147,8 +150,8 @@ export function ControlsPanel() {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 p-4 text-sm text-gray-400 text-center">
-          No controls placed yet.<br />
-          Use the toolbar to add start, finish, or controls.
+          {t('controls.noControls')}<br />
+          {t('controls.useToolbar')}
         </div>
         {appearanceButton}
       </div>
@@ -198,7 +201,7 @@ export function ControlsPanel() {
                   <button
                     onClick={e => { e.stopPropagation(); addControlToCourse(selectedCourse.id, control.id) }}
                     className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-orange-600 hover:bg-orange-100 transition-colors"
-                    title="Add to course"
+                    title={t('controls.addToCourse')}
                   >
                     <Plus size={14} />
                   </button>
@@ -214,7 +217,7 @@ export function ControlsPanel() {
                         }
                       }}
                       className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      title="Remove last instance from course"
+                      title={t('controls.removeFromCourse')}
                     >
                       <Minus size={14} />
                     </button>
@@ -240,14 +243,14 @@ export function ControlsPanel() {
       <div className="flex-1 flex flex-col gap-1 p-2 overflow-y-auto">
         <div className="px-3 py-2 flex flex-col gap-1.5 border-b border-gray-100 mb-1">
           <label className="text-xs text-gray-500">
-            Control IDs to skip
+            {t('controls.skipCodes')}
             <input
               type="text"
               value={skipCodesText}
               onChange={e => setSkipCodesText(e.target.value)}
               onBlur={commitSkipCodes}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-              placeholder="e.g. 33, 40, 55"
+              placeholder={t('controls.skipCodesPlaceholder')}
               className="mt-1 w-full text-xs font-mono border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
             />
           </label>
@@ -255,7 +258,7 @@ export function ControlsPanel() {
             onClick={reassignControlIds}
             className="text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded px-2 py-1 self-start transition-colors"
           >
-            Reassign IDs
+            {t('controls.reassignIds')}
           </button>
         </div>
         <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
@@ -265,7 +268,7 @@ export function ControlsPanel() {
             onChange={e => setShowPoints(e.target.checked)}
             className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
           />
-          Points
+          {t('controls.points')}
         </label>
         {controls.map(control => (
           <div

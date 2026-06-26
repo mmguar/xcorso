@@ -170,18 +170,18 @@ export interface AppActions {
   setSelectedAnnotation: (id: string | null) => void
 
   addScaleBar: (position: MapPoint, scale: number) => ScaleBar
-  updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>) => void
+  updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>, silent?: boolean) => void
   deleteScaleBar: (id: string) => void
   beginMoveOverlay: () => void
   moveScaleBar: (id: string, position: MapPoint) => void
 
   addTextLabel: (position: MapPoint) => TextLabel
-  updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>) => void
+  updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>, silent?: boolean) => void
   deleteTextLabel: (id: string) => void
   moveTextLabel: (id: string, position: MapPoint) => void
 
   addImageOverlay: (position: MapPoint, dataUrl: string, filename: string, naturalWidth: number, naturalHeight: number) => ImageOverlay
-  updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>) => void
+  updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>, silent?: boolean) => void
   deleteImageOverlay: (id: string) => void
   moveImageOverlay: (id: string, position: MapPoint) => void
   resizeImageOverlay: (id: string, widthMm: number, heightMm: number) => void
@@ -224,6 +224,7 @@ export interface AppActions {
   fetchVersionHistory: () => Promise<void>
   restoreVersion: (version: number) => Promise<void>
   resolveConflict: (keep: 'local' | 'remote') => Promise<void>
+  checkForRemoteUpdate: () => Promise<void>
 
   undo: () => void
   redo: () => void
