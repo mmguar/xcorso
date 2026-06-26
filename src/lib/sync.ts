@@ -16,8 +16,12 @@ export async function fetchUser(): Promise<CloudUser | null> {
   try {
     const res = await fetch(`${API}/auth/me`, { credentials: 'include' })
     if (!res.ok) return null
-    const { user } = await res.json() as { user: CloudUser | null }
-    return user
+    const data = await res.json() as { user: CloudUser | null; projects?: CloudProjectMeta[]; indexEtag?: string }
+    if (data.projects && data.indexEtag) {
+      indexCache = data.projects
+      indexEtag = data.indexEtag
+    }
+    return data.user
   } catch { return null }
 }
 
@@ -74,10 +78,18 @@ export interface CloudProjectMeta {
   mapHash: string
 }
 
+let indexEtag: string | null = null
+let indexCache: CloudProjectMeta[] | null = null
+
 export async function fetchCloudProjects(): Promise<CloudProjectMeta[]> {
-  const res = await fetch(`${API}/projects`, { credentials: 'include' })
+  const headers: HeadersInit = {}
+  if (indexEtag) headers['If-None-Match'] = indexEtag
+  const res = await fetch(`${API}/projects`, { credentials: 'include', headers })
+  if (res.status === 304 && indexCache) return indexCache
   if (!res.ok) return []
+  indexEtag = res.headers.get('ETag')
   const { projects } = await res.json() as { projects: CloudProjectMeta[] }
+  indexCache = projects
   return projects
 }
 
@@ -136,8 +148,9 @@ export async function uploadProject(
   }
   if (!res.ok) return { status: 'error', message: `Upload failed (${res.status})` }
 
-  const { version } = await res.json() as { version: number }
-  return { status: 'ok', version }
+  const data = await res.json() as { version: number; indexEtag?: string }
+  if (data.indexEtag) indexEtag = data.indexEtag
+  return { status: 'ok', version: data.version }
 }
 
 // ── Download ──────────────────────────────────────────────────────────────────
@@ -285,4 +298,10 @@ export interface SyncMeta {
   syncVersion: number
   syncedAt: string
   mapHash: string | null
+  projectHash?: string
+}
+
+export async function hashProject(project: Project): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(project)))
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
 }

@@ -89,6 +89,12 @@ async function putIndex(env: Env, userId: string, index: ProjectMeta[]): Promise
   await env.KV.put(`projects:index:${userId}`, JSON.stringify(index))
 }
 
+async function computeIndexEtag(index: ProjectMeta[]): Promise<string> {
+  const body = JSON.stringify({ projects: index })
+  const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))
+  return `"${[...new Uint8Array(hashBuf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)}"`
+}
+
 // --- Auth ---
 
 export async function authSend(request: Request, env: Env, _params: Params) {
@@ -183,8 +189,16 @@ export async function authVerify(request: Request, env: Env, _params: Params) {
 export async function authMe(request: Request, env: Env, _params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ user: null })
-  const record = await env.KV.get(`users:email:${user.email}`, 'json') as { termsVersion?: string } | null
-  return Response.json({ user: { userId: user.sub, email: user.email, termsVersion: record?.termsVersion } })
+  const [record, index] = await Promise.all([
+    env.KV.get(`users:email:${user.email}`, 'json') as Promise<{ termsVersion?: string } | null>,
+    getIndex(env, user.sub),
+  ])
+  const etag = await computeIndexEtag(index)
+  return Response.json({
+    user: { userId: user.sub, email: user.email, termsVersion: record?.termsVersion },
+    projects: index,
+    indexEtag: etag,
+  })
 }
 
 export async function authAcceptTerms(request: Request, env: Env, _params: Params) {
@@ -251,7 +265,12 @@ export async function projectsList(request: Request, env: Env, _params: Params) 
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const index = await getIndex(env, user.sub)
-  return Response.json({ projects: index })
+  const etag = await computeIndexEtag(index)
+
+  if (request.headers.get('If-None-Match') === etag) {
+    return new Response(null, { status: 304, headers: { ETag: etag } })
+  }
+  return Response.json({ projects: index }, { headers: { ETag: etag } })
 }
 
 export async function projectsCreate(request: Request, env: Env, _params: Params) {
@@ -357,7 +376,8 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   }
 
   await putIndex(env, access.ownerId, index)
-  return Response.json({ version: newVersion })
+  const indexEtag = await computeIndexEtag(index)
+  return Response.json({ version: newVersion, indexEtag })
 }
 
 export async function projectDelete(request: Request, env: Env, params: Params) {
@@ -526,7 +546,8 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   } catch { /* keep existing */ }
 
   await putIndex(env, access.ownerId, index)
-  return Response.json({ version: newVersion })
+  const indexEtag = await computeIndexEtag(index)
+  return Response.json({ version: newVersion, indexEtag })
 }
 
 // --- Sharing ---

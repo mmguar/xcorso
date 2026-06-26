@@ -1,21 +1,7 @@
 import type { Env } from './env'
-import { getUser } from './auth'
 import * as routes from './routes'
 
 type Handler = (req: Request, env: Env, params: Record<string, string>) => Promise<Response>
-
-// ponytail: per-IP for unauth, per-user for auth. KV atomic increment via get/put with short TTL.
-const RATE_WINDOW = 60 // seconds
-const RATE_LIMIT_WRITE = 30  // PUT/POST/DELETE per minute
-const RATE_LIMIT_READ = 120  // GET per minute
-
-async function checkRateLimit(env: Env, key: string, limit: number): Promise<boolean> {
-  const kvKey = `ratelimit:${key}`
-  const count = parseInt(await env.KV.get(kvKey) ?? '0')
-  if (count >= limit) return false
-  await env.KV.put(kvKey, String(count + 1), { expirationTtl: RATE_WINDOW })
-  return true
-}
 
 const ROUTES: [string, string, Handler][] = [
   ['POST', '/api/auth/send', routes.authSend],
@@ -70,14 +56,7 @@ export default {
       if (!matched) return Response.json({ error: 'Not found' }, { status: 404 })
       const [handler, params] = matched
 
-      if (!url.pathname.startsWith('/api/auth/')) {
-        const user = await getUser(request, env)
-        const identity = user?.sub ?? (request.headers.get('CF-Connecting-IP') || 'unknown')
-        const isWrite = request.method !== 'GET'
-        const allowed = await checkRateLimit(env, `${identity}:${isWrite ? 'w' : 'r'}`, isWrite ? RATE_LIMIT_WRITE : RATE_LIMIT_READ)
-        if (!allowed) return Response.json({ error: 'Too many requests' }, { status: 429 })
-      }
-
+      // ponytail: rate limiting moved to Cloudflare WAF rules, saves 2 KV ops per request
       return handler(request, env, params)
     }
 
