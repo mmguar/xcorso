@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { sendCode, verifyCode, TERMS_VERSION } from '../lib/sync'
 import { useStore } from '../store'
-import { useT } from '../i18n'
+import { useT, useLocale } from '../i18n'
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAADnxI0hcBbrG9wCc'
 
@@ -11,6 +11,8 @@ interface Props {
 
 export function LoginModal({ onClose }: Props) {
   const t = useT()
+  const { locale } = useLocale()
+  const termsUrl = locale === 'en' ? '/terms.html' : `/terms-${locale}.html`
   const setCloudUser = useStore(s => s.setCloudUser)
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [email, setEmail] = useState('')
@@ -97,9 +99,7 @@ export function LoginModal({ onClose }: Props) {
               <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-0.5 accent-orange-600" />
               <span>
                 {t('login.agree')}{' '}
-                <a href="/terms.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">{t('login.terms')}</a>
-                {' '}and{' '}
-                <a href="/privacy.html" target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">{t('login.privacy')}</a>
+                <a href={termsUrl} target="_blank" rel="noopener" className="text-orange-600 underline hover:text-orange-800">{t('login.terms')}</a>
               </span>
             </label>
           </>
