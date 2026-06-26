@@ -3,6 +3,7 @@ import { Component, useEffect, useState } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
 import './index.css'
 import { useStore } from './store'
+import { useT } from './i18n'
 import { WelcomeScreen } from './components/WelcomeScreen'
 import { EditorScreen } from './components/EditorScreen'
 import { AboutPage } from './components/AboutPage'
@@ -11,24 +12,26 @@ import { ConflictModal } from './components/ConflictModal'
 import { getActiveId, loadProject as loadPersistedProject } from './lib/persistence'
 import { fetchUser } from './lib/sync'
 
+function ErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
+  const t = useT()
+  return (
+    <div className="flex flex-col h-full items-center justify-center gap-3 p-8 text-center">
+      <p className="text-red-500 font-medium">{t('app.error')}</p>
+      <p className="text-gray-500 text-sm max-w-sm">{error.message}</p>
+      <button className="mt-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" onClick={onReset}>
+        {t('app.backHome')}
+      </button>
+    </div>
+  )
+}
+
 class ErrorBoundary extends Component<{ children: ReactNode; onReset: () => void }, { error: Error | null }> {
   state: { error: Error | null } = { error: null }
   static getDerivedStateFromError(error: Error) { return { error } }
   componentDidCatch(error: Error, info: ErrorInfo) { Sentry.captureException(error, { extra: { componentStack: info.componentStack } }) }
   render() {
     if (!this.state.error) return this.props.children
-    return (
-      <div className="flex flex-col h-full items-center justify-center gap-3 p-8 text-center">
-        <p className="text-red-500 font-medium">Something went wrong</p>
-        <p className="text-gray-500 text-sm max-w-sm">{this.state.error.message}</p>
-        <button
-          className="mt-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-          onClick={() => { this.setState({ error: null }); this.props.onReset() }}
-        >
-          Back to home
-        </button>
-      </div>
-    )
+    return <ErrorFallback error={this.state.error} onReset={() => { this.setState({ error: null }); this.props.onReset() }} />
   }
 }
 
@@ -44,7 +47,7 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false)
 
   useEffect(() => {
-    getActiveId().then(async id => {
+    const projectP = getActiveId().then(async id => {
       if (!id) return
       const saved = await loadPersistedProject(id)
       if (saved?.project) {
@@ -53,8 +56,12 @@ export default function App() {
       }
     }).finally(() => setRestoring(false))
 
-    // Check if already signed in (cookie-based)
-    fetchUser().then(u => { if (u) setCloudUser(u) })
+    const authP = fetchUser().then(u => { if (u) setCloudUser(u) })
+
+    // After both project and auth resolve, check if remote has a newer version
+    Promise.all([projectP, authP]).then(() => {
+      useStore.getState().checkForRemoteUpdate()
+    })
   }, [loadProject, setCloudUser])
 
   useEffect(() => {
