@@ -81,7 +81,7 @@ export const useStore = create<Store>((set, get) => {
         textLabels: [],
         imageOverlays: [],
         overprint: 1,
-        overprintMode: 'below',
+        overprintMode: 'simulated',
       }
       set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
       setActiveId(id).catch(() => {})
