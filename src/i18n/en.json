@@ -171,6 +171,8 @@
   "header.newProject": "New project",
   "header.eventSpec": "Event specification",
   "header.viewOnly": "View only",
+  "header.lock": "Lock editing",
+  "header.unlock": "Unlock editing",
   "header.shared": "Shared",
   "header.shareProject": "Share project",
   "header.emailPlaceholder": "email@example.com",
