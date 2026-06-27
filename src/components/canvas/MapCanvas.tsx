@@ -300,7 +300,7 @@ export function MapCanvas({ loadedMap }: Props) {
     return s.project?.courses.find(c => c.id === s.editor.layoutCourseId) ?? null
   })
 
-  const [useRaster, setUseRaster] = useState(true)
+  const [useRaster, setUseRaster] = useState(false)
   const mapOverprint = useStore(s => s.project?.layoutDefaults?.mapOverprint ?? false)
   // Overprint-simulated raster, generated lazily when the option is enabled.
   // Only meaningful for OCAD (svg) maps in raster mode; HD/vector shows as usual.

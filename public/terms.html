@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>xcorso — Terms &amp; Privacy</title>
+<script>
+  var l = (localStorage.getItem('xcorso_locale') || navigator.language.split('-')[0]);
+  if (l !== 'en') { var f = '/terms-' + l + '.html'; var x = new XMLHttpRequest(); x.open('HEAD', f, false); try { x.send(); if (x.status === 200) location.replace(f); } catch(e) {} }
+</script>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; color: #333; line-height: 1.6; font-size: 15px; }
   h1 { font-size: 1.3rem; }

@@ -46,6 +46,7 @@ export interface AppState {
   projectId: string | null
   project: Project | null
   projectRevision: number
+  loadedRevision: number
   mapFileData: ArrayBuffer | null
   loadedMap: LoadedMap | null
   undoStack: Project[]
@@ -56,6 +57,7 @@ export interface AppState {
   syncConflict: SyncConflict | null
   versionHistory: VersionEntry[]
   projectRole: ShareRole
+  locked: boolean
 }
 
 export interface AppActions {
@@ -215,6 +217,8 @@ export interface AppActions {
   removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex?: number) => void
   requestLayoutSnap: () => void
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
+
+  toggleLocked: () => void
 
   switchProject: (id: string) => Promise<void>
 
