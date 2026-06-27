@@ -30,8 +30,8 @@ export const useStore = create<Store>((set, get) => {
   }
 
   function mutateProject(fn: (p: Project) => void) {
-    const { project, projectRole, locked } = get()
-    if (!project || projectRole === 'viewer' || locked) return
+    const { project, projectRole } = get()
+    if (!project || projectRole === 'viewer' || project.locked) return
     pushUndoSnapshot()
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
@@ -40,8 +40,8 @@ export const useStore = create<Store>((set, get) => {
   }
 
   function mutateProjectSilent(fn: (p: Project) => void) {
-    const { project, projectRole, locked } = get()
-    if (!project || projectRole === 'viewer' || locked) return
+    const { project, projectRole } = get()
+    if (!project || projectRole === 'viewer' || project.locked) return
     fn(project)
     set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
@@ -82,7 +82,6 @@ export const useStore = create<Store>((set, get) => {
     syncConflict: null,
     versionHistory: [],
     projectRole: 'owner' as const,
-    locked: false,
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
@@ -184,7 +183,9 @@ export const useStore = create<Store>((set, get) => {
 
     // ── Editor UI ─────────────────────────────────────────────────────────
 
-    toggleLocked: () => set(s => ({ locked: !s.locked })),
+    toggleLocked: () => {
+      mutateProjectLayout(p => { p.locked = !p.locked })
+    },
 
     setActiveTool: (tool) => {
       set(state => ({

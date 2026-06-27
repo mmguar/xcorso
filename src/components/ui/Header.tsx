@@ -27,7 +27,7 @@ export function Header({ onGoHome, onLogin }: Props) {
   const syncProject = useStore(s => s.syncProject)
   const setCloudUser = useStore(s => s.setCloudUser)
   const projectRole = useStore(s => s.projectRole)
-  const locked = useStore(s => s.locked)
+  const locked = useStore(s => !!s.project?.locked)
   const toggleLocked = useStore(s => s.toggleLocked)
   const mapType = useStore(s => s.project!.map.type)
   const isViewer = projectRole === 'viewer' || locked
