@@ -30,6 +30,24 @@ export const useStore = create<Store>((set, get) => {
   }
 
   function mutateProject(fn: (p: Project) => void) {
+    const { project, projectRole, locked } = get()
+    if (!project || projectRole === 'viewer' || locked) return
+    pushUndoSnapshot()
+    const p = timeClone('project', project)
+    p.meta.updatedAt = new Date().toISOString()
+    fn(p)
+    set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
+  }
+
+  function mutateProjectSilent(fn: (p: Project) => void) {
+    const { project, projectRole, locked } = get()
+    if (!project || projectRole === 'viewer' || locked) return
+    fn(project)
+    set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
+  }
+
+  // Layout mutations bypass the lock — layout editing is allowed while locked.
+  function mutateProjectLayout(fn: (p: Project) => void) {
     const { project, projectRole } = get()
     if (!project || projectRole === 'viewer') return
     pushUndoSnapshot()
@@ -39,7 +57,7 @@ export const useStore = create<Store>((set, get) => {
     set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
-  function mutateProjectSilent(fn: (p: Project) => void) {
+  function mutateProjectLayoutSilent(fn: (p: Project) => void) {
     const { project, projectRole } = get()
     if (!project || projectRole === 'viewer') return
     fn(project)
@@ -47,11 +65,13 @@ export const useStore = create<Store>((set, get) => {
   }
 
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
+  const layoutH: StoreHelpers = { mutateProject: mutateProjectLayout, mutateProjectSilent: mutateProjectLayoutSilent, pushUndoSnapshot }
 
   return {
     projectId: null,
     project: null,
     projectRevision: 0,
+    loadedRevision: 0,
     mapFileData: null,
     loadedMap: null,
     undoStack: [],
@@ -62,6 +82,7 @@ export const useStore = create<Store>((set, get) => {
     syncConflict: null,
     versionHistory: [],
     projectRole: 'owner' as const,
+    locked: false,
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
@@ -83,7 +104,8 @@ export const useStore = create<Store>((set, get) => {
         overprint: 1,
         overprintMode: 'simulated',
       }
-      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [] })
+      const rev = get().projectRevision + 1
+      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], projectRevision: rev, loadedRevision: rev })
       setActiveId(id).catch(() => {})
     },
 
@@ -96,7 +118,8 @@ export const useStore = create<Store>((set, get) => {
       if (!project.textLabels) project.textLabels = []
       if (!project.imageOverlays) project.imageOverlays = []
       const projectId = id ?? get().projectId ?? crypto.randomUUID()
-      set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner' })
+      const rev = get().projectRevision + 1
+      set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner', projectRevision: rev, loadedRevision: rev })
       setActiveId(projectId).catch(() => {})
     },
 
@@ -153,13 +176,15 @@ export const useStore = create<Store>((set, get) => {
     ...createMeasureSlice(set, get, h),
     ...createAnnotationsSlice(set, get, h),
     ...createOverlaysSlice(set, get, h),
-    ...createLayoutSlice(set, get, h),
+    ...createLayoutSlice(set, get, layoutH),
 
     // ── Map rendering ────────────────────────────────────────────────────
 
     setLoadedMap: (map) => set({ loadedMap: map }),
 
     // ── Editor UI ─────────────────────────────────────────────────────────
+
+    toggleLocked: () => set(s => ({ locked: !s.locked })),
 
     setActiveTool: (tool) => {
       set(state => ({

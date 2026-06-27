@@ -1,0 +1,26 @@
+diff --git a/src/transform-features.js b/src/transform-features.js
+index f1d3eaa11d656248de8b93966af4103106a24c26..3435df30bec0d00d0f31d8124a2f634b4142bf89 100644
+--- a/src/transform-features.js
++++ b/src/transform-features.js
+@@ -126,7 +126,7 @@ const generateSymbolElements = (
+           }
+         }
+ 
+-        if (coords.length > 1) {
++        if (coords.length > 0) {
+           addPrimSymsAlongLine(coords, symbol)
+         }
+       }
+@@ -205,9 +205,11 @@ const generateSymbolElements = (
+         )
+       }
+ 
+-      return elements
++      break
+   }
+ 
++  return elements
++
+   /**
+    * @param {import('./ocad-reader/td-poly')[]} coords
+    * @param {import('./ocad-reader/symbol').LineSymbol} symbol

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, FileDown, Map, ImageUp, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn, History, Share2, UserPlus, X, Eye } from 'lucide-react'
+import { Save, FileDown, Map, ImageUp, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn, History, Share2, UserPlus, X, Eye, Lock, LockOpen } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT, LanguageSwitcher } from '../../i18n'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
@@ -27,8 +27,10 @@ export function Header({ onGoHome, onLogin }: Props) {
   const syncProject = useStore(s => s.syncProject)
   const setCloudUser = useStore(s => s.setCloudUser)
   const projectRole = useStore(s => s.projectRole)
+  const locked = useStore(s => s.locked)
+  const toggleLocked = useStore(s => s.toggleLocked)
   const mapType = useStore(s => s.project!.map.type)
-  const isViewer = projectRole === 'viewer'
+  const isViewer = projectRole === 'viewer' || locked
   const isOwner = projectRole === 'owner'
   const canSync = mapType === 'ocad'
   const [editingName, setEditingName] = useState(false)
@@ -238,13 +240,22 @@ export function Header({ onGoHome, onLogin }: Props) {
         </select>
       )}
 
-      {isViewer && (
+      {projectRole === 'viewer' && (
         <span className="flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 rounded-full px-2 py-0.5 shrink-0">
           <Eye size={10} /> {t('header.viewOnly')}
         </span>
       )}
       {projectRole === 'editor' && (
         <span className="text-[10px] font-medium text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 shrink-0">{t('header.shared')}</span>
+      )}
+      {projectRole !== 'viewer' && (
+        <button
+          onClick={toggleLocked}
+          className={`p-1 rounded transition-colors shrink-0 ${locked ? 'text-red-500 hover:text-red-700' : 'text-gray-300 hover:text-gray-500'}`}
+          title={locked ? t('header.unlock') : t('header.lock')}
+        >
+          {locked ? <Lock size={14} /> : <LockOpen size={14} />}
+        </button>
       )}
 
       {/* Right side */}
