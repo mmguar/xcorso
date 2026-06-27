@@ -17,7 +17,7 @@
   "about.feat.layout": "Impagina la stampa finale con un editor WYSIWYG",
   "about.feat.overprint": "Supporto sovrastampa e sovrastampa IOF",
   "about.feat.exportPdf": "Esporta mappe in PDF",
-  "about.feat.exportXml": "Esporta percorsi in IOF XML per il giorno di gara",
+  "about.feat.exportXml": "Esporta percorsi in IOF XML per il giorno della gara",
   "about.feat.sync": "Sincronizza i progetti tra dispositivi",
   "about.missing": "Funzionalità mancanti",
   "about.miss.geo": "Mappe geolocalizzate",
