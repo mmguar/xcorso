@@ -301,6 +301,7 @@ export interface Project {
   clueSheetSeparateColor?: string
   allControlsMulticolor?: boolean
   allControlsLinkId?: boolean
+  locked?: boolean
 }
 
 export type OverprintMode = 'simulated' | 'none' | 'below'

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { useStore } from '../store'
 import { useT } from '../i18n'
 
@@ -16,10 +18,17 @@ export function ConflictModal() {
   const conflict = useStore(s => s.syncConflict)
   const project = useStore(s => s.project)
   const resolveConflict = useStore(s => s.resolveConflict)
+  const [resolving, setResolving] = useState<'local' | 'remote' | null>(null)
   if (!conflict || !project) return null
 
   const local = summary(project)
   const remote = summary(conflict.remoteProject)
+
+  async function handleResolve(keep: 'local' | 'remote') {
+    setResolving(keep)
+    await resolveConflict(keep)
+    setResolving(null)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -34,15 +43,24 @@ export function ConflictModal() {
             { label: t('conflict.remote'), data: remote, action: 'remote' as const }].map(side => (
             <button
               key={side.action}
-              onClick={() => resolveConflict(side.action)}
-              className="border border-gray-200 hover:border-orange-400 rounded-xl p-3 text-left transition-colors"
+              onClick={() => handleResolve(side.action)}
+              disabled={resolving !== null}
+              className="border border-gray-200 hover:border-orange-400 rounded-xl p-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <div className="text-xs font-semibold text-gray-700 mb-2">{side.label}</div>
-              <div className="text-[10px] text-gray-500 space-y-0.5">
-                <div>{side.data.name}</div>
-                <div>{side.data.updated}</div>
-                <div>{t('conflict.controlsCourses', { controls: side.data.controls, courses: side.data.courses })}</div>
-              </div>
+              {resolving === side.action ? (
+                <div className="flex items-center justify-center py-3">
+                  <RefreshCw size={16} className="animate-spin text-orange-500" />
+                </div>
+              ) : (
+                <>
+                  <div className="text-xs font-semibold text-gray-700 mb-2">{side.label}</div>
+                  <div className="text-[10px] text-gray-500 space-y-0.5">
+                    <div>{side.data.name}</div>
+                    <div>{side.data.updated}</div>
+                    <div>{t('conflict.controlsCourses', { controls: side.data.controls, courses: side.data.courses })}</div>
+                  </div>
+                </>
+              )}
             </button>
           ))}
         </div>
