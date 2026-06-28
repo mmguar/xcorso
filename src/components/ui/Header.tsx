@@ -342,7 +342,7 @@ export function Header({ onGoHome, onLogin }: Props) {
                syncStatus === 'synced' ? <Cloud size={14} className="text-green-500" /> :
                syncStatus === 'error' ? <AlertTriangle size={14} className="text-red-400" /> :
                syncStatus === 'offline' ? <CloudOff size={14} className="text-gray-400" /> :
-               <Cloud size={14} />}
+               <Cloud size={14} className="text-yellow-500" />}
             </button>
             <div className="w-px h-4 bg-gray-200" />
             <div className="relative" ref={historyRef}>
