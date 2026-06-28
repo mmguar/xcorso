@@ -188,6 +188,8 @@
   "header.acceptTerms": "Accetta i termini aggiornati",
   "header.saveOco": "Salva .oco",
   "header.exportIof": "Esporta un XML formato IOF",
+  "header.exportIofV3": "Esporta IOF XML 3.0",
+  "header.exportIofV2": "Esporta IOF XML 2.0",
   "header.replaceMap": "Rimpiazza mappa",
   "header.saveSnapshot": "Salva istantanea",
   "header.noSnapshots": "Nessuna istantanea",

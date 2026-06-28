@@ -188,6 +188,8 @@
   "header.acceptTerms": "Accept updated terms",
   "header.saveOco": "Save .oco",
   "header.exportIof": "Export IOF XML",
+  "header.exportIofV3": "Export IOF XML 3.0",
+  "header.exportIofV2": "Export IOF XML 2.0",
   "header.replaceMap": "Replace map",
   "header.saveSnapshot": "Save snapshot",
   "header.noSnapshots": "No snapshots yet",
