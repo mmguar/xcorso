@@ -57,7 +57,6 @@ export interface AppState {
   syncConflict: SyncConflict | null
   versionHistory: VersionEntry[]
   projectRole: ShareRole
-  locked: boolean
 }
 
 export interface AppActions {

@@ -3,7 +3,7 @@ import { Save, FileDown, Map, ImageUp, ChevronDown, Home, Plus, Cloud, CloudOff,
 import { useStore } from '../../store'
 import { useT, LanguageSwitcher } from '../../i18n'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
-import { exportIofXml } from '../../lib/iofExport'
+import { exportIofXml, exportIofXmlV2 } from '../../lib/iofExport'
 import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
 import { logout as cloudLogout, addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
@@ -27,7 +27,7 @@ export function Header({ onGoHome, onLogin }: Props) {
   const syncProject = useStore(s => s.syncProject)
   const setCloudUser = useStore(s => s.setCloudUser)
   const projectRole = useStore(s => s.projectRole)
-  const locked = useStore(s => s.locked)
+  const locked = useStore(s => !!s.project?.locked)
   const toggleLocked = useStore(s => s.toggleLocked)
   const mapType = useStore(s => s.project!.map.type)
   const isViewer = projectRole === 'viewer' || locked
@@ -111,10 +111,10 @@ export function Header({ onGoHome, onLogin }: Props) {
     downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}.oco`)
   }
 
-  function handleExportIof() {
-    const xml = exportIofXml(project)
+  function handleExportIof(version: '2.0' | '3.0' = '3.0') {
+    const xml = version === '2.0' ? exportIofXmlV2(project) : exportIofXml(project)
     const blob = new Blob([xml], { type: 'application/xml' })
-    downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}_iof3.xml`)
+    downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}_iof${version === '2.0' ? '2' : '3'}.xml`)
     setExportOpen(false)
   }
 
@@ -443,11 +443,18 @@ export function Header({ onGoHome, onLogin }: Props) {
               </button>
               <button
                 data-tour="export-xml"
-                onClick={handleExportIof}
+                onClick={() => handleExportIof('3.0')}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 <FileDown size={14} />
-                {t('header.exportIof')}
+                {t('header.exportIofV3')}
+              </button>
+              <button
+                onClick={() => handleExportIof('2.0')}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <FileDown size={14} />
+                {t('header.exportIofV2')}
               </button>
               {!isViewer && (
                 <>

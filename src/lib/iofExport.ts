@@ -212,3 +212,149 @@ export function exportIofXml(project: Project): string {
 
   return parts.join('\n')
 }
+
+export function exportIofXmlV2(project: Project): string {
+  const controlMap = new Map<string, Control>(project.controls.map(c => [c.id, c]))
+  const isOcad = project.map.type === 'ocad'
+  const unitAttr = isOcad ? '' : ' unit="other"'
+
+  function mapPos(x: number, y: number): string {
+    const p = toIofCoords(x, y, project.map)
+    return `<MapPosition x="${p.x}" y="${p.y}"${unitAttr}/>`
+  }
+
+  // Map element: Scale + upper-left corner
+  const ox = project.map.originX ?? 0
+  const oy = project.map.originY ?? 0
+  const tl = toIofCoords(ox, oy, project.map)
+  const mapXml = [
+    '  <Map>',
+    `    <Scale>${project.map.scale}</Scale>`,
+    `    <MapPosition x="${tl.x}" y="${tl.y}"${unitAttr}/>`,
+    '  </Map>',
+  ].join('\n')
+
+  const starts = project.controls.filter(c => c.type === 'start')
+  const finishes = project.controls.filter(c => c.type === 'finish')
+  const normals = project.controls.filter(c => c.type === 'control')
+
+  const startPointsXml = starts.map(c => [
+    '  <StartPoint>',
+    `    <StartPointCode>${xmlEscape(controlCode(c))}</StartPointCode>`,
+    `    ${mapPos(c.position.x, c.position.y)}`,
+    '  </StartPoint>',
+  ].join('\n')).join('\n')
+
+  const controlsXml = normals.map(c => [
+    '  <Control>',
+    `    <ControlCode>${xmlEscape(controlCode(c))}</ControlCode>`,
+    `    ${mapPos(c.position.x, c.position.y)}`,
+    '  </Control>',
+  ].join('\n')).join('\n')
+
+  const finishPointsXml = finishes.map(c => [
+    '  <FinishPoint>',
+    `    <FinishPointCode>${xmlEscape(controlCode(c))}</FinishPointCode>`,
+    `    ${mapPos(c.position.x, c.position.y)}`,
+    '  </FinishPoint>',
+  ].join('\n')).join('\n')
+
+  // Expand variations
+  interface ExportCourse { course: Course; family?: string }
+  const exportCourses: ExportCourse[] = []
+  for (const course of project.courses) {
+    if (course.variations && course.variations.length > 0 && course.loops && course.loops.length > 0) {
+      for (const variation of course.variations) {
+        exportCourses.push({
+          course: {
+            ...course,
+            name: `${course.name} - ${variation.name}`,
+            controls: resolveVariation(course, variation),
+            loops: undefined,
+            variations: undefined,
+          },
+          family: course.name,
+        })
+      }
+    } else {
+      exportCourses.push({ course })
+    }
+  }
+
+  const coursesXml = exportCourses.map(({ course }, courseIdx) => {
+    const resolvedControls = course.controls
+      .map(cc => controlMap.get(cc.controlId))
+      .filter((c): c is Control => c !== undefined)
+
+    if (resolvedControls.length < 2) return ''
+
+    const distances = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
+    const totalLength = resolveCourseLength(course, distances)
+
+    const first = resolvedControls[0]
+    const last = resolvedControls[resolvedControls.length - 1]
+
+    // CourseControl for non-start/finish controls
+    const ccXml = course.controls.map((cc, idx) => {
+      if (idx === 0 || idx === course.controls.length - 1) return ''
+      const control = controlMap.get(cc.controlId)
+      if (!control) return ''
+      const children: string[] = [
+        `        <Sequence>${idx}</Sequence>`,
+        `        <ControlCode>${xmlEscape(controlCode(control))}</ControlCode>`,
+      ]
+      if (idx > 0 && distances.legs[idx - 1] > 0) {
+        children.push(`        <LegLength>${Math.round(distances.legs[idx - 1])}</LegLength>`)
+      }
+      return [
+        '      <CourseControl>',
+        ...children,
+        '      </CourseControl>',
+      ].join('\n')
+    }).filter(Boolean).join('\n')
+
+    const varChildren: string[] = [
+      `      <CourseVariationId>${courseIdx + 1}</CourseVariationId>`,
+      `      <Name>${xmlEscape(course.name)}</Name>`,
+      `      <CourseLength>${Math.round(totalLength)}</CourseLength>`,
+    ]
+    if (typeof course.climb === 'number' && Number.isFinite(course.climb) && course.climb > 0) {
+      varChildren.push(`      <CourseClimb>${Math.round(course.climb)}</CourseClimb>`)
+    }
+    varChildren.push(`      <StartPointCode>${xmlEscape(controlCode(first))}</StartPointCode>`)
+
+    const varEnd: string[] = []
+    varEnd.push(`      <FinishPointCode>${xmlEscape(controlCode(last))}</FinishPointCode>`)
+
+    // Class assignments for this course
+    const classRefs = project.classes
+      .filter(rc => rc.courseId === course.id)
+      .map(rc => `    <ClassShortName>${xmlEscape(rc.name)}</ClassShortName>`)
+
+    return [
+      '  <Course>',
+      `    <CourseName>${xmlEscape(course.name)}</CourseName>`,
+      ...classRefs,
+      '    <CourseVariation>',
+      ...varChildren,
+      ccXml,
+      ...varEnd,
+      '    </CourseVariation>',
+      '  </Course>',
+    ].join('\n')
+  }).filter(Boolean).join('\n')
+
+  const parts = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<CourseData>',
+    '  <IOFVersion version="2.0.3"/>',
+    mapXml,
+    startPointsXml,
+    controlsXml,
+    finishPointsXml,
+    coursesXml,
+    '</CourseData>',
+  ].filter(Boolean)
+
+  return parts.join('\n')
+}
