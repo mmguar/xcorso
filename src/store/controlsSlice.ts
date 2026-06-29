@@ -1,5 +1,6 @@
 import type { Control, ControlType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
+import { defaultControlLabel } from '../lib/courseUtils'
 
 function nextControlCode(controls: Control[], skipCodes?: number[]): number {
   const used = new Set(controls.filter(c => c.type === 'control').map(c => c.code))
@@ -16,6 +17,11 @@ function nextTypeCode(controls: Control[], type: ControlType): number {
 }
 
 export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpers) {
+  const ctrlName = (id: string) => {
+    const c = get().project?.controls.find(c => c.id === id)
+    return c ? defaultControlLabel(c) : '?'
+  }
+
   return {
     addControl: (type: ControlType, position: MapPoint, code?: number): Control => {
       const { project } = get()
@@ -25,11 +31,11 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       if (type === 'start' && !code) finalCode = nextTypeCode(project.controls, 'start')
       if (type === 'finish' && !code) finalCode = nextTypeCode(project.controls, 'finish')
       const control: Control = { id: crypto.randomUUID(), type, code: finalCode, position }
-      h.mutateProject(p => { p.controls.push(control) })
+      h.mutateProject(p => { p.controls.push(control) }, `Add ${type} ${finalCode}`)
       return control
     },
 
-    beginMoveControl: () => h.pushUndoSnapshot(),
+    beginMoveControl: (label?: string) => h.pushUndoSnapshot(label ?? 'Move control'),
 
     moveControl: (id: string, position: MapPoint) => {
       h.mutateProjectSilent(p => {
@@ -60,11 +66,11 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
         if (course) {
           course.controls.forEach(cc => { if (cc.controlId === controlId) cc.controlId = newControl.id })
         }
-      })
+      }, `Split control ${code}`)
       return newControl
     },
 
-    beginMoveControlLabel: () => h.pushUndoSnapshot(),
+    beginMoveControlLabel: (label?: string) => h.pushUndoSnapshot(label ?? 'Move label'),
 
     moveControlLabel: (id: string, offset: MapPoint) => {
       h.mutateProjectSilent(p => {
@@ -75,12 +81,13 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
     },
 
     deleteControl: (id: string) => {
+      const ctrl = get().project?.controls.find(c => c.id === id)
       h.mutateProject(p => {
         p.controls = p.controls.filter(c => c.id !== id)
         p.courses.forEach(course => {
           course.controls = course.controls.filter(cc => cc.controlId !== id)
         })
-      })
+      }, ctrl ? `Delete ${defaultControlLabel(ctrl)}` : 'Delete control')
       _set(state => ({
         editor: { ...state.editor, selectedControlId: state.editor.selectedControlId === id ? null : state.editor.selectedControlId },
       }))
@@ -91,24 +98,25 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       if (!project) return
       const existing = project.controls.find(c => c.id !== id && c.code === code && c.type === 'control')
       if (existing) return
+      const old = project.controls.find(c => c.id === id)
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === id)
         if (c) c.code = code
-      })
+      }, `Renumber ${old?.code ?? '?'} → ${code}`)
     },
 
     updateControlLabel: (id: string, label: string) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === id)
         if (c) c.label = label || undefined
-      })
+      }, `Edit label ${ctrlName(id)}`)
     },
 
     updateControlPoints: (id: string, points: number | undefined) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === id)
         if (c) c.points = points
-      })
+      }, `Edit points ${ctrlName(id)}`)
     },
 
     updateControlDescription: (id: string, field: string, value: string | undefined) => {
@@ -120,14 +128,14 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
         if (Object.values(c.description).every(v => v === undefined)) {
           c.description = undefined
         }
-      })
+      }, `Edit description ${ctrlName(id)}`)
     },
 
     updateSkipCodes: (codes: number[]) => {
       h.mutateProject(p => {
         if (codes.length > 0) p.skipCodes = codes
         else delete p.skipCodes
-      })
+      }, 'Update skip codes')
     },
 
     reassignControlIds: () => {
@@ -140,7 +148,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
           ctrl.code = code
           code++
         }
-      })
+      }, 'Reassign control IDs')
     },
   }
 }

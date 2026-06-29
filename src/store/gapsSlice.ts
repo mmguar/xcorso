@@ -1,7 +1,23 @@
 import type { CircleGap, LegGap } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
+import { defaultControlLabel } from '../lib/courseUtils'
 
-export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers) {
+export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) {
+  const ctrlName = (id: string) => {
+    const c = get().project?.controls.find(c => c.id === id)
+    return c ? defaultControlLabel(c) : '?'
+  }
+  function legName(courseId: string, courseControlId: string) {
+    const p = get().project
+    if (!p) return ''
+    const course = p.courses.find(c => c.id === courseId)
+    if (!course) return ''
+    const idx = course.controls.findIndex(cc => cc.id === courseControlId)
+    const from = idx >= 0 ? p.controls.find(c => c.id === course.controls[idx].controlId) : undefined
+    const to = idx >= 0 && idx + 1 < course.controls.length ? p.controls.find(c => c.id === course.controls[idx + 1].controlId) : undefined
+    return from && to ? `${defaultControlLabel(from)}-${defaultControlLabel(to)}` : '?'
+  }
+
   return {
     addControlGap: (controlId: string, gap: CircleGap) => {
       h.mutateProject(p => {
@@ -9,7 +25,7 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
         if (!c) return
         if (!c.gaps) c.gaps = []
         c.gaps.push(gap)
-      })
+      }, `Add gap ${ctrlName(controlId)}`)
     },
 
     removeControlGap: (controlId: string, index: number) => {
@@ -18,7 +34,7 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
         if (!c || !c.gaps) return
         c.gaps.splice(index, 1)
         if (c.gaps.length === 0) c.gaps = undefined
-      })
+      }, `Remove gap ${ctrlName(controlId)}`)
     },
 
     // Rebuild: make the arc at `angle` visible again by dropping any gap covering it.
@@ -33,14 +49,14 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
           return dist > span
         })
         if (c.gaps.length === 0) c.gaps = undefined
-      })
+      }, `Rebuild gap ${ctrlName(controlId)}`)
     },
 
     clearControlGaps: (controlId: string) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
         if (c) c.gaps = undefined
-      })
+      }, `Clear gaps ${ctrlName(controlId)}`)
     },
 
     addLegGap: (courseId: string, courseControlId: string, gap: LegGap) => {
@@ -51,7 +67,7 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
         if (!cc) return
         if (!cc.legGaps) cc.legGaps = []
         cc.legGaps.push(gap)
-      })
+      }, `Add leg gap ${legName(courseId, courseControlId)}`)
     },
 
     removeLegGap: (courseId: string, courseControlId: string, index: number) => {
@@ -62,7 +78,7 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
         if (!cc || !cc.legGaps) return
         cc.legGaps.splice(index, 1)
         if (cc.legGaps.length === 0) cc.legGaps = undefined
-      })
+      }, `Remove leg gap ${legName(courseId, courseControlId)}`)
     },
 
     // Rebuild: make the leg visible at `t` again by dropping any gap covering it.
@@ -74,7 +90,7 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
         if (!cc || !cc.legGaps) return
         cc.legGaps = cc.legGaps.filter(g => t < g.start || t > g.end)
         if (cc.legGaps.length === 0) cc.legGaps = undefined
-      })
+      }, `Rebuild leg gap ${legName(courseId, courseControlId)}`)
     },
 
     clearLegGaps: (courseId: string, courseControlId: string) => {
@@ -83,7 +99,7 @@ export function createGapsSlice(_set: SetState, _get: GetState, h: StoreHelpers)
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
         if (cc) cc.legGaps = undefined
-      })
+      }, `Clear leg gaps ${legName(courseId, courseControlId)}`)
     },
   }
 }

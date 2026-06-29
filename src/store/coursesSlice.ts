@@ -21,7 +21,8 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (finishes.length === 1) controls.push({ id: crypto.randomUUID(), controlId: finishes[0].id })
       }
       const course: Course = { id: crypto.randomUUID(), name, type, controls, color: IOF_PURPLE }
-      h.mutateProject(p => { p.courses.push(course) })
+      h.mutateProject(p => { p.courses.push(course) }, `Add course "${name}"`)
+
       set(state => ({
         editor: {
           ...state.editor,
@@ -54,7 +55,8 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         v.id = crypto.randomUUID()
         for (const lo of v.loopOrders) lo.loopId = loopIdMap.get(lo.loopId) ?? lo.loopId
       }
-      h.mutateProject(p => { p.courses.splice(idx + 1, 0, copy) })
+      h.mutateProject(p => { p.courses.splice(idx + 1, 0, copy) }, `Duplicate course "${copy.name}"`)
+
       set(state => ({
         editor: {
           ...state.editor,
@@ -68,10 +70,11 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     },
 
     deleteCourse: (id: string) => {
+      const name = get().project?.courses.find(c => c.id === id)?.name
       h.mutateProject(p => {
         p.courses = p.courses.filter(c => c.id !== id)
         p.classes = p.classes.filter(c => c.courseId !== id)
-      })
+      }, name ? `Delete course "${name}"` : 'Delete course')
       set(state => ({
         editor: {
           ...state.editor,
@@ -83,13 +86,13 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     updateCourseName: (id: string, name: string) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id); if (c) c.name = name
-      })
+      }, `Rename course → "${name}"`)
     },
 
     updateCourseColor: (id: string, color: string) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id); if (c) c.color = color
-      })
+      }, 'Change course color')
     },
 
     addControlToCourse: (courseId: string, controlId: string) => {
@@ -102,6 +105,8 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
 
       const getType = (id: string) => project.controls.find(c => c.id === id)?.type
 
+      const label = `Add ${defaultControlLabel(control)} to ${course.name}`
+
       if (control.type === 'start') {
         const existing = course.controls.find(cc => getType(cc.controlId) === 'start')
         if (existing?.controlId === controlId) return
@@ -110,7 +115,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           if (!c) return
           c.controls = c.controls.filter(cc => getType(cc.controlId) !== 'start')
           c.controls.unshift({ id: crypto.randomUUID(), controlId })
-        })
+        }, label)
         return
       }
 
@@ -122,7 +127,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           if (!c) return
           c.controls = c.controls.filter(cc => getType(cc.controlId) !== 'finish')
           c.controls.push({ id: crypto.randomUUID(), controlId })
-        })
+        }, label)
         return
       }
 
@@ -135,7 +140,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
         insertBeforeFinish(c, p.controls, [{ id: crypto.randomUUID(), controlId }])
-      })
+      }, label)
     },
 
     addAllControlsToCourse: (courseId: string) => {
@@ -153,7 +158,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const c = p.courses.find(c => c.id === courseId)
         if (!c) return
         insertBeforeFinish(c, p.controls, regularControls.map(ctrl => ({ id: crypto.randomUUID(), controlId: ctrl.id })))
-      })
+      }, `Add all controls to ${course.name}`)
     },
 
     addControlsToCourseByCode: (courseId: string, codes: (number | string)[]) => {
@@ -196,21 +201,27 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (regulars.length > 0) {
           insertBeforeFinish(c, p.controls, regulars.map(ctrl => ({ id: crypto.randomUUID(), controlId: ctrl.id })))
         }
-      })
+      }, `Add controls to ${course.name}`)
     },
 
     removeControlFromCourse: (courseId: string, courseControlId: string) => {
+      const proj = get().project
+      const course = proj?.courses.find(c => c.id === courseId)
+      const cc = course?.controls.find(cc => cc.id === courseControlId)
+      const ctrl = cc ? proj?.controls.find(c => c.id === cc.controlId) : undefined
+      const lbl = ctrl && course ? `Remove ${defaultControlLabel(ctrl)} from ${course.name}` : 'Remove control from course'
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (c) c.controls = c.controls.filter(cc => cc.id !== courseControlId)
-      })
+      }, lbl)
     },
 
     reorderCourseControls: (courseId: string, controls: CourseControl[]) => {
+      const cName = get().project?.courses.find(c => c.id === courseId)?.name ?? ''
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
         if (c) c.controls = controls
-      })
+      }, `Reorder controls ${cName}`)
     },
 
     updateScorePoints: (courseId: string, courseControlId: string, points: number) => {
@@ -219,106 +230,106 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
         if (cc) cc.scorePoints = points
-      })
+      }, 'Update score points')
     },
 
     updateCourseClimb: (id: string, climb: number | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.climb = climb
-      })
+      }, 'Update climb')
     },
 
     setManualCourseLength: (id: string, metres: number | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.manualLength = metres
-      })
+      }, 'Set course length')
     },
 
     updateCourseFinishType: (id: string, finishType: FinishType) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.finishType = finishType
-      })
+      }, 'Change finish type')
     },
 
     updateCourseShowPoints: (id: string, showPoints: boolean) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.showPoints = showPoints
-      })
+      }, 'Toggle show points')
     },
 
     updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.textDescriptions = textDescriptions
-      })
+      }, 'Toggle text descriptions')
     },
 
     updateClueSheetFontSize: (size: number | undefined) => {
-      h.mutateProject(p => { p.clueSheetFontSize = size })
+      h.mutateProject(p => { p.clueSheetFontSize = size }, 'Change font size')
     },
 
     updateClueSheetHideSubmapRestart: (hide: boolean) => {
       h.mutateProject(p => {
         if (hide) p.clueSheetHideSubmapRestart = true
         else delete p.clueSheetHideSubmapRestart
-      })
+      }, 'Toggle hide submap restart')
     },
 
     updateClueSheetSplitSubmaps: (split: boolean) => {
       h.mutateProject(p => {
         if (split) p.clueSheetSplitSubmaps = true
         else delete p.clueSheetSplitSubmaps
-      })
+      }, 'Toggle split submaps')
     },
 
     updateClueSheetOverlayColor: (color: string | undefined) => {
-      h.mutateProject(p => { p.clueSheetOverlayColor = color || undefined })
+      h.mutateProject(p => { p.clueSheetOverlayColor = color || undefined }, 'Change clue sheet overlay color')
     },
 
     updateClueSheetSeparateColor: (color: string | undefined) => {
-      h.mutateProject(p => { p.clueSheetSeparateColor = color || undefined })
+      h.mutateProject(p => { p.clueSheetSeparateColor = color || undefined }, 'Change clue sheet separate color')
     },
 
     updateLabelSubmapStart: (label: boolean) => {
       h.mutateProject(p => {
         if (label) p.labelSubmapStart = true
         else delete p.labelSubmapStart
-      })
+      }, 'Toggle submap start label')
     },
 
     updateCourseSpec: (id: string, spec: EventSpec | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
         if (c) c.spec = spec
-      })
+      }, 'Update course spec')
     },
 
     addClass: (name: string, courseId: string): RaceClass => {
       const rc: RaceClass = { id: crypto.randomUUID(), name, courseId }
-      h.mutateProject(p => { p.classes.push(rc) })
+      h.mutateProject(p => { p.classes.push(rc) }, `Add class "${name}"`)
       return rc
     },
 
     deleteClass: (id: string) => {
-      h.mutateProject(p => { p.classes = p.classes.filter(c => c.id !== id) })
+      h.mutateProject(p => { p.classes = p.classes.filter(c => c.id !== id) }, 'Delete class')
     },
 
     updateClassName: (id: string, name: string) => {
       h.mutateProject(p => {
         const c = p.classes.find(c => c.id === id)
         if (c) c.name = name
-      })
+      }, `Rename class → "${name}"`)
     },
 
     updateClassCourse: (id: string, courseId: string) => {
       h.mutateProject(p => {
         const c = p.classes.find(c => c.id === id)
         if (c) c.courseId = courseId
-      })
+      }, 'Change class course')
     },
 
     toggleCourseLoop: (courseId: string, forkControlId: string) => {
@@ -345,7 +356,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           course.loops.push(loop)
           course.variations = generateAllPermutations(course)
         }
-      })
+      }, 'Toggle loop')
     },
 
     removeCourseLoop: (courseId: string, loopId: string) => {
@@ -359,7 +370,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
             .map(v => ({ ...v, loopOrders: v.loopOrders.filter(lo => lo.loopId !== loopId) }))
           if (course.variations.every(v => v.loopOrders.length === 0)) course.variations = undefined
         }
-      })
+      }, 'Remove loop')
     },
 
     setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => {
@@ -368,7 +379,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
         if (cc) cc.exchangeMode = mode
-      })
+      }, `Set exchange mode: ${mode}`)
     },
 
     toggleExchangeControl: (courseId: string, courseControlId: string) => {
@@ -377,7 +388,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
         if (cc) cc.exchangeMode = cc.exchangeMode ? undefined : 'exchange'
-      })
+      }, 'Toggle exchange')
     },
 
     setSelectedVariation: (id: string | null) => {
