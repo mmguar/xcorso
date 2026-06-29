@@ -88,6 +88,7 @@
   "editor.mapNotLoaded": "Map file not loaded. Open the .oco file from the same folder as your map.",
   "editor.noMapData": "No map data available.",
   "editor.loadingMap": "Loading map…",
+  "editor.saveFailed": "Auto-save failed. Export your project to avoid losing work.",
   "tour.step.toolbar": "Pick a tool to place controls: Start (S), Control (C), Finish (F). Click on the map to place them.",
   "tour.step.courses": "Create a course here, then add controls by clicking them on the map or typing their code.",
   "tour.step.reorder": "Drag to reorder. Right-click a control to remove it from the course.",

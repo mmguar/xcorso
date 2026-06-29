@@ -88,6 +88,7 @@
   "editor.mapNotLoaded": "File della mappa non caricato. Apri il file .oco nella stessa cartella dove si trova la mappa.",
   "editor.noMapData": "Dati mappa non disponibili.",
   "editor.loadingMap": "Caricamento mappa…",
+  "editor.saveFailed": "Salvataggio automatico fallito. Esporta il progetto per non perdere il lavoro.",
   "tour.step.toolbar": "Scegli uno strumento per posizionare i controlli: Partenza (S), Controllo (C), Arrivo (F). Clicca sulla mappa per posizionarli.",
   "tour.step.courses": "Crea un percorso qui, poi aggiung i controlli cliccandoci sopra sulla mappa o inserendo il codice.",
   "tour.step.reorder": "Trascina per riordinare. Click destro su un controllo per rimuoverlo.",
