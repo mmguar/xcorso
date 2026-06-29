@@ -375,7 +375,7 @@ function OobSettings({ ann }: { ann: Annotation }) {
       <button
         onClick={() => deleteAnnotation(ann.id)}
         className="text-gray-400 hover:text-red-500 transition-colors"
-        title="Delete"
+        title={t('overlay.delete')}
       >
         <Trash2 size={13} />
       </button>

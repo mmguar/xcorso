@@ -12,7 +12,7 @@ import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
 import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, type SyncMeta, type SharedProject } from '../lib/sync'
-import { SPEC_LABELS } from '../lib/symbolSpec'
+import { SPEC_LABEL_KEYS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
 interface Props {
@@ -482,7 +482,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
                     : 'border-gray-200 text-gray-500 hover:border-gray-300'
                 }`}
               >
-                <div className="font-semibold mb-0.5">{SPEC_LABELS[spec]}</div>
+                <div className="font-semibold mb-0.5">{t(SPEC_LABEL_KEYS[spec])}</div>
                 <div className="text-gray-400 leading-relaxed">
                   {spec === 'isom-2017'
                     ? t('welcome.forestDesc')

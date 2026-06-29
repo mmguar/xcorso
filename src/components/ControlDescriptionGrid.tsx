@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
-import { useT } from '../i18n'
+import { useT, type TFn } from '../i18n'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields, isDimensionText, getSymbol } from '../lib/iofSymbols'
 import { defaultControlLabel, computeSubmaps, controlsById } from '../lib/courseUtils'
@@ -793,9 +793,9 @@ function SymbolPicker({
     ? symbols.filter(s => normalize(s.name).includes(searchNorm) || normalize(t('iof.' + s.code)).includes(searchNorm) || s.code.includes(search))
     : symbols
 
-  const grouped = column === 'G' ? groupLocationSymbols(filtered)
-    : column === 'E' ? groupBySourceColumn(filtered)
-    : column === 'C' ? groupDirectionSymbols(filtered)
+  const grouped = column === 'G' ? groupLocationSymbols(filtered, t)
+    : column === 'E' ? groupBySourceColumn(filtered, t)
+    : column === 'C' ? groupDirectionSymbols(filtered, t)
     : null
 
   return (
@@ -936,17 +936,17 @@ function SymbolGrid({ symbols, current, onSelect }: {
   )
 }
 
-function groupBySourceColumn(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+function groupBySourceColumn(syms: SymbolDef[], t: TFn): Record<string, SymbolDef[]> {
   const groups: Record<string, SymbolDef[]> = {}
   for (const s of syms) {
-    const group = s.column === 'D' ? 'Feature' : 'Appearance'
+    const group = s.column === 'D' ? t('iofGroup.feature') : t('iofGroup.appearance')
     if (!groups[group]) groups[group] = []
     groups[group].push(s)
   }
   return groups
 }
 
-function groupDirectionSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+function groupDirectionSymbols(syms: SymbolDef[], t: TFn): Record<string, SymbolDef[]> {
   const dir: SymbolDef[] = []
   const other: SymbolDef[] = []
   for (const s of syms) {
@@ -954,17 +954,18 @@ function groupDirectionSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
     else other.push(s)
   }
   const groups: Record<string, SymbolDef[]> = {}
-  if (dir.length) groups['Direction'] = dir
-  if (other.length) groups['Position'] = other
+  if (dir.length) groups[t('iofGroup.direction')] = dir
+  if (other.length) groups[t('iofGroup.position')] = other
   return groups
 }
 
-function groupLocationSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+function groupLocationSymbols(syms: SymbolDef[], t: TFn): Record<string, SymbolDef[]> {
   const groups: Record<string, SymbolDef[]> = {}
   for (const s of syms) {
     const base = s.code.replace(/[NESW]+$/, '').replace(/\.$/, '')
-    const label = s.name.replace(/(North-east|North-west|South-east|South-west|North|South|East|West)\s*/i, '').trim()
-    const group = label || base
+    const group = t('iofGroup.' + base) !== 'iofGroup.' + base
+      ? t('iofGroup.' + base)
+      : t('iof.' + base)
     if (!groups[group]) groups[group] = []
     groups[group].push(s)
   }

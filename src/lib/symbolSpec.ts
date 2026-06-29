@@ -36,9 +36,9 @@ const SPECS: Record<EventSpec, SymbolDims> = {
   'issprm-2019': ISSPRM_2019,
 }
 
-export const SPEC_LABELS: Record<EventSpec, string> = {
-  'isom-2017': 'Regular (ISOM 2017-2)',
-  'issprm-2019': 'Sprint (ISSprOM 2019-2)',
+export const SPEC_LABEL_KEYS: Record<EventSpec, string> = {
+  'isom-2017': 'spec.isom-2017',
+  'issprm-2019': 'spec.issprm-2019',
 }
 
 export function getSymbolDims(spec: EventSpec): SymbolDims {
