@@ -120,6 +120,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
             await saveProject(p.id, result.project, mapData)
             await setSyncMeta(p.id, { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash })
             loadProject(result.project, mapData, p.id)
+            useStore.setState({ syncStatus: 'synced' })
             onProjectLoaded()
             return
           }
@@ -134,6 +135,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
         const sync: SyncMeta = { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash }
         await setSyncMeta(p.id, sync)
         loadProject(result.project, result.mapData, p.id)
+        useStore.setState({ syncStatus: 'synced' })
       } else {
         throw new Error(t('welcome.projectNotFound'))
       }

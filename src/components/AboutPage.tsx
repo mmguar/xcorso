@@ -8,7 +8,7 @@ const linkClass = 'text-orange-600 underline hover:text-orange-800'
 
 function rich(s: string, tags: Record<string, (content: string) => ReactNode>): ReactNode[] {
   const parts: ReactNode[] = []
-  let rest = s
+  const rest = s
   let key = 0
   const re = /<(\w+)>(.*?)<\/\1>/g
   let m: RegExpExecArray | null

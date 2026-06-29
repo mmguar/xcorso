@@ -129,7 +129,7 @@ export async function saveProjectFile(
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
 }
 
-export interface LoadedProjectFile {
+interface LoadedProjectFile {
   project: Project
   mapData: ArrayBuffer | null
 }

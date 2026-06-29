@@ -13,7 +13,7 @@
 
 const SVGNS = 'http://www.w3.org/2000/svg'
 
-export interface OverprintViewBox {
+interface OverprintViewBox {
   minX: number
   minY: number
   width: number

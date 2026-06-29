@@ -1,7 +1,7 @@
 import type { Control, Course, CourseControl, RaceClass, MapConfig, ControlType } from '../types'
 import { IOF_PURPLE } from './courseUtils'
 
-export interface IofImportResult {
+interface IofImportResult {
   controls: Control[]
   courses: Course[]
   classes: RaceClass[]

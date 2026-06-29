@@ -1,6 +1,7 @@
 import type { Project, Viewport } from '../../types'
 import { useStore } from '../../store'
 import { unitsPerMm } from '../../lib/courseUtils'
+import { normalizeDeg } from '../../lib/geometry'
 import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
 import { screenToMap, findControlAt, findLegAt, findBendPointAt } from './hitTesting'
 
@@ -22,10 +23,10 @@ export function handleGapTap(sx: number, sy: number, vp: Viewport, project: Proj
   if (hitControl) {
     const dx = mapPt.x - hitControl.position.x
     const dy = mapPt.y - hitControl.position.y
-    const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360
+    const angle = normalizeDeg(Math.atan2(dy, dx) * 180 / Math.PI)
     const halfGap = gapSize / 2
-    const startAngle = (angle - halfGap + 360) % 360
-    const endAngle = (angle + halfGap) % 360
+    const startAngle = normalizeDeg(angle - halfGap)
+    const endAngle = normalizeDeg(angle + halfGap)
     useStore.getState().addControlGap(hitControl.id, { startAngle, endAngle })
     return
   }
@@ -50,7 +51,7 @@ export function handleGapRebuildTap(sx: number, sy: number, vp: Viewport, projec
   if (hitControl) {
     const dx = mapPt.x - hitControl.position.x
     const dy = mapPt.y - hitControl.position.y
-    const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360
+    const angle = normalizeDeg(Math.atan2(dy, dx) * 180 / Math.PI)
     useStore.getState().removeControlGapAtAngle(hitControl.id, angle)
     return
   }
