@@ -1,4 +1,4 @@
-import type { MapPoint, ScaleBar, TextLabel, ImageOverlay } from '../types'
+import type { MapPoint, ScaleBar, TextLabel, ImageOverlay, Project } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
 export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpers) {
@@ -7,27 +7,28 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
       const sb: ScaleBar = {
         id: crypto.randomUUID(), position, segments: 3, segmentLengthM: 100, bgAlpha: 0.8, scale,
       }
-      h.mutateProject(p => { p.scaleBars.push(sb) })
+      h.mutateProject(p => { p.scaleBars.push(sb) }, 'Add scale bar')
       set(state => ({ editor: { ...state.editor, selectedOverlayId: sb.id } }))
       return sb
     },
 
     updateScaleBar: (id: string, updates: Partial<Omit<ScaleBar, 'id'>>, silent?: boolean) => {
-      const mutate = silent ? h.mutateProjectSilent : h.mutateProject
-      mutate(p => {
+      const fn = (p: Project) => {
         const i = p.scaleBars.findIndex(s => s.id === id)
         if (i !== -1) p.scaleBars[i] = { ...p.scaleBars[i], ...updates }
-      })
+      }
+      if (silent) h.mutateProjectSilent(fn)
+      else h.mutateProject(fn, 'Update scale bar')
     },
 
     deleteScaleBar: (id: string) => {
-      h.mutateProject(p => { p.scaleBars = p.scaleBars.filter(s => s.id !== id) })
+      h.mutateProject(p => { p.scaleBars = p.scaleBars.filter(s => s.id !== id) }, 'Delete scale bar')
       set(state => ({
         editor: { ...state.editor, selectedOverlayId: state.editor.selectedOverlayId === id ? null : state.editor.selectedOverlayId },
       }))
     },
 
-    beginMoveOverlay: () => h.pushUndoSnapshot(),
+    beginMoveOverlay: () => h.pushUndoSnapshot('Move overlay'),
 
     moveScaleBar: (id: string, position: MapPoint) => {
       h.mutateProjectSilent(p => {
@@ -41,21 +42,22 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
       const tl: TextLabel = {
         id: crypto.randomUUID(), position, text: 'Text', fontSizeMm: 4, color: '#000000', bgAlpha: 0,
       }
-      h.mutateProject(p => { p.textLabels.push(tl) })
+      h.mutateProject(p => { p.textLabels.push(tl) }, 'Add text label')
       set(state => ({ editor: { ...state.editor, selectedOverlayId: tl.id } }))
       return tl
     },
 
     updateTextLabel: (id: string, updates: Partial<Omit<TextLabel, 'id'>>, silent?: boolean) => {
-      const mutate = silent ? h.mutateProjectSilent : h.mutateProject
-      mutate(p => {
+      const fn = (p: Project) => {
         const i = p.textLabels.findIndex(t => t.id === id)
         if (i !== -1) p.textLabels[i] = { ...p.textLabels[i], ...updates }
-      })
+      }
+      if (silent) h.mutateProjectSilent(fn)
+      else h.mutateProject(fn, 'Update text label')
     },
 
     deleteTextLabel: (id: string) => {
-      h.mutateProject(p => { p.textLabels = p.textLabels.filter(t => t.id !== id) })
+      h.mutateProject(p => { p.textLabels = p.textLabels.filter(t => t.id !== id) }, 'Delete text label')
       set(state => ({
         editor: { ...state.editor, selectedOverlayId: state.editor.selectedOverlayId === id ? null : state.editor.selectedOverlayId },
       }))
@@ -76,21 +78,22 @@ export function createOverlaysSlice(set: SetState, _get: GetState, h: StoreHelpe
         id: crypto.randomUUID(), position, widthMm: defaultWidthMm, heightMm: defaultWidthMm * aspect,
         dataUrl, filename, bgAlpha: 0,
       }
-      h.mutateProject(p => { p.imageOverlays.push(img) })
+      h.mutateProject(p => { p.imageOverlays.push(img) }, 'Add image overlay')
       set(state => ({ editor: { ...state.editor, selectedOverlayId: img.id, pendingImage: null } }))
       return img
     },
 
     updateImageOverlay: (id: string, updates: Partial<Omit<ImageOverlay, 'id'>>, silent?: boolean) => {
-      const mutate = silent ? h.mutateProjectSilent : h.mutateProject
-      mutate(p => {
+      const fn = (p: Project) => {
         const i = p.imageOverlays.findIndex(o => o.id === id)
         if (i !== -1) p.imageOverlays[i] = { ...p.imageOverlays[i], ...updates }
-      })
+      }
+      if (silent) h.mutateProjectSilent(fn)
+      else h.mutateProject(fn, 'Update image overlay')
     },
 
     deleteImageOverlay: (id: string) => {
-      h.mutateProject(p => { p.imageOverlays = p.imageOverlays.filter(o => o.id !== id) })
+      h.mutateProject(p => { p.imageOverlays = p.imageOverlays.filter(o => o.id !== id) }, 'Delete image overlay')
       set(state => ({
         editor: { ...state.editor, selectedOverlayId: state.editor.selectedOverlayId === id ? null : state.editor.selectedOverlayId },
       }))

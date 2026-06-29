@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Project } from '../types'
-import type { Store, StoreHelpers } from './types'
+import type { Store, StoreHelpers, UndoEntry } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
 import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
@@ -20,19 +20,19 @@ import { createLayoutSlice } from './layoutSlice'
 const MAX_UNDO = 100
 
 export const useStore = create<Store>((set, get) => {
-  function pushUndoSnapshot() {
+  function pushUndoSnapshot(label = 'Edit') {
     const { project, undoStack } = get()
     if (!project) return
     set({
-      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), structuredClone(project)],
+      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), { project: structuredClone(project), label }],
       redoStack: [],
     })
   }
 
-  function mutateProject(fn: (p: Project) => void) {
+  function mutateProject(fn: (p: Project) => void, label?: string) {
     const { project, projectRole } = get()
     if (!project || projectRole === 'viewer' || project.locked) return
-    pushUndoSnapshot()
+    pushUndoSnapshot(label)
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
@@ -47,10 +47,10 @@ export const useStore = create<Store>((set, get) => {
   }
 
   // Layout mutations bypass the lock — layout editing is allowed while locked.
-  function mutateProjectLayout(fn: (p: Project) => void) {
+  function mutateProjectLayout(fn: (p: Project) => void, label?: string) {
     const { project, projectRole } = get()
     if (!project || projectRole === 'viewer') return
-    pushUndoSnapshot()
+    pushUndoSnapshot(label)
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
@@ -123,17 +123,17 @@ export const useStore = create<Store>((set, get) => {
     },
 
     updateProjectName: (name) => {
-      mutateProject(p => { p.meta.name = name })
+      mutateProject(p => { p.meta.name = name }, `Rename project → "${name}"`)
     },
 
     updateProjectSpec: (spec) => {
-      mutateProject(p => { p.spec = spec })
+      mutateProject(p => { p.spec = spec }, 'Update event spec')
     },
 
     // ── Map ──────────────────────────────────────────────────────────────
 
     setMapScale: (scale, source) => {
-      mutateProject(p => { p.map.scale = scale; p.map.scaleSource = source })
+      mutateProject(p => { p.map.scale = scale; p.map.scaleSource = source }, `Set scale 1:${scale}`)
     },
 
     setMapScaleMeasurement: (p1, p2, realWorldMeters, renderScale) => {
@@ -143,7 +143,7 @@ export const useStore = create<Store>((set, get) => {
         p.map.scaleMeasurement = { p1, p2, realWorldMeters }
         p.map.scaleSource = 'manual'
         p.map.scale = Math.round((realWorldMeters * 1000) / effectiveDist)
-      })
+      }, 'Calibrate map scale')
     },
 
     setMapDimensions: (width, height, originX, originY) => {
@@ -162,7 +162,7 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => {
         p.map.filename = filename
         p.map.type = type
-      })
+      }, 'Replace map file')
       set({ mapFileData: mapData, loadedMap: null })
     },
 
@@ -184,7 +184,7 @@ export const useStore = create<Store>((set, get) => {
     // ── Editor UI ─────────────────────────────────────────────────────────
 
     toggleLocked: () => {
-      mutateProjectLayout(p => { p.locked = !p.locked })
+      mutateProjectLayout(p => { p.locked = !p.locked }, 'Toggle lock')
     },
 
     setActiveTool: (tool) => {
@@ -539,12 +539,12 @@ export const useStore = create<Store>((set, get) => {
     undo: () => {
       const { undoStack, project, redoStack, editor, projectRevision } = get()
       if (undoStack.length === 0 || !project) return
-      const prev = undoStack[undoStack.length - 1]
+      const entry = undoStack[undoStack.length - 1]
       set({
-        project: prev,
+        project: entry.project,
         projectRevision: projectRevision + 1,
         undoStack: undoStack.slice(0, -1),
-        redoStack: [...redoStack, structuredClone(project)],
+        redoStack: [...redoStack, { project: structuredClone(project), label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
@@ -552,12 +552,35 @@ export const useStore = create<Store>((set, get) => {
     redo: () => {
       const { redoStack, project, undoStack, editor, projectRevision } = get()
       if (redoStack.length === 0 || !project) return
-      const next = redoStack[redoStack.length - 1]
+      const entry = redoStack[redoStack.length - 1]
       set({
-        project: next,
+        project: entry.project,
         projectRevision: projectRevision + 1,
         redoStack: redoStack.slice(0, -1),
-        undoStack: [...undoStack, structuredClone(project)],
+        undoStack: [...undoStack, { project: structuredClone(project), label: entry.label }],
+        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
+      })
+    },
+
+    jumpToHistory: (index: number) => {
+      const { undoStack, project, editor, projectRevision } = get()
+      if (!project || index < 0 || index >= undoStack.length) return
+      const target = undoStack[index]
+      // Build redo stack so redo steps forward through index+1..N-1..current.
+      // Redo pops from end, so first-to-redo goes last.
+      const newRedo: UndoEntry[] = []
+      newRedo.push({ project: structuredClone(project), label: undoStack[undoStack.length - 1].label })
+      for (let i = undoStack.length - 1; i > index + 1; i--) {
+        newRedo.push({ project: structuredClone(undoStack[i].project), label: undoStack[i - 1].label })
+      }
+      if (index + 1 < undoStack.length) {
+        newRedo.push({ project: structuredClone(undoStack[index + 1].project), label: undoStack[index].label })
+      }
+      set({
+        project: structuredClone(target.project),
+        projectRevision: projectRevision + 1,
+        undoStack: undoStack.slice(0, index),
+        redoStack: newRedo,
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },

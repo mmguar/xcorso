@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
-  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers, Eraser,
+  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers, Eraser, History,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT } from '../../i18n'
@@ -99,6 +99,40 @@ function GapRebuildToggle() {
   )
 }
 
+function HistoryDropdown({ onJump, onClose }: { onJump: (index: number) => void; onClose: () => void }) {
+  const t = useT()
+  const undoStack = useStore(s => s.undoStack)
+  const redoStack = useStore(s => s.redoStack)
+  const redo = useStore(s => s.redo)
+
+  return (
+    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-64 overflow-y-auto">
+      {redoStack.slice().reverse().map((entry, i) => (
+        <button key={`redo-${i}`}
+          onClick={() => { redo(); onClose() }}
+          className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-50 transition-colors"
+        >
+          <span className="opacity-50">↻</span> {entry.label}
+        </button>
+      ))}
+      <div className="px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border-y border-orange-100">
+        ● {t('toolbar.currentState')}
+      </div>
+      {undoStack.slice().reverse().map((entry, i) => {
+        const stackIndex = undoStack.length - 1 - i
+        return (
+          <button key={`undo-${i}`}
+            onClick={() => onJump(stackIndex)}
+            className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            {entry.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function Toolbar() {
   const t = useT()
   const activeTool = useStore(s => s.editor.activeTool)
@@ -110,6 +144,7 @@ export function Toolbar() {
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
   const undo = useStore(s => s.undo)
   const redo = useStore(s => s.redo)
+  const jumpToHistory = useStore(s => s.jumpToHistory)
   const canUndo = useStore(s => s.undoStack.length > 0)
   const canRedo = useStore(s => s.redoStack.length > 0)
 
@@ -165,6 +200,9 @@ export function Toolbar() {
     return () => window.removeEventListener('keydown', onKey)
   }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, exitLayoutMode, activeTool])
 
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const historyRef = useRef<HTMLDivElement>(null)
+
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [annMenuOpen, setAnnMenuOpen] = useState(false)
   const annMenuRef = useRef<HTMLDivElement>(null)
@@ -172,7 +210,7 @@ export function Toolbar() {
   const overlayMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!annMenuOpen && !overlayMenuOpen) return
+    if (!annMenuOpen && !overlayMenuOpen && !historyOpen) return
     function handleClick(e: MouseEvent) {
       if (annMenuOpen && annMenuRef.current && !annMenuRef.current.contains(e.target as Node)) {
         setAnnMenuOpen(false)
@@ -180,10 +218,13 @@ export function Toolbar() {
       if (overlayMenuOpen && overlayMenuRef.current && !overlayMenuRef.current.contains(e.target as Node)) {
         setOverlayMenuOpen(false)
       }
+      if (historyOpen && historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setHistoryOpen(false)
+      }
     }
     document.addEventListener('pointerdown', handleClick)
     return () => document.removeEventListener('pointerdown', handleClick)
-  }, [annMenuOpen, overlayMenuOpen])
+  }, [annMenuOpen, overlayMenuOpen, historyOpen])
 
   function handleImageFile(file: File) {
     const reader = new FileReader()
@@ -214,6 +255,20 @@ export function Toolbar() {
       >
         <Undo2 size={18} />
       </button>
+      <div className="relative" ref={historyRef}>
+        <button
+          onClick={() => setHistoryOpen(o => !o)}
+          disabled={!canUndo && !canRedo}
+          title={t('toolbar.history')}
+          className={`${btnClass} text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed`}
+        >
+          <History size={14} />
+        </button>
+        {historyOpen && <HistoryDropdown
+          onJump={(i) => { jumpToHistory(i); setHistoryOpen(false) }}
+          onClose={() => setHistoryOpen(false)}
+        />}
+      </div>
       <button onClick={redo} disabled={!canRedo} title={t('toolbar.redo')}
         className={`${btnClass} text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed`}
       >

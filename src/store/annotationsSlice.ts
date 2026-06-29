@@ -19,7 +19,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       const annotation: Annotation = { id: crypto.randomUUID(), type, points,
         ...(type === 'north_arrow' ? { color: '#38bdf8' } : {}),
       }
-      h.mutateProject(p => { p.annotations.push(annotation) })
+      h.mutateProject(p => { p.annotations.push(annotation) }, `Add ${type.replace(/_/g, ' ')}`)
       set(state => ({ editor: { ...state.editor, pendingAnnotationPoints: [] } }))
     },
 
@@ -36,7 +36,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
     },
 
     deleteAnnotation: (id: string) => {
-      h.mutateProject(p => { p.annotations = p.annotations.filter(a => a.id !== id) })
+      h.mutateProject(p => { p.annotations = p.annotations.filter(a => a.id !== id) }, 'Delete annotation')
       set(state => ({
         editor: { ...state.editor, selectedAnnotationId: state.editor.selectedAnnotationId === id ? null : state.editor.selectedAnnotationId },
       }))
@@ -46,10 +46,10 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       h.mutateProject(p => {
         const i = p.annotations.findIndex(a => a.id === id)
         if (i !== -1) p.annotations[i] = { ...p.annotations[i], ...updates }
-      })
+      }, 'Update annotation')
     },
 
-    beginMoveAnnotation: () => h.pushUndoSnapshot(),
+    beginMoveAnnotation: (label?: string) => h.pushUndoSnapshot(label ?? 'Move annotation'),
 
     moveAnnotation: (id: string, position: MapPoint) => {
       h.mutateProjectSilent(p => {
@@ -65,7 +65,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       })
     },
 
-    beginMoveAnnotationVertex: () => h.pushUndoSnapshot(),
+    beginMoveAnnotationVertex: () => h.pushUndoSnapshot('Move annotation vertex'),
 
     moveAnnotationVertex: (id: string, vertexIndex: number, position: MapPoint) => {
       h.mutateProjectSilent(p => {
@@ -78,7 +78,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       })
     },
 
-    beginRotateAnnotation: () => h.pushUndoSnapshot(),
+    beginRotateAnnotation: () => h.pushUndoSnapshot('Rotate annotation'),
 
     rotateAnnotation: (id: string, rotation: number) => {
       h.mutateProjectSilent(p => {
@@ -86,7 +86,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       })
     },
 
-    beginResizeAnnotation: () => h.pushUndoSnapshot(),
+    beginResizeAnnotation: () => h.pushUndoSnapshot('Resize annotation'),
 
     resizeAnnotation: (id: string, scale: number) => {
       h.mutateProjectSilent(p => {
@@ -94,7 +94,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       })
     },
 
-    beginElongateAnnotation: () => h.pushUndoSnapshot(),
+    beginElongateAnnotation: () => h.pushUndoSnapshot('Elongate annotation'),
 
     elongateAnnotation: (id: string, elongation: number) => {
       h.mutateProjectSilent(p => {

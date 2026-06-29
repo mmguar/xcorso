@@ -42,6 +42,11 @@ export interface SyncConflict {
   remoteProject: Project
 }
 
+export interface UndoEntry {
+  project: Project
+  label: string
+}
+
 export interface AppState {
   projectId: string | null
   project: Project | null
@@ -49,8 +54,8 @@ export interface AppState {
   loadedRevision: number
   mapFileData: ArrayBuffer | null
   loadedMap: LoadedMap | null
-  undoStack: Project[]
-  redoStack: Project[]
+  undoStack: UndoEntry[]
+  redoStack: UndoEntry[]
   editor: EditorState
   cloudUser: CloudUser | null
   syncStatus: SyncStatus
@@ -72,10 +77,10 @@ export interface AppActions {
   replaceMapFile: (filename: string, type: MapType, mapData: ArrayBuffer) => void
 
   addControl: (type: ControlType, position: MapPoint, code?: number) => Control
-  beginMoveControl: () => void
+  beginMoveControl: (label?: string) => void
   moveControl: (id: string, position: MapPoint) => void
   splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint) => Control
-  beginMoveControlLabel: () => void
+  beginMoveControlLabel: (label?: string) => void
   moveControlLabel: (id: string, offset: MapPoint) => void
   deleteControl: (id: string) => void
   updateControlCode: (id: string, code: number) => void
@@ -144,12 +149,12 @@ export interface AppActions {
   clearLegGaps: (courseId: string, courseControlId: string) => void
 
   addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number) => void
-  beginMoveLegBendPoint: () => void
+  beginMoveLegBendPoint: (label?: string) => void
   moveLegBendPoint: (courseId: string, courseControlId: string, index: number, position: MapPoint) => void
   removeLegBendPoint: (courseId: string, courseControlId: string, index: number) => void
   clearLegBendPoints: (courseId: string, courseControlId: string) => void
 
-  beginMoveCourseLabel: () => void
+  beginMoveCourseLabel: (label?: string) => void
   moveCourseLabel: (courseId: string, courseControlId: string, offset: MapPoint) => void
 
   addAnnotationPoint: (point: MapPoint) => void
@@ -158,7 +163,7 @@ export interface AppActions {
   movePendingAnnotationPoint: (index: number, position: MapPoint) => void
   deleteAnnotation: (id: string) => void
   updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => void
-  beginMoveAnnotation: () => void
+  beginMoveAnnotation: (label?: string) => void
   moveAnnotation: (id: string, position: MapPoint) => void
   beginMoveAnnotationVertex: () => void
   moveAnnotationVertex: (id: string, vertexIndex: number, position: MapPoint) => void
@@ -231,14 +236,15 @@ export interface AppActions {
 
   undo: () => void
   redo: () => void
+  jumpToHistory: (index: number) => void
 }
 
 export type Store = AppState & AppActions
 
 export interface StoreHelpers {
-  mutateProject: (fn: (p: Project) => void) => void
+  mutateProject: (fn: (p: Project) => void, label?: string) => void
   mutateProjectSilent: (fn: (p: Project) => void) => void
-  pushUndoSnapshot: () => void
+  pushUndoSnapshot: (label?: string) => void
 }
 
 export type SetState = (partial: Partial<Store> | ((state: Store) => Partial<Store>)) => void

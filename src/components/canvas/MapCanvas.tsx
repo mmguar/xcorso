@@ -1098,7 +1098,18 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!dragBendStarted) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveLegBendPoint()
+          const _db = dragBend
+          const st = useStore.getState()
+          const _p = st.project
+          const _course = _p?.courses.find(c => c.id === _db.courseId)
+          let _bl = 'Move bend'
+          if (_course && _p) {
+            const _ci = _course.controls.findIndex(cc => cc.id === _db.courseControlId)
+            const _from = _ci >= 0 ? _p.controls.find(c => c.id === _course.controls[_ci].controlId) : undefined
+            const _to = _ci >= 0 && _ci + 1 < _course.controls.length ? _p.controls.find(c => c.id === _course.controls[_ci + 1].controlId) : undefined
+            if (_from && _to) _bl = `Move bend ${defaultControlLabel(_from)}-${defaultControlLabel(_to)} ${_course.name}`
+          }
+          st.beginMoveLegBendPoint(_bl)
           dragBendStarted = true
         }
         const rect = getRect()
@@ -1112,8 +1123,13 @@ export function MapCanvas({ loadedMap }: Props) {
         if (!dragLabelStarted) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          if (dragLabel.courseId && dragLabel.courseControlId) useStore.getState().beginMoveCourseLabel()
-          else useStore.getState().beginMoveControlLabel()
+          const _dl = dragLabel
+          const _lc = useStore.getState().project?.controls.find(c => c.id === _dl.controlId)
+          const _lcName = _lc ? defaultControlLabel(_lc) : '?'
+          const _courseName = _dl.courseId ? useStore.getState().project?.courses.find(c => c.id === _dl.courseId)?.name : undefined
+          const _ll = _courseName ? `Move label ${_lcName} ${_courseName}` : `Move label ${_lcName}`
+          if (_dl.courseId && _dl.courseControlId) useStore.getState().beginMoveCourseLabel(_ll)
+          else useStore.getState().beginMoveControlLabel(_ll)
           dragLabelStarted = true
           useStore.getState().setDraggingLabel(dragLabel.controlId)
         }
@@ -1139,7 +1155,8 @@ export function MapCanvas({ loadedMap }: Props) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
           clearLongPress()
-          useStore.getState().beginMoveControl()
+          const _ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
+          useStore.getState().beginMoveControl(_ctrl ? `Move ${defaultControlLabel(_ctrl)}` : undefined)
           useStore.getState().setDraggingControl(dragControlId)
           dragStarted = true
           const ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
@@ -1174,7 +1191,8 @@ export function MapCanvas({ loadedMap }: Props) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
           const st = useStore.getState()
-          st.beginMoveAnnotation()
+          const _ann = st.project?.annotations.find(a => a.id === dragAnnotation!.annId)
+          st.beginMoveAnnotation(_ann ? `Move ${_ann.type.replace(/_/g, ' ')}` : undefined)
           st.setSelectedAnnotation(dragAnnotation.annId)
           st.setSelectedControl(null)
           st.setSelectedOverlay(null)

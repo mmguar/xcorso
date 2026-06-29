@@ -19,8 +19,7 @@ function setInkColor(hex?: string) {
 }
 const COLS = 8
 const LINE_W = 0.25
-const MARGIN_TOP = 15
-const MARGIN_BOTTOM = 15
+const MARGIN = 10
 
 const COL_IDS: IofColumn[] = ['C', 'D', 'E', 'F', 'G', 'H']
 
@@ -41,7 +40,7 @@ function scaledFont(basePt: number): number {
 }
 
 function maxControlRows(pageH: number): number {
-  return Math.floor((pageH - MARGIN_TOP - MARGIN_BOTTOM - HEADER_H()) / CELL)
+  return Math.floor((pageH - 2 * MARGIN - HEADER_H()) / CELL)
 }
 
 // ── SVG path parser (handles M, L, C, Z only) ──────────────────────────────
@@ -861,7 +860,7 @@ export function drawDescriptionSheet(
   const gridX = (pageW - gridW) / 2
   const maxRows = maxControlRows(pageH)
 
-  let y = MARGIN_TOP
+  let y = MARGIN
   let seq = seqOffset ?? 0
   let rowOnPage = 0
 
@@ -871,7 +870,7 @@ export function drawDescriptionSheet(
   }
 
   function startPage() {
-    y = MARGIN_TOP
+    y = MARGIN
     rowOnPage = 0
     drawHeader()
   }

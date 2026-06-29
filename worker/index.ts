@@ -49,11 +49,11 @@ function matchRoute(method: string, pathname: string): [Handler, Record<string, 
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' https://challenges.cloudflare.com https://*.sentry.io",
+  "script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com https://*.sentry.io",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data:",
   "font-src 'self'",
-  "connect-src 'self' https://*.sentry.io",
+  "connect-src 'self' https://cloudflareinsights.com https://*.sentry.io",
   "frame-src https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
