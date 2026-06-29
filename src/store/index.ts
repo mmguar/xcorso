@@ -457,6 +457,7 @@ export const useStore = create<Store>((set, get) => {
       if (!syncConflict || !projectId) return
 
       try {
+        let ok = false
         if (keep === 'remote') {
           const remote = await downloadProject(syncConflict.cloudId, null)
           if (remote) {
@@ -467,6 +468,7 @@ export const useStore = create<Store>((set, get) => {
               syncedAt: new Date().toISOString(),
               mapHash: remote.mapHash,
             })
+            ok = true
           }
         } else if (keep === 'local' && project) {
           await flushSave()
@@ -482,9 +484,10 @@ export const useStore = create<Store>((set, get) => {
               syncedAt: new Date().toISOString(),
               mapHash: localMapHash,
             })
+            ok = true
           }
         }
-        set({ syncConflict: null, syncStatus: 'synced' })
+        set({ syncConflict: null, syncStatus: ok ? 'synced' : 'error' })
       } catch (e) {
         console.error('resolveConflict failed:', e)
         set({ syncConflict: null, syncStatus: 'error' })
@@ -545,6 +548,7 @@ export const useStore = create<Store>((set, get) => {
       set({
         project: entry.project,
         projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack, { project: structuredClone(project), label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
@@ -558,6 +562,7 @@ export const useStore = create<Store>((set, get) => {
       set({
         project: entry.project,
         projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, { project: structuredClone(project), label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
@@ -581,6 +586,7 @@ export const useStore = create<Store>((set, get) => {
       set({
         project: structuredClone(target.project),
         projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
         undoStack: undoStack.slice(0, index),
         redoStack: newRedo,
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
