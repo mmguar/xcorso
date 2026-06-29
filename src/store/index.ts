@@ -29,9 +29,9 @@ export const useStore = create<Store>((set, get) => {
     })
   }
 
-  function mutateProject(fn: (p: Project) => void, label?: string) {
+  function mutateProjectCore(fn: (p: Project) => void, label?: string, skipLock = false) {
     const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer' || project.locked) return
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
     pushUndoSnapshot(label)
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
@@ -39,30 +39,18 @@ export const useStore = create<Store>((set, get) => {
     set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
-  function mutateProjectSilent(fn: (p: Project) => void) {
+  function mutateProjectSilentCore(fn: (p: Project) => void, skipLock = false) {
     const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer' || project.locked) return
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
     fn(project)
     set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
+  const mutateProject = (fn: (p: Project) => void, label?: string) => mutateProjectCore(fn, label)
+  const mutateProjectSilent = (fn: (p: Project) => void) => mutateProjectSilentCore(fn)
   // Layout mutations bypass the lock — layout editing is allowed while locked.
-  function mutateProjectLayout(fn: (p: Project) => void, label?: string) {
-    const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer') return
-    pushUndoSnapshot(label)
-    const p = timeClone('project', project)
-    p.meta.updatedAt = new Date().toISOString()
-    fn(p)
-    set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
-  }
-
-  function mutateProjectLayoutSilent(fn: (p: Project) => void) {
-    const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer') return
-    fn(project)
-    set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
-  }
+  const mutateProjectLayout = (fn: (p: Project) => void, label?: string) => mutateProjectCore(fn, label, true)
+  const mutateProjectLayoutSilent = (fn: (p: Project) => void) => mutateProjectSilentCore(fn, true)
 
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
   const layoutH: StoreHelpers = { mutateProject: mutateProjectLayout, mutateProjectSilent: mutateProjectLayoutSilent, pushUndoSnapshot }

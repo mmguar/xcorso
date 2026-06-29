@@ -1,4 +1,5 @@
 import type { CircleGap, LegGap } from '../types'
+import { normalizeDeg } from './geometry'
 
 // Shared dash-pattern math for control circles and legs. Returns the raw dash
 // segment lengths (visible, gap, visible, …) starting from the path origin, or
@@ -18,8 +19,8 @@ export function circleGapDashArray(gaps: CircleGap[], circumference: number, mir
   for (const g of gaps) {
     const a0 = mirror ? -g.endAngle : g.startAngle
     const a1 = mirror ? -g.startAngle : g.endAngle
-    const s = ((a0 % 360) + 360) % 360
-    const e = ((a1 % 360) + 360) % 360
+    const s = normalizeDeg(a0)
+    const e = normalizeDeg(a1)
     if (e < s) {
       segments.push({ start: s, end: 360 })
       if (e > 0) segments.push({ start: 0, end: e })

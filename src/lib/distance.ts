@@ -104,3 +104,13 @@ export function formatDistance(metres: number): string {
 export function formatScaleBarDistance(metres: number): string {
   return metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres)} m`
 }
+
+/** Scale bar layout dimensions in mm. Multiply by upm for map units. */
+export function scaleBarLayoutMm(sb: { segmentLengthM: number; segments: number; fixedCmSegments?: boolean; scale?: number }, scaleDen: number) {
+  const segMm = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / scaleDen
+  const totalMm = segMm * sb.segments
+  const barH = 2.0, textH = 2.5, pad = 3, strokeW = 0.2, tickH = 0.5
+  const boxW = totalMm + pad * 2
+  const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
+  return { segMm, totalMm, barH, textH, pad, strokeW, tickH, boxW, boxH }
+}
