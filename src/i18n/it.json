@@ -113,6 +113,8 @@
   "toolbar.gapRebuild": "Ricostruisci i buchi (Clicca una traccia o controllo con buchi per ricostruirli)",
   "toolbar.undo": "Annulla (Ctrl+Z)",
   "toolbar.redo": "Ripeti (Ctrl+Y)",
+  "toolbar.history": "Cronologia modifiche",
+  "toolbar.currentState": "Stato attuale",
   "welcome.title": "xcorso",
   "welcome.subtitle": "Pianifica percorsi per orienteering su computer e mobile. Apri una mappa OCAD, PDF o immagine per iniziare.",
   "welcome.signIn": "Entra",

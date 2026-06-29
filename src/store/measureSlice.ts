@@ -17,10 +17,10 @@ export function createMeasureSlice(_set: SetState, _get: GetState, h: StoreHelpe
         if (index !== undefined) pts.splice(index, 0, point)
         else pts.push(point)
         p.measuredLegs[key] = pts
-      })
+      }, 'Add measure point')
     },
 
-    beginMoveMeasurePoint: () => h.pushUndoSnapshot(),
+    beginMoveMeasurePoint: () => h.pushUndoSnapshot('Move measure point'),
 
     moveMeasurePoint: (fromControlId: string, toControlId: string, index: number, position: MapPoint) => {
       h.mutateProjectSilent(p => {
@@ -42,13 +42,13 @@ export function createMeasureSlice(_set: SetState, _get: GetState, h: StoreHelpe
         const next = pts.filter((_, j) => j !== index)
         if (next.length === 0) delete p.measuredLegs![key]
         else p.measuredLegs![key] = next
-      })
+      }, 'Remove measure point')
     },
 
     clearMeasureLeg: (fromControlId: string, toControlId: string) => {
       h.mutateProject(p => {
         if (p.measuredLegs) delete p.measuredLegs[legKey(fromControlId, toControlId)]
-      })
+      }, 'Clear measured leg')
     },
   }
 }

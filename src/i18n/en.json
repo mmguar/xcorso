@@ -113,6 +113,8 @@
   "toolbar.gapRebuild": "Rebuild gaps (click a gapped arc or leg to make it visible again)",
   "toolbar.undo": "Undo (Ctrl+Z)",
   "toolbar.redo": "Redo (Ctrl+Y)",
+  "toolbar.history": "Edit history",
+  "toolbar.currentState": "Current state",
   "welcome.title": "xcorso",
   "welcome.subtitle": "Orienteering course planning for desktop and mobile. Open an OCAD, PDF, or image map to get started.",
   "welcome.signIn": "Sign in",

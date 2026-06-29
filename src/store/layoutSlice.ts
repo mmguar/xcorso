@@ -169,7 +169,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           if (!c) return
           if (!c.layout) c.layout = defaultLayout(courseId, get)
           ensureSubmapLayouts(c, p.map, controlsById(p.controls))
-        })
+        }, 'Initialize layout')
       }
 
       // Layout mode previews the PDF page, so the canvas must show only the
@@ -243,7 +243,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
             { pageSize: target.pageSize, orientation: target.orientation },
           )
         }
-      })
+      }, 'Update layout')
     },
 
     moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex = 0) => {
@@ -311,7 +311,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           cascade(course.layout)
           for (const sl of course.layout.submapLayouts ?? []) cascade(sl)
         }
-      })
+      }, 'Update layout defaults')
     },
 
     ensureAllCourseLayouts: () => {
@@ -327,10 +327,10 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           }
           ensureSubmapLayouts(course, p.map, controlMap)
         }
-      })
+      }, 'Initialize layouts')
     },
 
-    beginLayoutDrag: () => h.pushUndoSnapshot(),
+    beginLayoutDrag: () => h.pushUndoSnapshot('Move layout element'),
 
     setLayoutMapCenter: (courseId: string, center: MapPoint, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
@@ -408,7 +408,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         })
         layout.clueSheetBreaks = newBreaks
         layout.clueSheetParts = newParts
-      })
+      }, 'Add clue sheet break')
     },
 
     removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex = 0) => {
@@ -423,7 +423,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         parts.splice(breakIndex, 1)
         layout.clueSheetBreaks = breaks.length > 0 ? breaks : undefined
         layout.clueSheetParts = parts.length > 0 ? parts : undefined
-      })
+      }, 'Remove clue sheet break')
     },
 
     setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex = 0) => {
