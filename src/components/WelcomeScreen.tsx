@@ -2,7 +2,7 @@
  * Landing screen: create new project, open .oco, or switch between saved projects.
  */
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Map, FolderOpen, FileUp, Trash2, Cloud, LogIn, LogOut, RefreshCw, Copy } from 'lucide-react'
 import { useStore } from '../store'
 import { useT, LanguageSwitcher, type TFn } from '../i18n'
@@ -58,6 +58,24 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const openFileRef = useRef<HTMLInputElement>(null)
   const mapFileRef = useRef<HTMLInputElement>(null)
   const iofFileRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const dragCounter = useRef(0)
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current = 0
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (!file) return
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (ext === 'oco') {
+      handleOpenProject(file)
+    } else if (MAP_FILE_EXTENSIONS.has(ext)) {
+      setMapFile(file)
+      setProjectName(file.name.replace(/\.[^.]+$/, ''))
+      setStep('new-project')
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // New project state
   const [projectName, setProjectName] = useState('My Event')
@@ -241,7 +259,13 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
   if (step === 'landing') {
     return (
-      <div className="relative flex flex-col items-center h-dvh bg-gray-50 px-8 gap-8 overflow-y-auto py-16">
+      <div
+        className={`relative flex flex-col items-center h-dvh bg-gray-50 px-8 gap-8 overflow-y-auto py-16 ${dragOver ? 'ring-4 ring-inset ring-orange-400/50' : ''}`}
+        onDragOver={e => e.preventDefault()}
+        onDragEnter={() => { dragCounter.current++; setDragOver(true) }}
+        onDragLeave={() => { dragCounter.current--; if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false) } }}
+        onDrop={handleDrop}
+      >
         {/* Account */}
         <div className="absolute top-4 right-4">
           {cloudUser ? (
@@ -258,7 +282,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               {confirmDeleteAccount ? (
                 <span className="flex items-center gap-1 ml-1">
                   <button
-                    onClick={async () => { await deleteAccount(); setCloudUser(null); setConfirmDeleteAccount(false) }}
+                    onClick={async () => { try { await deleteAccount(); setCloudUser(null) } catch { /* network error — keep user signed in */ } setConfirmDeleteAccount(false) }}
                     className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
                   >
                     {t('welcome.confirmDelete')}

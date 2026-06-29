@@ -61,6 +61,19 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   )
 }
 
+function SaveFailedBanner() {
+  const show = useStore(s => s.localSaveFailed)
+  const [dismissed, setDismissed] = useState(false)
+  const t = useT()
+  if (!show || dismissed) return null
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 text-sm max-w-md">
+      <span>{t('editor.saveFailed')}</span>
+      <button onClick={() => setDismissed(true)} className="shrink-0 text-white/80 hover:text-white font-bold">&times;</button>
+    </div>
+  )
+}
+
 interface Props { onGoHome: () => void; onLogin: () => void; guardLeave: (action: () => void) => void }
 
 export function EditorScreen({ onGoHome, onLogin, guardLeave }: Props) {
@@ -153,6 +166,7 @@ export function EditorScreen({ onGoHome, onLogin, guardLeave }: Props) {
       </div>
       {showShortcuts && <ShortcutsOverlay onClose={closeShortcuts} />}
       <OnboardingTour />
+      <SaveFailedBanner />
     </div>
   )
 }

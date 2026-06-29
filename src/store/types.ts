@@ -62,6 +62,7 @@ export interface AppState {
   syncConflict: SyncConflict | null
   versionHistory: VersionEntry[]
   projectRole: ShareRole
+  localSaveFailed: boolean
 }
 
 export interface AppActions {
