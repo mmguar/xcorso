@@ -546,5 +546,22 @@
   "iof.11.8W": "West end",
   "iof.12.1": "First aid post",
   "iof.12.2": "Refreshment point",
-  "iof.12.4": "Manned control"
+  "iof.12.4": "Manned control",
+  "iofGroup.feature": "Feature",
+  "iofGroup.appearance": "Appearance",
+  "iofGroup.direction": "Direction",
+  "iofGroup.position": "Position",
+  "iofGroup.11.1": "Side",
+  "iofGroup.11.2": "Edge",
+  "iofGroup.11.3": "Part",
+  "iofGroup.11.4": "Corner (inside)",
+  "iofGroup.11.5": "Corner (outside)",
+  "iofGroup.11.6": "Tip",
+  "iofGroup.11.8": "End",
+  "iofGroup.11.13": "Foot",
+  "color.black": "Black",
+  "color.iofPurple": "IOF purple",
+  "color.custom": "Custom color",
+  "spec.isom-2017": "Regular (ISOM 2017-2)",
+  "spec.issprm-2019": "Sprint (ISSprOM 2019-2)"
 }

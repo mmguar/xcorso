@@ -7,7 +7,7 @@ import { exportIofXml, exportIofXmlV2 } from '../../lib/iofExport'
 import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
 import { logout as cloudLogout, addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
-import { SPEC_LABELS } from '../../lib/symbolSpec'
+import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
 import type { EventSpec, MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
@@ -234,8 +234,8 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
           className="text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 shrink-0 hidden sm:block"
           title={t('header.eventSpec')}
         >
-          {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
+          {(Object.entries(SPEC_LABEL_KEYS) as [EventSpec, string][]).map(([key, tKey]) => (
+            <option key={key} value={key}>{t(tKey)}</option>
           ))}
         </select>
       )}

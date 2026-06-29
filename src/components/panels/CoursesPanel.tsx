@@ -5,7 +5,7 @@ import { useT } from '../../i18n'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
-import { SPEC_LABELS } from '../../lib/symbolSpec'
+import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
 import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
 import { IOF_PURPLE } from '../../lib/courseUtils'
 
@@ -14,6 +14,7 @@ function ClueSheetColorPicker({ label, value, onChange }: {
   value: string | undefined
   onChange: (color: string | undefined) => void
 }) {
+  const t = useT()
   const current = value || '#000000'
   const isBlack = !value || value === '#000000'
   const isPurple = value === IOF_PURPLE
@@ -24,20 +25,20 @@ function ClueSheetColorPicker({ label, value, onChange }: {
         onClick={() => onChange(undefined)}
         className={`w-5 h-5 rounded border transition-all shrink-0 ${isBlack ? 'ring-2 ring-orange-500 ring-offset-1' : 'border-gray-300'}`}
         style={{ background: '#000000' }}
-        title="Black"
+        title={t('color.black')}
       />
       <button
         onClick={() => onChange(IOF_PURPLE)}
         className={`w-5 h-5 rounded border transition-all shrink-0 ${isPurple ? 'ring-2 ring-orange-500 ring-offset-1' : 'border-gray-300'}`}
         style={{ background: IOF_PURPLE }}
-        title="IOF purple"
+        title={t('color.iofPurple')}
       />
       <input
         type="color"
         value={current}
         onChange={e => onChange(e.target.value === '#000000' ? undefined : e.target.value)}
         className="w-5 h-5 rounded cursor-pointer border-0 p-0 shrink-0"
-        title="Custom color"
+        title={t('color.custom')}
       />
       {!isBlack && (
         <span className="text-[10px] text-gray-400 truncate">{current}</span>
@@ -181,8 +182,8 @@ function CourseEditor({ course }: { course: Course }) {
           title={t('courses.courseSpec')}
         >
           <option value="">{t('courses.projectDefault')}</option>
-          {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
+          {(Object.entries(SPEC_LABEL_KEYS) as [EventSpec, string][]).map(([key, tKey]) => (
+            <option key={key} value={key}>{t(tKey)}</option>
           ))}
         </select>
         <div className="flex-1" />
