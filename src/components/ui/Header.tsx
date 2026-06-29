@@ -12,9 +12,9 @@ import type { EventSpec, MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
-interface Props { onGoHome: () => void; onLogin: () => void }
+interface Props { onGoHome: () => void; onLogin: () => void; guardLeave: (action: () => void) => void }
 
-export function Header({ onGoHome, onLogin }: Props) {
+export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   const t = useT()
   const project = useStore(s => s.project!)
   const projectId = useStore(s => s.projectId)
@@ -148,9 +148,9 @@ export function Header({ onGoHome, onLogin }: Props) {
     replaceMapFile(file.name, type, data)
   }
 
-  async function handleSwitchTo(id: string) {
+  function handleSwitchTo(id: string) {
     setSwitcherOpen(false)
-    await switchProject(id)
+    guardLeave(() => switchProject(id))
   }
 
   return (

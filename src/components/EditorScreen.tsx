@@ -61,9 +61,9 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   )
 }
 
-interface Props { onGoHome: () => void; onLogin: () => void }
+interface Props { onGoHome: () => void; onLogin: () => void; guardLeave: (action: () => void) => void }
 
-export function EditorScreen({ onGoHome, onLogin }: Props) {
+export function EditorScreen({ onGoHome, onLogin, guardLeave }: Props) {
   useRenderTracker('EditorScreen')
   const t = useT()
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -141,7 +141,7 @@ export function EditorScreen({ onGoHome, onLogin }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <Header onGoHome={onGoHome} onLogin={onLogin} />
+      <Header onGoHome={onGoHome} onLogin={onLogin} guardLeave={guardLeave} />
       <div className="flex flex-1 overflow-hidden relative">
         <div className="flex-1 relative overflow-hidden canvas-area">
           <MapCanvas loadedMap={loadedMap} />
