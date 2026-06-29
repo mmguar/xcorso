@@ -403,7 +403,9 @@ function SortableDescRow({
       </tr>
       {picker?.controlId === ctrl.id && (
         <tr>
-          <td colSpan={colCount} className="p-0 border-0">
+          <td colSpan={colCount} className="p-0 border-0 relative">
+            {/* ponytail: absolute so picker doesn't widen the table */}
+            <div className="absolute left-0 w-full z-20">
             <SymbolPicker
               column={picker.column}
               current={ctrl.description?.[columnFields[picker.column]]}
@@ -417,6 +419,7 @@ function SortableDescRow({
               }}
               onClose={() => setPicker(null)}
             />
+            </div>
           </td>
         </tr>
       )}
