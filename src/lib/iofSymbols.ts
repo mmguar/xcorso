@@ -481,11 +481,11 @@ function makeCornerInsideSymbols(): SymbolDef[] {
   const dirs: [string, string, number, number, string][] = [
     ['N', 'North', 0, 0, 'M -45 0 L 0 -45 L 45 0'],
     ['NE', 'North-east', 15, -15, 'M -20 -45 L 45 -45 L 45 20'],
-    ['E', 'East', 0, 0, 'M 0 45 L -45 0 L 0 -45'],
+    ['E', 'East', 0, 0, 'M 0 -45 L 45 0 L 0 45'],
     ['SE', 'South-east', 15, 15, 'M -20 45 L 45 45 L 45 -20'],
     ['S', 'South', 0, 0, 'M -45 0 L 0 45 L 45 0'],
     ['SW', 'South-west', -15, 15, 'M 20 45 L -45 45 L -45 -20'],
-    ['W', 'West', 0, 0, 'M 0 -45 L 45 0 L 0 45'],
+    ['W', 'West', 0, 0, 'M 0 45 L -45 0 L 0 -45'],
     ['NW', 'North-west', -15, -15, 'M 20 -45 L -45 -45 L -45 20'],
   ]
   return dirs.map(([d, name, dx, dy, path]) => ({
@@ -499,11 +499,11 @@ function makeCornerOutsideSymbols(): SymbolDef[] {
   const dirs: [string, string, number, number, string][] = [
     ['N', 'North', 0, -65, 'M -45 20 L 0 -25 L 45 20'],
     ['NE', 'North-east', 50, -50, 'M -45 -20 L 20 -20 L 20 45'],
-    ['E', 'East', -65, 0, 'M 10 45 L -35 0 L 10 -45'],
+    ['E', 'East', 65, 0, 'M -10 -45 L 35 0 L -10 45'],
     ['SE', 'South-east', 50, 50, 'M -45 20 L 20 20 L 20 -45'],
     ['S', 'South', 0, 65, 'M -45 -20 L 0 25 L 45 -20'],
     ['SW', 'South-west', -50, 50, 'M 45 20 L -20 20 L -20 -45'],
-    ['W', 'West', 65, 0, 'M -10 -45 L 35 0 L -10 45'],
+    ['W', 'West', -65, 0, 'M 10 45 L -35 0 L 10 -45'],
     ['NW', 'North-west', -50, -50, 'M 45 -20 L -20 -20 L -20 45'],
   ]
   return dirs.map(([d, name, dx, dy, path]) => ({
@@ -549,6 +549,28 @@ function makeEndSymbols(): SymbolDef[] {
 }
 
 
+function makeFootDirSymbols(): SymbolDef[] {
+  // L is always same orientation: vert going up, horiz going right from corner
+  // [dir, name, cx, cy, vx, vy1, vy2, hx2] — circle at (cx,cy) r=55, vert (vx,vy1)→(vx,vy2), horiz (vx,vy2)→(hx2,vy2)
+  const dirs: [string, string, number, number, number, number, number, number][] = [
+    ['N',  'North',       0,  35,   5,-100, -40,  45],
+    ['NE', 'North-east', -20, 20,  40, -80, -20,  80],
+    ['E',  'East',       -25,  0,  52, -55,   5,  92],
+    ['SE', 'South-east', -20,-20,  45,  10,  70,  85],
+    ['S',  'South',        0,-40,   5,  35,  90,  45],
+    ['SW', 'South-west',  20,-20, -65, -10,  50, -25],
+    ['W',  'West',        35,  0, -80, -55,   5, -40],
+    ['NW', 'North-west',  25, 25, -80, -80, -20, -40],
+  ]
+  return dirs.map(([d, name, cx, cy, vx, vy1, vy2, hx2]) => ({
+    code: `11.13${d}`,
+    name: `${name} foot`,
+    column: 'G' as IofColumn,
+    circles: [[cx, cy, 55] as [number, number, number]],
+    lines: [[vx, vy1, vx, vy2], [vx, vy2, hx2, vy2]] as [number, number, number, number][],
+  }))
+}
+
 const colG: SymbolDef[] = [
   ...makeSideSymbols(),
   ...makeEdgeSymbols(),
@@ -567,6 +589,7 @@ const colG: SymbolDef[] = [
     paths: ['m -65, 42 v -78 h 128 l 0, 76'], filledCircles: [[0, 26, 15]] },
   { code: '11.13', name: 'Foot', column: 'G',
     lines: [[-35, -60, -35, 60], [-35, 60, 35, 60]], filledCircles: [[0, 30, 12]] },
+  ...makeFootDirSymbols(),
   { code: '11.15', name: 'Between', column: 'G',
     lines: [[-60, -35, 60, -35], [-60, 35, 60, 35]], filledCircles: [[0, 0, 12]] },
 ]
