@@ -501,7 +501,9 @@ export const useStore = create<Store>((set, get) => {
       try {
         const cloudProjects = await fetchCloudProjects()
         const cp = cloudProjects.find(p => p.id === syncMeta.cloudId)
-        if (!cp || cp.version <= syncMeta.syncVersion) return
+        if (!cp) return
+        if (cp.version === syncMeta.syncVersion) { set({ syncStatus: 'synced' }); return }
+        if (cp.version < syncMeta.syncVersion) return
 
         const { project } = get()
         if (project && project.meta.updatedAt > syncMeta.syncedAt) {
