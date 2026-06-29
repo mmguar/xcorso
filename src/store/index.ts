@@ -29,9 +29,9 @@ export const useStore = create<Store>((set, get) => {
     })
   }
 
-  function mutateProject(fn: (p: Project) => void, label?: string) {
+  function mutateProjectCore(fn: (p: Project) => void, label?: string, skipLock = false) {
     const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer' || project.locked) return
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
     pushUndoSnapshot(label)
     const p = timeClone('project', project)
     p.meta.updatedAt = new Date().toISOString()
@@ -39,30 +39,18 @@ export const useStore = create<Store>((set, get) => {
     set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
-  function mutateProjectSilent(fn: (p: Project) => void) {
+  function mutateProjectSilentCore(fn: (p: Project) => void, skipLock = false) {
     const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer' || project.locked) return
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
     fn(project)
     set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
   }
 
+  const mutateProject = (fn: (p: Project) => void, label?: string) => mutateProjectCore(fn, label)
+  const mutateProjectSilent = (fn: (p: Project) => void) => mutateProjectSilentCore(fn)
   // Layout mutations bypass the lock — layout editing is allowed while locked.
-  function mutateProjectLayout(fn: (p: Project) => void, label?: string) {
-    const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer') return
-    pushUndoSnapshot(label)
-    const p = timeClone('project', project)
-    p.meta.updatedAt = new Date().toISOString()
-    fn(p)
-    set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
-  }
-
-  function mutateProjectLayoutSilent(fn: (p: Project) => void) {
-    const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer') return
-    fn(project)
-    set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
-  }
+  const mutateProjectLayout = (fn: (p: Project) => void, label?: string) => mutateProjectCore(fn, label, true)
+  const mutateProjectLayoutSilent = (fn: (p: Project) => void) => mutateProjectSilentCore(fn, true)
 
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
   const layoutH: StoreHelpers = { mutateProject: mutateProjectLayout, mutateProjectSilent: mutateProjectLayoutSilent, pushUndoSnapshot }
@@ -457,6 +445,7 @@ export const useStore = create<Store>((set, get) => {
       if (!syncConflict || !projectId) return
 
       try {
+        let ok = false
         if (keep === 'remote') {
           const remote = await downloadProject(syncConflict.cloudId, null)
           if (remote) {
@@ -467,6 +456,7 @@ export const useStore = create<Store>((set, get) => {
               syncedAt: new Date().toISOString(),
               mapHash: remote.mapHash,
             })
+            ok = true
           }
         } else if (keep === 'local' && project) {
           await flushSave()
@@ -482,9 +472,10 @@ export const useStore = create<Store>((set, get) => {
               syncedAt: new Date().toISOString(),
               mapHash: localMapHash,
             })
+            ok = true
           }
         }
-        set({ syncConflict: null, syncStatus: 'synced' })
+        set({ syncConflict: null, syncStatus: ok ? 'synced' : 'error' })
       } catch (e) {
         console.error('resolveConflict failed:', e)
         set({ syncConflict: null, syncStatus: 'error' })
@@ -501,7 +492,9 @@ export const useStore = create<Store>((set, get) => {
       try {
         const cloudProjects = await fetchCloudProjects()
         const cp = cloudProjects.find(p => p.id === syncMeta.cloudId)
-        if (!cp || cp.version <= syncMeta.syncVersion) return
+        if (!cp) return
+        if (cp.version === syncMeta.syncVersion) { set({ syncStatus: 'synced' }); return }
+        if (cp.version < syncMeta.syncVersion) return
 
         const { project } = get()
         if (project && project.meta.updatedAt > syncMeta.syncedAt) {
@@ -543,6 +536,7 @@ export const useStore = create<Store>((set, get) => {
       set({
         project: entry.project,
         projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack, { project: structuredClone(project), label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
@@ -556,6 +550,7 @@ export const useStore = create<Store>((set, get) => {
       set({
         project: entry.project,
         projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, { project: structuredClone(project), label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
@@ -579,6 +574,7 @@ export const useStore = create<Store>((set, get) => {
       set({
         project: structuredClone(target.project),
         projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
         undoStack: undoStack.slice(0, index),
         redoStack: newRedo,
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),

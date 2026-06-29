@@ -1,6 +1,7 @@
 import type { CircleGap, LegGap } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { defaultControlLabel } from '../lib/courseUtils'
+import { normalizeDeg } from '../lib/geometry'
 
 export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) {
   const ctrlName = (id: string) => {
@@ -42,10 +43,10 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
         if (!c || !c.gaps) return
-        const a = ((angle % 360) + 360) % 360
+        const a = normalizeDeg(angle)
         c.gaps = c.gaps.filter(g => {
-          const span = ((g.endAngle - g.startAngle) + 360) % 360
-          const dist = ((a - g.startAngle) + 360) % 360
+          const span = normalizeDeg(g.endAngle - g.startAngle)
+          const dist = normalizeDeg(a - g.startAngle)
           return dist > span
         })
         if (c.gaps.length === 0) c.gaps = undefined

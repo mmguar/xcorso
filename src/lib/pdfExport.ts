@@ -7,10 +7,10 @@ import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, unitsPerMm, controlsById, IOF_PURPLE } from './courseUtils'
-import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance } from './distance'
+import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance, scaleBarLayoutMm } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
-import { walkPath, clipPolyline, distance } from './geometry'
+import { walkPath, clipPolyline, distance, polylineLength } from './geometry'
 import { hexToRgb, darkenHex } from './color'
 import {
   startTriangleVertices,
@@ -31,10 +31,6 @@ export function submapPreviewId(courseId: string, index: number): string {
   return `${courseId}__sub${index}`
 }
 
-export function parseSubmapPreviewId(id: string): { courseId: string; submapIndex: number } | null {
-  const m = id.match(/^(.+)__sub(\d+)$/)
-  return m ? { courseId: m[1], submapIndex: parseInt(m[2]) } : null
-}
 
 interface ExportCourse extends Course {
   _parentId?: string
@@ -622,14 +618,12 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   const toR = clipR(toType, printScale, spec)
 
   const fullPts: Pos[] = bendPoints?.length ? [from, ...bendPoints, to] : [from, to]
-  let fullLen = 0
-  for (let i = 1; i < fullPts.length; i++) fullLen += Math.hypot(fullPts[i].x - fullPts[i - 1].x, fullPts[i].y - fullPts[i - 1].y)
+  const fullLen = polylineLength(fullPts)
 
   const clipped = clipPolyline(fullPts, fromR, toR)
   if (clipped.length < 2) return
 
-  let clippedLen = 0
-  for (let i = 1; i < clipped.length; i++) clippedLen += Math.hypot(clipped[i].x - clipped[i - 1].x, clipped[i].y - clipped[i - 1].y)
+  const clippedLen = polylineLength(clipped)
 
   // Remap gaps from full-leg fractions to clipped-leg fractions
   let remapped: LegGap[] | undefined
@@ -923,18 +917,10 @@ function drawScaleBar(
   toPage: (pt: MapPoint) => Pos,
   printScale: number,
 ) {
-  const scaleDen =  printScale
-  const segMm = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / scaleDen
+  const scaleDen = printScale
+  const lay = scaleBarLayoutMm(sb, scaleDen)
+  const { segMm, barH, textH, pad, strokeW, tickH, boxW, boxH } = lay
   const segRealM = sb.fixedCmSegments ? scaleDen / 100 : sb.segmentLengthM
-  const totalMm = segMm * sb.segments
-  const barH = 2.0
-  const textH = 2.5
-  const pad = 3
-  const strokeW = 0.2
-  const tickH = 0.5
-
-  const boxW = totalMm + pad * 2
-  const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
 
   const origin = toPage(sb.position)
 

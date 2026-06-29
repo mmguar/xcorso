@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import type { ScaleBar, TextLabel, ImageOverlay, MapConfig, MapPoint } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
-import { formatScaleBarDistance } from '../../lib/distance'
+import { formatScaleBarDistance, scaleBarLayoutMm } from '../../lib/distance'
 
 interface Props {
   scaleBars: ScaleBar[]
@@ -20,23 +20,12 @@ function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; 
   const scaleDen = printScaleOverride ?? sb.scale ?? map.scale
   const scaleStr = `1:${Math.round(scaleDen)}`
 
-  // Convert segment size to map units
-  const segMmOnPaper = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / scaleDen
+  const lay = scaleBarLayoutMm(sb, scaleDen)
   const segRealM = sb.fixedCmSegments ? scaleDen / 100 : sb.segmentLengthM
-  const segUnits = segMmOnPaper * upm
-  const totalUnits = segUnits * sb.segments
-
-  const barH = 2.0 * upm       // bar height: 2mm on paper
-  const textH = 2.5 * upm      // text size: 2.5mm
-  const pad = 3 * upm        // padding
-  const strokeW = 0.2 * upm
-  const tickH = 0.5 * upm      // small ticks above bar
-
-  // Total dimensions
-  const contentW = totalUnits
-  const contentH = barH + textH + tickH + pad * 0.5
-  const boxW = contentW + pad * 2
-  const boxH = contentH + pad * 2 + textH // extra for scale text below
+  const segUnits = lay.segMm * upm
+  const barH = lay.barH * upm, textH = lay.textH * upm, pad = lay.pad * upm
+  const strokeW = lay.strokeW * upm, tickH = lay.tickH * upm
+  const boxW = lay.boxW * upm, boxH = lay.boxH * upm
 
   const { x, y } = sb.position
   const barX = x + pad

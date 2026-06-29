@@ -1,6 +1,6 @@
 import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById, computeSubmaps } from '../../lib/courseUtils'
-import { legKey } from '../../lib/distance'
+import { legKey, scaleBarLayoutMm } from '../../lib/distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { northArrowHeight, northArrowGeometry, crossingPointTotalHH, rotateAround } from '../../lib/symbolGeometry'
 
@@ -43,13 +43,22 @@ function controlToScreen(c: Control, vp: Viewport): { x: number; y: number } {
   return mapToScreen(c.position, vp)
 }
 
-function controlHitRadius(control: Control, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number): number {
+interface HitMetrics {
+  upm: number
+  dims: ReturnType<typeof getSymbolDims>
+  sf: number
+  controlScale: number
+}
+
+function controlHitRadiusFromMetrics(control: Control, vp: Viewport, m: HitMetrics): number {
+  const symbolR = controlSymbolRadiusMm(control.type, m.dims) * m.upm * m.sf * m.controlScale
+  return mapToPx(symbolR, vp)
+}
+
+function buildHitMetrics(project: Project, selectedCourseId: string | null, controlScale: number): HitMetrics {
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec, project.courses.find(c => c.id === selectedCourseId)?.spec)
-  const dims = getSymbolDims(spec)
-  const sf = symbolScaleFactor(spec, project.map.scale)
-  const symbolR = controlSymbolRadiusMm(control.type, dims) * upm * sf * controlScale
-  return mapToPx(symbolR, vp)
+  return { upm, dims: getSymbolDims(spec), sf: symbolScaleFactor(spec, project.map.scale), controlScale }
 }
 
 /** Control IDs that are hidden from the canvas because a submap is selected and
@@ -72,13 +81,14 @@ function hiddenSubmapControlIds(project: Project, selectedCourseId: string | nul
 
 export function findControlAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, extraPx = 0, selectedSubmapIndex: number | null = null): Control | null {
   const hidden = hiddenSubmapControlIds(project, selectedCourseId, selectedSubmapIndex)
+  const m = buildHitMetrics(project, selectedCourseId, controlScale)
   let best: Control | null = null
   let bestDist = Infinity
   for (const c of project.controls) {
     if (hidden?.has(c.id)) continue
     const s = controlToScreen(c, vp)
     const d = Math.hypot(screenX - s.x, screenY - s.y)
-    const hitR = controlHitRadius(c, vp, project, selectedCourseId, controlScale) + extraPx
+    const hitR = controlHitRadiusFromMetrics(c, vp, m) + extraPx
     if (d < hitR && d < bestDist) { best = c; bestDist = d }
   }
   return best
@@ -378,15 +388,9 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
 
   for (const sb of project.scaleBars) {
     const pos = posOverrides?.[sb.id] ?? sb.position
-    const segMmOnPaper = sb.fixedCmSegments ? 10 : (sb.segmentLengthM * 1000) / (sb.scale ?? project.map.scale)
-    const segU = segMmOnPaper * upm
-    const totalU = segU * sb.segments
-    const pad = 3 * upm
-    const textH = 2.5 * upm
-    const barH = 2.0 * upm
-    const tickH = 0.5 * upm
-    const boxW = totalU + pad * 2
-    const boxH = barH + textH + tickH + pad * 0.5 + pad * 2 + textH
+    const lay = scaleBarLayoutMm(sb, sb.scale ?? project.map.scale)
+    const boxW = lay.boxW * upm
+    const boxH = lay.boxH * upm
     if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + boxW + hitSlop &&
         mapPt.y >= pos.y - hitSlop && mapPt.y <= pos.y + boxH + hitSlop) {
       return { id: sb.id, kind: 'scalebar' }
