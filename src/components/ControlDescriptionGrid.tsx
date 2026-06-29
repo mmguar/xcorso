@@ -795,6 +795,7 @@ function SymbolPicker({
 
   const grouped = column === 'G' ? groupLocationSymbols(filtered)
     : column === 'E' ? groupBySourceColumn(filtered)
+    : column === 'C' ? groupDirectionSymbols(filtered)
     : null
 
   return (
@@ -852,12 +853,58 @@ function SymbolPicker({
         Object.entries(grouped).map(([group, syms]) => (
           <div key={group} className="mb-1">
             <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">{group}</div>
-            <SymbolGrid symbols={syms} current={current} onSelect={onSelect} />
+            {isCompassGroup(syms)
+              ? <CompassGrid symbols={syms} current={current} onSelect={onSelect} />
+              : <SymbolGrid symbols={syms} current={current} onSelect={onSelect} />
+            }
           </div>
         ))
       ) : (
         <SymbolGrid symbols={filtered} current={current} onSelect={onSelect} />
       )}
+    </div>
+  )
+}
+
+const COMPASS_DIRS = ['NW', 'N', 'NE', 'W', '', 'E', 'SW', 'S', 'SE']
+
+function isCompassGroup(syms: SymbolDef[]): boolean {
+  return syms.length === 8 && syms.every(s => /[NESW]+$/.test(s.code))
+}
+
+function CompassGrid({ symbols, current, onSelect }: {
+  symbols: SymbolDef[]
+  current?: string
+  onSelect: (code: string) => void
+}) {
+  const t = useT()
+  const byDir = new Map<string, SymbolDef>()
+  for (const s of symbols) {
+    const dir = s.code.match(/([NESW]+)$/)?.[1]
+    if (dir) byDir.set(dir, s)
+  }
+  return (
+    <div className="inline-grid grid-cols-3 gap-0.5">
+      {COMPASS_DIRS.map((dir, i) => {
+        if (!dir) return <div key={i} style={{ width: 36, height: 36 }} />
+        const sym = byDir.get(dir)
+        if (!sym) return <div key={i} style={{ width: 36, height: 36 }} />
+        return (
+          <button
+            key={sym.code}
+            onClick={() => onSelect(sym.code)}
+            title={`${t('iof.' + sym.code)} (${sym.code})`}
+            className={`flex items-center justify-center rounded border transition-colors ${
+              sym.code === current
+                ? 'border-orange-500 bg-orange-100'
+                : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+            }`}
+            style={{ width: 36, height: 36 }}
+          >
+            <SymbolSvg sym={sym} size={28} />
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -896,6 +943,19 @@ function groupBySourceColumn(syms: SymbolDef[]): Record<string, SymbolDef[]> {
     if (!groups[group]) groups[group] = []
     groups[group].push(s)
   }
+  return groups
+}
+
+function groupDirectionSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+  const dir: SymbolDef[] = []
+  const other: SymbolDef[] = []
+  for (const s of syms) {
+    if (/[NESW]+$/.test(s.code)) dir.push(s)
+    else other.push(s)
+  }
+  const groups: Record<string, SymbolDef[]> = {}
+  if (dir.length) groups['Direction'] = dir
+  if (other.length) groups['Position'] = other
   return groups
 }
 
