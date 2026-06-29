@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/react'
-import { Component, useEffect, useState } from 'react'
+import { Component, useCallback, useEffect, useState } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
 import './index.css'
 import { useStore } from './store'
@@ -37,6 +37,28 @@ class ErrorBoundary extends Component<{ children: ReactNode; onReset: () => void
 
 type Screen = 'home' | 'editor' | 'about'
 
+function hasUnsyncedChanges(): boolean {
+  const { project, syncStatus, cloudUser, projectRevision, loadedRevision } = useStore.getState()
+  return !!(project && cloudUser && syncStatus !== 'synced' && projectRevision !== loadedRevision)
+}
+
+function UnsavedDialog({ onSync, onDiscard, onCancel }: { onSync: () => void; onDiscard: () => void; onCancel: () => void }) {
+  const t = useT()
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl p-5 w-80 flex flex-col gap-4">
+        <h3 className="text-sm font-semibold text-gray-800">{t('unsaved.title')}</h3>
+        <p className="text-xs text-gray-500">{t('unsaved.desc')}</p>
+        <div className="flex flex-col gap-2">
+          <button onClick={onSync} className="px-3 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors">{t('unsaved.sync')}</button>
+          <button onClick={onDiscard} className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">{t('unsaved.discard')}</button>
+          <button onClick={onCancel} className="px-3 py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors">{t('unsaved.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const project = useStore(s => s.project)
   const loadProject = useStore(s => s.loadProject)
@@ -45,6 +67,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [restoring, setRestoring] = useState(true)
   const [showLogin, setShowLogin] = useState(false)
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
 
   useEffect(() => {
     const projectP = getActiveId().then(async id => {
@@ -66,14 +89,19 @@ export default function App() {
 
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
-      const { project, syncStatus, cloudUser, projectRevision, loadedRevision } = useStore.getState()
-      if (project && cloudUser && syncStatus !== 'synced' && projectRevision !== loadedRevision) {
-        e.preventDefault()
-      }
+      if (hasUnsyncedChanges()) e.preventDefault()
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
+
+  const guardedAction = useCallback((action: () => void) => {
+    if (screen === 'editor' && hasUnsyncedChanges()) {
+      setPendingAction(() => action)
+    } else {
+      action()
+    }
+  }, [screen])
 
   if (restoring) {
     return (
@@ -98,9 +126,21 @@ export default function App() {
 
   return (
     <ErrorBoundary onReset={() => setScreen('home')}>
-      <EditorScreen onGoHome={() => setScreen('home')} onLogin={() => setShowLogin(true)} />
+      <EditorScreen onGoHome={() => guardedAction(() => setScreen('home'))} onLogin={() => setShowLogin(true)} guardLeave={guardedAction} />
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
       {syncConflict && <ConflictModal />}
+      {pendingAction && (
+        <UnsavedDialog
+          onSync={async () => {
+            await useStore.getState().syncProject()
+            const action = pendingAction
+            setPendingAction(null)
+            action()
+          }}
+          onDiscard={() => { const action = pendingAction; setPendingAction(null); action() }}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
     </ErrorBoundary>
   )
 }
