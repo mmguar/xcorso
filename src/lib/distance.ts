@@ -61,6 +61,10 @@ export function computeCourseDistances(
   const resolved = course.controls.map(cc => ({
     controlId: cc.controlId,
     position: controlMap.get(cc.controlId)?.position,
+    markedRoute: cc.markedRoute,
+    legBendPoints: cc.legBendPoints,
+    legNavBendPoints: cc.legNavBendPoints,
+    markedRouteEnd: cc.markedRouteEnd,
   }))
   const positions = resolved
     .map(r => r.position)
@@ -76,14 +80,40 @@ export function computeCourseDistances(
     const from = resolved[i]
     const to = resolved[i + 1]
     if (!from.position || !to.position) { legs.push(0); continue }
-    const waypoints = measuredLegs?.[legKey(from.controlId, to.controlId)]
-    const units = waypoints && waypoints.length > 0
-      ? polylineLength([from.position, ...waypoints, to.position])
-      : distance(from.position, to.position)
+    const isLastLeg = i === resolved.length - 2
+    const effectiveMarkedRoute = to.markedRoute
+      || (isLastLeg && course.finishType === 'taped' ? 'full' as const
+        : isLastLeg && course.finishType === 'funnel' ? 'partial' as const
+        : undefined)
+    const bendPts = effectiveMarkedRoute ? to.legBendPoints : undefined
+    const waypoints = bendPts ? undefined : measuredLegs?.[legKey(from.controlId, to.controlId)]
+    let units: number
+    if (effectiveMarkedRoute === 'partial' && to.markedRouteEnd) {
+      const tapedPts: MapPoint[] = bendPts?.length
+        ? [from.position, ...bendPts, to.markedRouteEnd]
+        : [from.position, to.markedRouteEnd]
+      const navPts: MapPoint[] = to.legNavBendPoints?.length
+        ? [to.markedRouteEnd, ...to.legNavBendPoints, to.position]
+        : [to.markedRouteEnd, to.position]
+      units = polylineLength(tapedPts) + polylineLength(navPts)
+    } else if (bendPts && bendPts.length > 0) {
+      units = polylineLength([from.position, ...bendPts, to.position])
+    } else if (waypoints && waypoints.length > 0) {
+      units = polylineLength([from.position, ...waypoints, to.position])
+    } else {
+      units = distance(from.position, to.position)
+    }
     legs.push(mapUnitsToMetres(units, map))
   }
 
-  return { legs, total: legs.reduce((s, d) => s + d, 0) }
+  // Pre-start taped route distance
+  let preStart = 0
+  const first = resolved[0]
+  if (first.markedRoute && first.legBendPoints?.length && first.position) {
+    preStart = mapUnitsToMetres(polylineLength([...first.legBendPoints, first.position]), map)
+  }
+
+  return { legs, total: preStart + legs.reduce((s, d) => s + d, 0) }
 }
 
 /**

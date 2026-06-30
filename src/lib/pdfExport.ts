@@ -377,6 +377,11 @@ function courseBoundsMm(
         positions.push(mapToMm(bp, map, printScale))
       }
     }
+    if (cc.legNavBendPoints) {
+      for (const bp of cc.legNavBendPoints) {
+        positions.push(mapToMm(bp, map, printScale))
+      }
+    }
   }
   return computeBounds(positions)
 }
@@ -609,7 +614,7 @@ function clipR(type: string, printScale: number, spec: EventSpec): number {
   return controlSymbolRadiusMm(type as ControlType, dims) * sf
 }
 
-function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[], gaps?: LegGap[]) {
+function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[], gaps?: LegGap[], markedRoute?: string) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
   doc.setLineWidth(dims.legW * sf)
@@ -641,7 +646,9 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
     }
   }
 
-  const gd = remapped?.length ? legGapDash(remapped, clippedLen) : null
+  // ponytail: IOF 707 2mm dash, 0.5mm gap for marked/taped routes
+  const gd = markedRoute ? { dash: [2, 0.5], phase: 0 }
+    : remapped?.length ? legGapDash(remapped, clippedLen) : null
   if (gd) {
     doc.setLineDashPattern(gd.dash, gd.phase)
     doc.setLineCap(0)
@@ -1436,14 +1443,65 @@ export async function exportCoursePdf(
           setColor(doc, course.color)
 
           if (pageCourse.type === 'linear' && pageCourse.controls.length >= 2) {
+            // Pre-start taped route
+            const firstCc = pageCourse.controls[0]
+            if (firstCc.markedRoute && firstCc.legBendPoints?.length) {
+              const startCtrl = controlMap.get(firstCc.controlId)
+              if (startCtrl) {
+                const bends = firstCc.legBendPoints.map(p => toPage(p))
+                const startPos = toPage(startCtrl.position)
+                drawLeg(doc, bends[0], startPos, 'control', startCtrl.type, courseScale, courseSpec,
+                  bends.length > 1 ? bends.slice(1) : undefined, undefined, 'full')
+              }
+            }
             for (let i = 0; i < pageCourse.controls.length - 1; i++) {
               const from = controlMap.get(pageCourse.controls[i].controlId)
               const to = controlMap.get(pageCourse.controls[i + 1].controlId)
               if (!from || !to) continue
               setColor(doc, course.color)
               const cc = pageCourse.controls[i + 1]
-              const bends = cc.legBendPoints?.map(p => toPage(p))
-              drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends, cc.legGaps)
+              const isLastLeg = i === pageCourse.controls.length - 2
+              const effectiveMarkedRoute = cc.markedRoute
+                || (isLastLeg && course.finishType === 'taped' ? 'full'
+                  : isLastLeg && course.finishType === 'funnel' ? 'partial'
+                  : undefined)
+              if (effectiveMarkedRoute === 'partial' && cc.markedRouteEnd) {
+                const dims = getSymbolDims(courseSpec)
+                const sf = specScaleFactor(courseSpec, courseScale)
+                const divider = toPage(cc.markedRouteEnd)
+                const fromPos = toPage(from.position)
+                const toPos = toPage(to.position)
+                const fromR = clipR(from.type, courseScale, courseSpec)
+                const toR = clipR(to.type, courseScale, courseSpec)
+                const bends = cc.legBendPoints?.map(p => toPage(p))
+                const navBends = cc.legNavBendPoints?.map(p => toPage(p))
+                // Taped segment: from → bends → divider (dashed, clip start only)
+                doc.setLineWidth(dims.legW * sf)
+                const tapedPts: Pos[] = bends?.length ? [fromPos, ...bends, divider] : [fromPos, divider]
+                const tapedClipped = clipPolyline(tapedPts, fromR, 0)
+                if (tapedClipped.length >= 2) {
+                  doc.setLineDashPattern([2, 0.5], 0)
+                  doc.setLineCap(0)
+                  doc.moveTo(tapedClipped[0].x, tapedClipped[0].y)
+                  for (let k = 1; k < tapedClipped.length; k++) doc.lineTo(tapedClipped[k].x, tapedClipped[k].y)
+                  doc.stroke()
+                  doc.setLineDashPattern([], 0)
+                  doc.setLineCap(1)
+                }
+                // Navigation segment: divider → nav bends → to (solid, clip end only)
+                setColor(doc, course.color)
+                const navPts: Pos[] = navBends?.length ? [divider, ...navBends, toPos] : [divider, toPos]
+                const navClipped = clipPolyline(navPts, 0, toR)
+                if (navClipped.length >= 2) {
+                  doc.setLineWidth(dims.legW * sf)
+                  doc.moveTo(navClipped[0].x, navClipped[0].y)
+                  for (let k = 1; k < navClipped.length; k++) doc.lineTo(navClipped[k].x, navClipped[k].y)
+                  doc.stroke()
+                }
+              } else {
+                const bends = cc.legBendPoints?.map(p => toPage(p))
+                drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, bends, cc.legGaps, effectiveMarkedRoute)
+              }
             }
           }
 

@@ -98,9 +98,12 @@ export interface CourseControl {
   controlId: string          // references Control.id
   scorePoints?: number       // score-O only
   legGaps?: LegGap[]         // gaps on the leg leading TO this control
-  legBendPoints?: MapPoint[] // intermediate waypoints on the leg leading TO this control
+  legBendPoints?: MapPoint[] // intermediate waypoints on the taped portion of the leg leading TO this control
+  legNavBendPoints?: MapPoint[] // intermediate waypoints on the nav (solid) portion of a partial/funnel leg
   labelOffset?: MapPoint     // offset from control center to label anchor, in map units
   exchangeMode?: 'exchange' | 'flip'
+  markedRoute?: 'full' | 'partial' // IOF 16.4 — leg TO this control drawn as dashed (taped route)
+  markedRouteEnd?: MapPoint        // partial only — divider point where taping ends and navigation begins
 }
 
 // ─── Loops & Variations ────────────────────────────────────────────────────

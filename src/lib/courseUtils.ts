@@ -5,6 +5,24 @@ import { distance } from './geometry'
 // IOF CMYK 35/85/0/0 converted to sRGB via US SWOP profile (same method as Purple Pen).
 export const IOF_PURPLE = '#AA499B'
 
+/** Distinct leg colors for the all-courses overview (controls stay IOF purple). */
+export const ALL_COURSES_OVERVIEW_PALETTE = [
+  '#2563eb', // blue
+  '#dc2626', // red
+  '#16a34a', // green
+  '#ca8a04', // amber
+  '#0891b2', // cyan
+  '#ea580c', // orange
+  '#9333ea', // violet
+  '#be185d', // pink
+  '#4d7c0f', // olive
+  '#7c3aed', // indigo
+] as const
+
+export function courseOverviewColor(courseIndex: number): string {
+  return ALL_COURSES_OVERVIEW_PALETTE[courseIndex % ALL_COURSES_OVERVIEW_PALETTE.length]
+}
+
 export function controlsById(controls: Control[]): Map<string, Control> {
   return new Map(controls.map(c => [c.id, c]))
 }

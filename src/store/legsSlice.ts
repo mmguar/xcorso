@@ -2,6 +2,12 @@ import type { MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { defaultControlLabel } from '../lib/courseUtils'
 
+type LegBendSegment = 'taped' | 'nav'
+
+function bendArrayKey(segment: LegBendSegment): 'legBendPoints' | 'legNavBendPoints' {
+  return segment === 'nav' ? 'legNavBendPoints' : 'legBendPoints'
+}
+
 export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) {
   function legName(courseId: string, courseControlId: string) {
     const p = get().project
@@ -16,25 +22,27 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
   }
 
   return {
-    addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number) => {
+    addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number, segment: LegBendSegment = 'taped') => {
       const ln = legName(courseId, courseControlId)
+      const key = bendArrayKey(segment)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
         if (!cc) return
-        if (!cc.legBendPoints) cc.legBendPoints = []
+        if (!cc[key]) cc[key] = []
         if (index !== undefined) {
-          cc.legBendPoints.splice(index, 0, point)
+          cc[key]!.splice(index, 0, point)
         } else {
-          cc.legBendPoints.push(point)
+          cc[key]!.push(point)
         }
       }, `Add bend ${ln}`)
     },
 
     beginMoveLegBendPoint: (label?: string) => h.pushUndoSnapshot(label ?? 'Move bend'),
 
-    moveLegBendPoint: (courseId: string, courseControlId: string, index: number, position: MapPoint) => {
+    moveLegBendPoint: (courseId: string, courseControlId: string, index: number, position: MapPoint, segment: LegBendSegment = 'taped') => {
+      const key = bendArrayKey(segment)
       h.mutateProjectSilent(p => {
         const ci = p.courses.findIndex(c => c.id === courseId)
         if (ci === -1) return
@@ -42,22 +50,23 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
         const cci = course.controls.findIndex(cc => cc.id === courseControlId)
         if (cci === -1) return
         const cc = course.controls[cci]
-        if (!cc.legBendPoints?.[index]) return
-        const legBendPoints = cc.legBendPoints.map((pt, j) => (j === index ? position : pt))
-        const newCc = { ...cc, legBendPoints }
+        if (!cc[key]?.[index]) return
+        const bends = cc[key]!.map((pt, j) => (j === index ? position : pt))
+        const newCc = { ...cc, [key]: bends }
         const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
         p.courses = p.courses.map((c, j) => (j === ci ? { ...course, controls: newControls } : c))
       })
     },
 
-    removeLegBendPoint: (courseId: string, courseControlId: string, index: number) => {
+    removeLegBendPoint: (courseId: string, courseControlId: string, index: number, segment: LegBendSegment = 'taped') => {
+      const key = bendArrayKey(segment)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc?.legBendPoints) return
-        cc.legBendPoints.splice(index, 1)
-        if (cc.legBendPoints.length === 0) cc.legBendPoints = undefined
+        if (!cc?.[key]) return
+        cc[key]!.splice(index, 1)
+        if (cc[key]!.length === 0) cc[key] = undefined
       }, `Remove bend ${legName(courseId, courseControlId)}`)
     },
 
@@ -67,7 +76,9 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
         const course = p.courses.find(c => c.id === courseId)
         if (!course) return
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.legBendPoints = undefined
+        if (!cc) return
+        cc.legBendPoints = undefined
+        cc.legNavBendPoints = undefined
       }, `Clear bends ${ln}`)
     },
 

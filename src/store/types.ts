@@ -7,10 +7,13 @@ import type {
 import type { LoadedMap } from '../lib/mapLoader'
 import type { CloudUser, VersionEntry, ShareRole } from '../lib/sync'
 
+export type CourseViewMode = 'single' | 'all-controls' | 'all-courses'
+
 export interface EditorState {
   activeTool: ActiveTool
   selectedControlId: string | null
   selectedCourseId: string | null
+  courseViewMode: CourseViewMode
   selectedVariationId: string | null
   selectedOverlayId: string | null
   selectedAnnotationId: string | null
@@ -117,6 +120,10 @@ export interface AppActions {
 
   setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => void
   toggleExchangeControl: (courseId: string, courseControlId: string) => void
+  toggleMarkedRoute: (courseId: string, courseControlId: string) => void
+  cycleMarkedRouteMode: (courseId: string, courseControlId: string) => void
+  beginMoveMarkedRouteEnd: () => void
+  moveMarkedRouteEnd: (courseId: string, courseControlId: string, position: MapPoint) => void
   setSelectedSubmap: (index: number | null) => void
   requestCenterOnControl: (controlId: string) => void
   setDraggingLabel: (controlId: string | null) => void
@@ -149,10 +156,10 @@ export interface AppActions {
   removeLegGapAtT: (courseId: string, courseControlId: string, t: number) => void
   clearLegGaps: (courseId: string, courseControlId: string) => void
 
-  addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number) => void
+  addLegBendPoint: (courseId: string, courseControlId: string, point: MapPoint, index?: number, segment?: 'taped' | 'nav') => void
   beginMoveLegBendPoint: (label?: string) => void
-  moveLegBendPoint: (courseId: string, courseControlId: string, index: number, position: MapPoint) => void
-  removeLegBendPoint: (courseId: string, courseControlId: string, index: number) => void
+  moveLegBendPoint: (courseId: string, courseControlId: string, index: number, position: MapPoint, segment?: 'taped' | 'nav') => void
+  removeLegBendPoint: (courseId: string, courseControlId: string, index: number, segment?: 'taped' | 'nav') => void
   clearLegBendPoints: (courseId: string, courseControlId: string) => void
 
   beginMoveCourseLabel: (label?: string) => void
@@ -200,6 +207,7 @@ export interface AppActions {
   setSelectedControl: (id: string | null) => void
   setDraggingControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
+  setAllCoursesView: () => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setOverprint: (overprint: number) => void
@@ -264,6 +272,7 @@ export const defaultEditor: EditorState = {
   activeTool: 'select',
   selectedControlId: null,
   selectedCourseId: null,
+  courseViewMode: 'all-controls',
   selectedVariationId: null,
   selectedOverlayId: null,
   selectedAnnotationId: null,
