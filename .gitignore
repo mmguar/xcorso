@@ -5,3 +5,4 @@ tests/internal
 *_review.md
 .env
 .env.local
+package_lock.json

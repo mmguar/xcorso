@@ -10,10 +10,10 @@ import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVari
 import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance, scaleBarLayoutMm } from './distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
-import { walkPath, clipPolyline, distance, polylineLength } from './geometry'
+import { walkPath, clipPolyline, distance, polylineLength, interpolatePolyline, catmullRomToCubics, flattenSmooth } from './geometry'
 import { hexToRgb, darkenHex } from './color'
 import {
-  startTriangleVertices,
+  startTriangleVertices, startTriangleAngle,
   exchangeTriangleVertices,
   routeXMarkSegments,
   crossingPointCurve,
@@ -558,7 +558,7 @@ function legGapDash(gaps: LegGap[], lineLen: number): { dash: number[]; phase: n
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
 
-function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec, isExchange = false, gaps?: CircleGap[]) {
+function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec, isExchange = false, gaps?: CircleGap[], startAngle = 0) {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
   const startSide = dims.startSide * sf
@@ -580,7 +580,7 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   const resetDash = gaps?.length ? () => doc.setLineDashPattern([], 0) : () => {}
 
   if (type === 'start') {
-    const [a, b, c] = startTriangleVertices(pos, startSide)
+    const [a, b, c] = startTriangleVertices(pos, startSide, startAngle)
     doc.setLineWidth(startSw)
     gapDash(startSide * 3, false)
     doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
@@ -608,10 +608,11 @@ function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: numbe
   }
 }
 
-function clipR(type: string, printScale: number, spec: EventSpec): number {
+function clipR(type: string, printScale: number, spec: EventSpec, gap = true): number {
   const dims = getSymbolDims(spec)
   const sf = specScaleFactor(spec, printScale)
-  return controlSymbolRadiusMm(type as ControlType, dims) * sf
+  const gapMul = gap ? 1.4 : 1
+  return controlSymbolRadiusMm(type as ControlType, dims) * sf * gapMul
 }
 
 function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, bendPoints?: Pos[], gaps?: LegGap[], markedRoute?: string) {
@@ -619,8 +620,9 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   const sf = specScaleFactor(spec, printScale)
   doc.setLineWidth(dims.legW * sf)
   doc.setLineCap(1)
-  const fromR = clipR(fromType, printScale, spec)
-  const toR = clipR(toType, printScale, spec)
+  const noGap = !!markedRoute
+  const fromR = clipR(fromType, printScale, spec, !noGap)
+  const toR = clipR(toType, printScale, spec, !noGap)
 
   const fullPts: Pos[] = bendPoints?.length ? [from, ...bendPoints, to] : [from, to]
   const fullLen = polylineLength(fullPts)
@@ -647,7 +649,7 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   }
 
   // ponytail: IOF 707 2mm dash, 0.5mm gap for marked/taped routes
-  const gd = markedRoute ? { dash: [2, 0.5], phase: 0 }
+  const gd = markedRoute ? { dash: [2 * sf, 0.5 * sf], phase: 0 }
     : remapped?.length ? legGapDash(remapped, clippedLen) : null
   if (gd) {
     doc.setLineDashPattern(gd.dash, gd.phase)
@@ -655,8 +657,11 @@ function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: strin
   }
 
   doc.moveTo(clipped[0].x, clipped[0].y)
-  for (let i = 1; i < clipped.length; i++) {
-    doc.lineTo(clipped[i].x, clipped[i].y)
+  if (markedRoute && clipped.length >= 3) {
+    const segs = catmullRomToCubics(clipped)
+    for (const s of segs) doc.curveTo(s.cp1.x, s.cp1.y, s.cp2.x, s.cp2.y, s.end.x, s.end.y)
+  } else {
+    for (let i = 1; i < clipped.length; i++) doc.lineTo(clipped[i].x, clipped[i].y)
   }
   doc.stroke()
 
@@ -1452,6 +1457,21 @@ export async function exportCoursePdf(
                 const startPos = toPage(startCtrl.position)
                 drawLeg(doc, bends[0], startPos, 'control', startCtrl.type, courseScale, courseSpec,
                   bends.length > 1 ? bends.slice(1) : undefined, undefined, 'full')
+                // Map issue point
+                if (firstCc.mapIssueT != null) {
+                  const pts = flattenSmooth([...bends, startPos])
+                  const pos = interpolatePolyline(pts, firstCc.mapIssueT)
+                  const sf = specScaleFactor(courseSpec, courseScale)
+                  const barHalf = 1.25 * sf
+                  const barSw = 0.6 * sf
+                  const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
+                  doc.setLineWidth(barSw)
+                  doc.setLineCap(0)
+                  doc.setLineDashPattern([], 0)
+                  doc.moveTo(pos.x + perpX * barHalf, pos.y + perpY * barHalf)
+                  doc.lineTo(pos.x - perpX * barHalf, pos.y - perpY * barHalf)
+                  doc.stroke()
+                }
               }
             }
             for (let i = 0; i < pageCourse.controls.length - 1; i++) {
@@ -1471,8 +1491,8 @@ export async function exportCoursePdf(
                 const divider = toPage(cc.markedRouteEnd)
                 const fromPos = toPage(from.position)
                 const toPos = toPage(to.position)
-                const fromR = clipR(from.type, courseScale, courseSpec)
-                const toR = clipR(to.type, courseScale, courseSpec)
+                const fromR = clipR(from.type, courseScale, courseSpec, false)
+                const toR = clipR(to.type, courseScale, courseSpec, false)
                 const bends = cc.legBendPoints?.map(p => toPage(p))
                 const navBends = cc.legNavBendPoints?.map(p => toPage(p))
                 // Taped segment: from → bends → divider (dashed, clip start only)
@@ -1480,10 +1500,15 @@ export async function exportCoursePdf(
                 const tapedPts: Pos[] = bends?.length ? [fromPos, ...bends, divider] : [fromPos, divider]
                 const tapedClipped = clipPolyline(tapedPts, fromR, 0)
                 if (tapedClipped.length >= 2) {
-                  doc.setLineDashPattern([2, 0.5], 0)
+                  doc.setLineDashPattern([2 * sf, 0.5 * sf], 0)
                   doc.setLineCap(0)
                   doc.moveTo(tapedClipped[0].x, tapedClipped[0].y)
-                  for (let k = 1; k < tapedClipped.length; k++) doc.lineTo(tapedClipped[k].x, tapedClipped[k].y)
+                  if (tapedClipped.length >= 3) {
+                    const tSegs = catmullRomToCubics(tapedClipped)
+                    for (const s of tSegs) doc.curveTo(s.cp1.x, s.cp1.y, s.cp2.x, s.cp2.y, s.end.x, s.end.y)
+                  } else {
+                    for (let k = 1; k < tapedClipped.length; k++) doc.lineTo(tapedClipped[k].x, tapedClipped[k].y)
+                  }
                   doc.stroke()
                   doc.setLineDashPattern([], 0)
                   doc.setLineCap(1)
@@ -1520,7 +1545,13 @@ export async function exportCoursePdf(
             const pos = toPage(ctrl.position)
             setColor(doc, course.color)
             const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
-            drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange, ctrl.gaps)
+            let sAngle = 0
+            if (ctrl.type === 'start') {
+              const ccIdx = pageCourse.controls.findIndex(c => c.controlId === cc.controlId)
+              const nextCtrl = ccIdx >= 0 ? controlMap.get(pageCourse.controls[ccIdx + 1]?.controlId) : undefined
+              if (nextCtrl) sAngle = startTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
+            }
+            drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, isExchange, ctrl.gaps, sAngle)
             const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
             if (ctrl.type === 'control' && (!isSubmapStart || project.labelSubmapStart)) {
               const lo = cc.labelOffset ?? ctrl.labelOffset

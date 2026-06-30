@@ -14,7 +14,7 @@ import { unitsPerMm, controlsById, defaultControlLabel } from '../../lib/courseU
 import { legKey, mapUnitsToMetres, formatDistance } from '../../lib/distance'
 import { polylineLength } from '../../lib/geometry'
 import { getSymbolDims, symbolScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
-import { startTriangleVertices } from '../../lib/symbolGeometry'
+import { startTriangleVertices, startTriangleAngle } from '../../lib/symbolGeometry'
 
 interface Props {
   course: Course | null
@@ -120,7 +120,11 @@ export const MeasureLayer = memo(function MeasureLayer({ course, controls, map, 
     const { x, y } = ctrl.position
     const common = { fill: 'none', stroke: COLOR, strokeWidth: symStrokeW }
     if (ctrl.type === 'start') {
-      const pts = startTriangleVertices(ctrl.position, dims.startSide * symScale)
+      let angle = 0
+      const ccIdx = course.controls.findIndex(cc => cc.controlId === ctrl.id)
+      const nextCtrl = ccIdx >= 0 ? controlMap.get(course.controls[ccIdx + 1]?.controlId) : undefined
+      if (nextCtrl) angle = startTriangleAngle(ctrl.position, nextCtrl.position)
+      const pts = startTriangleVertices(ctrl.position, dims.startSide * symScale, angle)
       elements.push(
         <polygon key={`mc-${ctrl.id}`} points={pts.map(p => `${p.x},${p.y}`).join(' ')} {...common} strokeLinejoin="round" />
       )

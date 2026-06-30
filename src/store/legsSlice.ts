@@ -82,6 +82,40 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
       }, `Clear bends ${ln}`)
     },
 
+    beginMoveMapIssue: () => h.pushUndoSnapshot('Move map issue point'),
+
+    moveMapIssue: (courseId: string, courseControlId: string, t: number) => {
+      h.mutateProjectSilent(p => {
+        const ci = p.courses.findIndex(c => c.id === courseId)
+        if (ci === -1) return
+        const course = p.courses[ci]
+        const cci = course.controls.findIndex(cc => cc.id === courseControlId)
+        if (cci === -1) return
+        const cc = course.controls[cci]
+        const newCc = { ...cc, mapIssueT: t }
+        const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
+        p.courses = p.courses.map((c, j) => (j === ci ? { ...course, controls: newControls } : c))
+      })
+    },
+
+    removeMapIssue: (courseId: string, courseControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.mapIssueT = undefined
+      }, 'Remove map issue point')
+    },
+
+    addMapIssue: (courseId: string, courseControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (cc) cc.mapIssueT = 0.5
+      }, 'Add map issue point')
+    },
+
     beginMoveCourseLabel: (label?: string) => h.pushUndoSnapshot(label ?? 'Move course label'),
 
     moveCourseLabel: (courseId: string, courseControlId: string, offset: MapPoint) => {

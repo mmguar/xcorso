@@ -35,6 +35,8 @@ export interface EditorState {
   gapRebuild: boolean
   // Pan-to-point request (seq bumps so repeat clicks on the same control re-fire).
   centerRequest: { point: MapPoint; seq: number } | null
+  validationIgnoredCriteria: string[]
+  validationIgnoredInstances: string[]
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline'
@@ -162,6 +164,11 @@ export interface AppActions {
   removeLegBendPoint: (courseId: string, courseControlId: string, index: number, segment?: 'taped' | 'nav') => void
   clearLegBendPoints: (courseId: string, courseControlId: string) => void
 
+  beginMoveMapIssue: () => void
+  moveMapIssue: (courseId: string, courseControlId: string, t: number) => void
+  removeMapIssue: (courseId: string, courseControlId: string) => void
+  addMapIssue: (courseId: string, courseControlId: string) => void
+
   beginMoveCourseLabel: (label?: string) => void
   moveCourseLabel: (courseId: string, courseControlId: string, offset: MapPoint) => void
 
@@ -232,6 +239,8 @@ export interface AppActions {
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
 
   toggleLocked: () => void
+  toggleIgnoreCriterion: (criterionId: string) => void
+  toggleIgnoreInstance: (instanceKey: string) => void
 
   switchProject: (id: string) => Promise<void>
 
@@ -293,4 +302,6 @@ export const defaultEditor: EditorState = {
   layoutSnapRequest: 0,
   gapRebuild: false,
   centerRequest: null,
+  validationIgnoredCriteria: [],
+  validationIgnoredInstances: [],
 }

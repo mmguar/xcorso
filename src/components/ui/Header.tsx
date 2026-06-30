@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Save, FileDown, Map, ImageUp, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn, History, Share2, UserPlus, X, Eye, Lock, LockOpen } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Save, FileDown, Map, ChevronDown, Home, Plus, Cloud, CloudOff, RefreshCw, AlertTriangle, LogOut, LogIn, History, Share2, UserPlus, X, Eye, Lock, LockOpen, Check } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT, LanguageSwitcher } from '../../i18n'
 import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
@@ -8,6 +8,8 @@ import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
 import { logout as cloudLogout, addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
 import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
+import { validateProject, countActiveIssues } from '../../lib/validation'
+import { ValidationDialog } from './ValidationDialog'
 import type { EventSpec, MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
@@ -40,8 +42,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   const fetchVersionHistory = useStore(s => s.fetchVersionHistory)
   const restoreVersionAction = useStore(s => s.restoreVersion)
   const versionHistory = useStore(s => s.versionHistory)
-  const [exportOpen, setExportOpen] = useState(false)
-  const exportRef = useRef<HTMLDivElement>(null)
+  const [validationOpen, setValidationOpen] = useState(false)
   const mapInputRef = useRef<HTMLInputElement>(null)
 
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -95,16 +96,13 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
     return () => document.removeEventListener('pointerdown', handleClick)
   }, [shareOpen, isOwner, projectId])
 
-  useEffect(() => {
-    if (!exportOpen) return
-    function handleClick(e: MouseEvent) {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setExportOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', handleClick)
-    return () => document.removeEventListener('pointerdown', handleClick)
-  }, [exportOpen])
+  const ignoredCriteria = useStore(s => s.editor.validationIgnoredCriteria)
+  const ignoredInstances = useStore(s => s.editor.validationIgnoredInstances)
+  const validationResult = useMemo(() => validateProject(project), [project])
+  const activeIssues = useMemo(
+    () => countActiveIssues(validationResult, ignoredCriteria, ignoredInstances),
+    [validationResult, ignoredCriteria, ignoredInstances],
+  )
 
   async function handleSaveProject() {
     const blob = await saveProjectFile(project, mapFileData)
@@ -115,7 +113,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
     const xml = version === '2.0' ? exportIofXmlV2(project) : exportIofXml(project)
     const blob = new Blob([xml], { type: 'application/xml' })
     downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}_iof${version === '2.0' ? '2' : '3'}.xml`)
-    setExportOpen(false)
+    setValidationOpen(false)
   }
 
   async function handleAddShare() {
@@ -422,55 +420,26 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
           </span>
         )}
 
-        {/* Export dropdown (save .oco, export IOF, replace map) */}
-        <div className="relative" ref={exportRef}>
-          <button
-            data-tour="export-menu"
-            onClick={() => setExportOpen(o => !o)}
-            className="flex items-center gap-1 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-2.5 py-1.5 transition-colors"
-          >
-            <FileDown size={14} />
-            <ChevronDown size={12} />
-          </button>
-          {exportOpen && (
-            <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
-              <button
-                onClick={() => { handleSaveProject(); setExportOpen(false) }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Save size={14} />
-                {t('header.saveOco')}
-              </button>
-              <button
-                data-tour="export-xml"
-                onClick={() => handleExportIof('3.0')}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <FileDown size={14} />
-                {t('header.exportIofV3')}
-              </button>
-              <button
-                onClick={() => handleExportIof('2.0')}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <FileDown size={14} />
-                {t('header.exportIofV2')}
-              </button>
-              {!isViewer && (
-                <>
-                  <div className="border-t border-gray-100 my-1" />
-                  <button
-                    onClick={() => { mapInputRef.current?.click(); setExportOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <ImageUp size={14} />
-                    {t('header.replaceMap')}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Export & validation */}
+        <button
+          data-tour="export-menu"
+          onClick={() => setValidationOpen(true)}
+          className={`flex items-center gap-1 text-xs font-medium text-white rounded-lg px-2.5 py-1.5 transition-colors ${activeIssues === 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}`}
+        >
+          <FileDown size={14} />
+          {activeIssues > 0
+            ? <AlertTriangle size={12} />
+            : <Check size={12} />
+          }
+        </button>
+        {validationOpen && (
+          <ValidationDialog
+            onClose={() => setValidationOpen(false)}
+            onExportIof={handleExportIof}
+            onSaveProject={handleSaveProject}
+            onReplaceMap={() => mapInputRef.current?.click()}
+          />
+        )}
         <input
           ref={mapInputRef}
           type="file"

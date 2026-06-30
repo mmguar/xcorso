@@ -10,7 +10,7 @@ import { unitsPerMm, computeSubmaps, controlsById } from '../../lib/courseUtils'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor } from '../../lib/symbolSpec'
-import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius } from '../../lib/geometry'
+import { clipPolylineStart, clipPolylineEnd, polylineLength, clipRadius, interpolatePolyline, smoothPathD, flattenSmooth } from '../../lib/geometry'
 import { legGapDashArray } from '../../lib/gapDash'
 
 interface Props {
@@ -67,17 +67,17 @@ function renderLegs(
       const pts: MapPoint[] = [...bends, startCtrl.position]
       const clipped = clipPolylineEnd(pts, startR)
       if (clipped.length >= 2) {
-        const pointsStr = clipped.map(p => `${p.x},${p.y}`).join(' ')
+        const d = smoothPathD(clipped)
         const legKey = `${course.id}-prestart`
         if (outlineSw > 0) {
           elements.push(
-            <polyline key={`${legKey}-outline`} points={pointsStr} fill="none"
+            <path key={`${legKey}-outline`} d={d} fill="none"
               stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
               strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={markedRouteDash} />
           )
         }
         elements.push(
-          <polyline key={legKey} points={pointsStr} fill="none"
+          <path key={legKey} d={d} fill="none"
             stroke={legColor} strokeWidth={strokeWidth}
             strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={markedRouteDash} />
         )
@@ -98,6 +98,61 @@ function renderLegs(
     }
   }
 
+  // Green "+" to re-add map issue point when deleted
+  if (firstCc.markedRoute && firstCc.mapIssueT == null && firstCc.legBendPoints?.length && !handlesOnly) {
+    const addPt = firstCc.legBendPoints[0]
+    const addR = 0.8 * upm
+    const arm = addR * 0.5
+    elements.push(
+      <circle key="mapissue-add-bg" cx={addPt.x} cy={addPt.y} r={addR}
+        fill="#16a34a" stroke="white" strokeWidth={strokeWidth * 0.4} />,
+      <line key="mapissue-add-v" x1={addPt.x} y1={addPt.y - arm} x2={addPt.x} y2={addPt.y + arm}
+        stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+      <line key="mapissue-add-h" x1={addPt.x - arm} y1={addPt.y} x2={addPt.x + arm} y2={addPt.y}
+        stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+    )
+  }
+
+  // Map issue point (perpendicular bar on pre-start taped route)
+  if (firstCc.markedRoute && firstCc.mapIssueT != null && firstCc.legBendPoints?.length) {
+    const startCtrl = controlMap.get(firstCc.controlId)
+    if (startCtrl) {
+      const pts: MapPoint[] = [...firstCc.legBendPoints, startCtrl.position]
+      const pos = interpolatePolyline(flattenSmooth(pts), firstCc.mapIssueT)
+      const barHalf = 1.25 * upm
+      const barSw = 0.6 * upm * scaleFactor * appearance.lineWidth
+      const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
+      if (!handlesOnly) {
+        const x1 = pos.x + perpX * barHalf, y1 = pos.y + perpY * barHalf
+        const x2 = pos.x - perpX * barHalf, y2 = pos.y - perpY * barHalf
+        if (outlineSw > 0) {
+          elements.push(
+            <line key="mapissue-outline" x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={appearance.outlineColor} strokeWidth={barSw + outlineSw * 2} strokeLinecap="butt" />
+          )
+        }
+        elements.push(
+          <line key="mapissue" x1={x1} y1={y1} x2={x2} y2={y2}
+            stroke={legColor} strokeWidth={barSw} strokeLinecap="butt" />
+        )
+      }
+      if (!handlesOnly) {
+        const delD = barHalf + 1.5 * upm
+        const delX = pos.x + perpX * delD, delY = pos.y + perpY * delD
+        const delR = 0.8 * upm
+        const xArm = delR * 0.5
+        elements.push(
+          <circle key="mapissue-del-bg" cx={delX} cy={delY} r={delR}
+            fill="#dc2626" stroke="white" strokeWidth={strokeWidth * 0.4} />,
+          <line key="mapissue-del-x1" x1={delX - xArm} y1={delY - xArm} x2={delX + xArm} y2={delY + xArm}
+            stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+          <line key="mapissue-del-x2" x1={delX - xArm} y1={delY + xArm} x2={delX + xArm} y2={delY - xArm}
+            stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+        )
+      }
+    }
+  }
+
   for (let i = 0; i < course.controls.length - 1; i++) {
     const fromControl = controlMap.get(course.controls[i].controlId)
     const toControl = controlMap.get(course.controls[i + 1].controlId)
@@ -112,8 +167,9 @@ function renderLegs(
         : undefined)
     const bendPoints = cc.legBendPoints
     const navBendPoints = cc.legNavBendPoints
-    const fromR = clipRadius(fromControl, mapScale, upm, appearance.controlScale, spec)
-    const toR = clipRadius(toControl, mapScale, upm, appearance.controlScale, spec)
+    const noGap = !!effectiveMarkedRoute
+    const fromR = clipRadius(fromControl, mapScale, upm, appearance.controlScale, spec, !noGap)
+    const toR = clipRadius(toControl, mapScale, upm, appearance.controlScale, spec, !noGap)
 
     // Partial marked route: dashed to divider, solid from divider to control
     if (effectiveMarkedRoute === 'partial' && cc.markedRouteEnd) {
@@ -126,16 +182,16 @@ function renderLegs(
         : [fromControl.position, divider]
       const tapedClipped = clipPolylineStart(tapedPath, fromR)
       if (!handlesOnly && tapedClipped.length >= 2) {
-        const tapedStr = tapedClipped.map(p => `${p.x},${p.y}`).join(' ')
+        const tapedD = smoothPathD(tapedClipped)
         if (outlineSw > 0) {
           elements.push(
-            <polyline key={`${legKey}-taped-outline`} points={tapedStr} fill="none"
+            <path key={`${legKey}-taped-outline`} d={tapedD} fill="none"
               stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
               strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={markedRouteDash} />
           )
         }
         elements.push(
-          <polyline key={`${legKey}-taped`} points={tapedStr} fill="none"
+          <path key={`${legKey}-taped`} d={tapedD} fill="none"
             stroke={legColor} strokeWidth={strokeWidth}
             strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={markedRouteDash} />
         )
@@ -207,35 +263,26 @@ function renderLegs(
       const dashArray = effectiveMarkedRoute ? markedRouteDash
         : remappedGaps?.length ? legGapsToDashArray(remappedGaps, clippedLen) : null
 
-      const pointsStr = clipped.map(p => `${p.x},${p.y}`).join(' ')
       const legKey = `${course.id}-${course.controls[i].id}-${cc.id}`
       const linecap = dashArray ? 'butt' : 'round'
+      const shapeProps = effectiveMarkedRoute
+        ? { d: smoothPathD(clipped) } as const
+        : { points: clipped.map(p => `${p.x},${p.y}`).join(' ') } as const
+      const Tag = effectiveMarkedRoute ? 'path' : 'polyline'
       if (!handlesOnly && outlineSw > 0) {
         elements.push(
-          <polyline
-            key={`${legKey}-outline`}
-            points={pointsStr}
-            fill="none"
-            stroke={appearance.outlineColor}
-            strokeWidth={strokeWidth + outlineSw * 2}
-            strokeLinecap={linecap}
-            strokeLinejoin="round"
-            {...(dashArray ? { strokeDasharray: dashArray } : {})}
-          />
+          <Tag key={`${legKey}-outline`} {...shapeProps} fill="none"
+            stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
+            strokeLinecap={linecap} strokeLinejoin="round"
+            {...(dashArray ? { strokeDasharray: dashArray } : {})} />
         )
       }
       if (!handlesOnly) {
         elements.push(
-          <polyline
-            key={legKey}
-            points={pointsStr}
-            fill="none"
-            stroke={legColor}
-            strokeWidth={strokeWidth}
-            strokeLinecap={linecap}
-            strokeLinejoin="round"
-            {...(dashArray ? { strokeDasharray: dashArray } : {})}
-          />
+          <Tag key={legKey} {...shapeProps} fill="none"
+            stroke={legColor} strokeWidth={strokeWidth}
+            strokeLinecap={linecap} strokeLinejoin="round"
+            {...(dashArray ? { strokeDasharray: dashArray } : {})} />
         )
       }
 
