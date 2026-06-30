@@ -31,22 +31,45 @@ function childEls(el: Element, tag: string): Element[] {
 
 const DEFAULT_COURSE_COLOR = IOF_PURPLE
 
-export function importIofXml(xmlString: string, map: MapConfig): IofImportResult {
+function parseXml(xmlString: string): Document {
   const doc = new DOMParser().parseFromString(xmlString, 'application/xml')
   const parseError = doc.querySelector('parsererror')
   if (parseError) throw new Error('Invalid XML')
+  return doc
+}
 
+function parseIofCode(
+  codeStr: string,
+  type: ControlType,
+  nextCode: { value: number },
+): { code: number; label?: string } {
+  if (type === 'start') {
+    const m = codeStr.match(/^S(\d+)$/i)
+    const code = m ? parseInt(m[1]) : /^\d+$/.test(codeStr) ? parseInt(codeStr) : 1
+    const label = !m && !/^\d+$/.test(codeStr) ? codeStr : undefined
+    return { code, label }
+  }
+  if (type === 'finish') {
+    const m = codeStr.match(/^F(\d+)$/i)
+    const code = m ? parseInt(m[1]) : /^\d+$/.test(codeStr) ? parseInt(codeStr) : 1
+    const label = !m && !/^\d+$/.test(codeStr) ? codeStr : undefined
+    return { code, label }
+  }
+  const num = parseInt(codeStr)
+  if (!isNaN(num)) return { code: num }
+  return { code: nextCode.value++, label: codeStr }
+}
+
+function importIofXmlV3(doc: Document, map: MapConfig): IofImportResult {
   const root = doc.documentElement
   const rcd = childEl(root, 'RaceCourseData')
   if (!rcd) throw new Error('No RaceCourseData element found')
 
-  // -- Controls --
-  const controlEls = childEls(rcd, 'Control')
   const codeToId = new Map<string, string>()
   const controls: Control[] = []
-  let nextCode = 31
+  const nextCode = { value: 31 }
 
-  for (const el of controlEls) {
+  for (const el of childEls(rcd, 'Control')) {
     const typeAttr = (el.getAttribute('type') ?? 'Control').toLowerCase()
     const type: ControlType = typeAttr === 'start' ? 'start' : typeAttr === 'finish' ? 'finish' : 'control'
 
@@ -62,28 +85,12 @@ export function importIofXml(xmlString: string, map: MapConfig): IofImportResult
       map,
     )
 
-    let code: number
-    let label: string | undefined
-
-    if (type === 'start') {
-      const m = idText.match(/^S(\d+)$/i)
-      code = m ? parseInt(m[1]) : 1
-      if (!m && !/^\d+$/.test(idText)) label = idText
-    } else if (type === 'finish') {
-      const m = idText.match(/^F(\d+)$/i)
-      code = m ? parseInt(m[1]) : 1
-      if (!m && !/^\d+$/.test(idText)) label = idText
-    } else {
-      const num = parseInt(idText)
-      if (!isNaN(num)) { code = num } else { code = nextCode++; label = idText }
-    }
-
+    const { code, label } = parseIofCode(idText, type, nextCode)
     const id = crypto.randomUUID()
     codeToId.set(idText, id)
     controls.push({ id, type, code, position, ...(label ? { label } : {}) })
   }
 
-  // -- Courses --
   const courses: Course[] = []
 
   for (const el of childEls(rcd, 'Course')) {
@@ -122,7 +129,6 @@ export function importIofXml(xmlString: string, map: MapConfig): IofImportResult
     })
   }
 
-  // -- Class assignments --
   const classes: RaceClass[] = []
 
   for (const el of childEls(rcd, 'ClassCourseAssignment')) {
@@ -135,4 +141,165 @@ export function importIofXml(xmlString: string, map: MapConfig): IofImportResult
   }
 
   return { controls, courses, classes }
+}
+
+function importIofXmlV2(doc: Document, map: MapConfig): IofImportResult {
+  const root = doc.documentElement
+  if (root.localName !== 'CourseData') throw new Error('No CourseData element found')
+
+  const codeToId = new Map<string, string>()
+  const controls: Control[] = []
+  const nextCode = { value: 31 }
+
+  function addControl(codeStr: string | null, type: ControlType, mapPosEl: Element | null) {
+    if (!codeStr || codeToId.has(codeStr)) return
+    if (!mapPosEl) return
+
+    const position = fromIofCoords(
+      parseFloat(mapPosEl.getAttribute('x') ?? '0'),
+      parseFloat(mapPosEl.getAttribute('y') ?? '0'),
+      map,
+    )
+
+    const { code, label } = parseIofCode(codeStr, type, nextCode)
+    const id = crypto.randomUUID()
+    codeToId.set(codeStr, id)
+    controls.push({ id, type, code, position, ...(label ? { label } : {}) })
+  }
+
+  for (const el of childEls(root, 'StartPoint')) {
+    addControl(childText(el, 'StartPointCode'), 'start', childEl(el, 'MapPosition'))
+  }
+  for (const el of childEls(root, 'Control')) {
+    addControl(childText(el, 'ControlCode'), 'control', childEl(el, 'MapPosition'))
+  }
+  for (const el of childEls(root, 'FinishPoint')) {
+    addControl(childText(el, 'FinishPointCode'), 'finish', childEl(el, 'MapPosition'))
+  }
+
+  function ensurePoint(
+    parent: Element,
+    codeTag: string,
+    pointTag: string,
+    type: ControlType,
+  ): string | null {
+    const code = childText(parent, codeTag)
+    if (code) return code
+
+    const pointEl = childEl(parent, pointTag)
+    if (!pointEl) return null
+
+    const pointCode = childText(pointEl, codeTag)
+    if (!pointCode) return null
+
+    addControl(pointCode, type, childEl(pointEl, 'MapPosition'))
+    return pointCode
+  }
+
+  function courseControlCode(ccEl: Element): string | null {
+    const code = childText(ccEl, 'ControlCode')
+    if (code) return code
+
+    const controlEl = childEl(ccEl, 'Control')
+    if (!controlEl) return null
+
+    const nestedCode = childText(controlEl, 'ControlCode')
+    if (nestedCode && !codeToId.has(nestedCode)) {
+      addControl(nestedCode, 'control', childEl(controlEl, 'MapPosition'))
+    }
+    return nestedCode
+  }
+
+  function isMarkedRoute(ccEl: Element): boolean {
+    if (ccEl.getAttribute('markedRoute') === 'Y') return true
+    return childEls(ccEl, 'SpecialInstruction').some(
+      el => el.textContent?.trim().toLowerCase() === 'markedroute',
+    )
+  }
+
+  const courses: Course[] = []
+  const classes: RaceClass[] = []
+
+  for (const courseEl of childEls(root, 'Course')) {
+    const courseName = childText(courseEl, 'CourseName') ?? 'Unnamed'
+    const classNames = childEls(courseEl, 'ClassShortName')
+      .map(el => el.textContent?.trim())
+      .filter((name): name is string => Boolean(name))
+    const variations = childEls(courseEl, 'CourseVariation')
+
+    for (const varEl of variations) {
+      const varName = childText(varEl, 'Name')
+      const name = variations.length > 1
+        ? `${courseName} - ${varName ?? childText(varEl, 'CourseVariationId') ?? 'Variation'}`
+        : (varName ?? courseName)
+
+      const startCode = ensurePoint(varEl, 'StartPointCode', 'StartPoint', 'start')
+      const finishCode = ensurePoint(varEl, 'FinishPointCode', 'FinishPoint', 'finish')
+
+      const ccEls = childEls(varEl, 'CourseControl')
+      ccEls.sort((a, b) => {
+        const seqA = parseInt(childText(a, 'Sequence') ?? '0', 10)
+        const seqB = parseInt(childText(b, 'Sequence') ?? '0', 10)
+        return seqA - seqB
+      })
+
+      const courseControls: CourseControl[] = []
+
+      if (startCode) {
+        const controlId = codeToId.get(startCode)
+        if (controlId) courseControls.push({ id: crypto.randomUUID(), controlId })
+      }
+
+      for (const ccEl of ccEls) {
+        const code = courseControlCode(ccEl)
+        if (!code) continue
+        const controlId = codeToId.get(code)
+        if (!controlId) continue
+        courseControls.push({
+          id: crypto.randomUUID(),
+          controlId,
+          ...(isMarkedRoute(ccEl) ? { markedRoute: 'full' as const } : {}),
+        })
+      }
+
+      if (finishCode) {
+        const controlId = codeToId.get(finishCode)
+        if (controlId) courseControls.push({ id: crypto.randomUUID(), controlId })
+      }
+
+      if (courseControls.length === 0) continue
+
+      const climbText = childText(varEl, 'CourseClimb')
+      const course: Course = {
+        id: crypto.randomUUID(),
+        name,
+        type: 'linear',
+        controls: courseControls,
+        color: DEFAULT_COURSE_COLOR,
+        ...(climbText ? { climb: parseInt(climbText, 10) } : {}),
+      }
+      courses.push(course)
+
+      for (const className of classNames) {
+        classes.push({ id: crypto.randomUUID(), name: className, courseId: course.id })
+      }
+    }
+  }
+
+  return { controls, courses, classes }
+}
+
+export function importIofXml(xmlString: string, map: MapConfig): IofImportResult {
+  const doc = parseXml(xmlString)
+  const root = doc.documentElement
+
+  if (childEl(root, 'RaceCourseData')) {
+    return importIofXmlV3(doc, map)
+  }
+
+  if (root.localName === 'CourseData') {
+    return importIofXmlV2(doc, map)
+  }
+
+  throw new Error('Unrecognized IOF XML format')
 }

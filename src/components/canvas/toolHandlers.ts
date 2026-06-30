@@ -3,7 +3,7 @@ import { useStore } from '../../store'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { normalizeDeg } from '../../lib/geometry'
 import { resolveSpec, getSymbolDims, symbolScaleFactor } from '../../lib/symbolSpec'
-import { screenToMap, findControlAt, findLegAt, findBendPointAt } from './hitTesting'
+import { screenToMap, findControlAt, findLegAt, findBendPointAt, legBendInsertIndex } from './hitTesting'
 
 function gapArcLenMap(project: Project, selectedCourseId: string | null, controlScale: number, gapSize: number): number {
   const upm = unitsPerMm(project.map)
@@ -88,14 +88,14 @@ export function handleBendTap(sx: number, sy: number, vp: Viewport, project: Pro
   const cc = course.controls.find(c => c.id === legHit.courseControlId)
   if (!cc) return
 
-  const insertIdx = legHit.segmentIndex
-  useStore.getState().addLegBendPoint(legHit.courseId, legHit.courseControlId, mapPt, insertIdx)
+  const { segment, index: insertIdx } = legBendInsertIndex(course, cc, legHit.segmentIndex)
+  useStore.getState().addLegBendPoint(legHit.courseId, legHit.courseControlId, mapPt, insertIdx, segment)
 }
 
 export function handleBendRightClick(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {
   const bpHit = findBendPointAt(sx, sy, vp, project, selectedCourseId)
   if (bpHit) {
-    useStore.getState().removeLegBendPoint(bpHit.courseId, bpHit.courseControlId, bpHit.bendIndex)
+    useStore.getState().removeLegBendPoint(bpHit.courseId, bpHit.courseControlId, bpHit.bendIndex, bpHit.nav ? 'nav' : 'taped')
     return
   }
   const legHit = findLegAt(sx, sy, vp, project, selectedCourseId)

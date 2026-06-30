@@ -306,6 +306,9 @@ export function exportIofXmlV2(project: Project): string {
       if (idx > 0 && distances.legs[idx - 1] > 0) {
         children.push(`        <LegLength>${Math.round(distances.legs[idx - 1])}</LegLength>`)
       }
+      if (cc.markedRoute) {
+        children.push('        <SpecialInstruction>MarkedRoute</SpecialInstruction>')
+      }
       return [
         '      <CourseControl>',
         ...children,

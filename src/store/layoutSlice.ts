@@ -186,6 +186,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           measureMode: false,
           measureCourseId: null,
           selectedCourseId: courseId,
+          courseViewMode: 'single',
           selectedControlId: null,
           selectedOverlayId: null,
           activeTool: 'select',

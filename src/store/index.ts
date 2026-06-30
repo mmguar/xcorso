@@ -208,6 +208,7 @@ export const useStore = create<Store>((set, get) => {
             ...state.editor,
             ...(leavingMeasure ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] } : {}),
             selectedCourseId: id,
+            courseViewMode: id ? 'single' : 'all-controls',
             selectedVariationId: null,
             selectedSubmapIndex: null,
             selectedControlId: id ? null : state.editor.selectedControlId,
@@ -215,6 +216,26 @@ export const useStore = create<Store>((set, get) => {
             selectedAnnotationId: id ? null : state.editor.selectedAnnotationId,
             activeTool: id ? (courseOnlyTool ? tool : 'select') : (courseOnlyTool ? 'select' : tool),
             pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
+          },
+        }
+      })
+    },
+
+    setAllCoursesView: () => {
+      set(state => {
+        const tool = state.editor.activeTool
+        const courseOnlyTool = tool === 'gap' || tool === 'bend'
+        const leavingMeasure = state.editor.measureMode
+        return {
+          editor: {
+            ...state.editor,
+            ...(leavingMeasure ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] } : {}),
+            selectedCourseId: null,
+            courseViewMode: 'all-courses',
+            selectedVariationId: null,
+            selectedSubmapIndex: null,
+            activeTool: courseOnlyTool ? 'select' : tool,
+            pendingAnnotationPoints: [],
           },
         }
       })
@@ -245,6 +266,7 @@ export const useStore = create<Store>((set, get) => {
           layoutMode: false,
           layoutCourseId: null,
           selectedCourseId: courseId,
+          courseViewMode: 'single',
           activeTool: 'select',
           selectedControlId: null,
           selectedAnnotationId: null,
