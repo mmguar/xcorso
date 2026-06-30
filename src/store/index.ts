@@ -238,6 +238,10 @@ export const useStore = create<Store>((set, get) => {
       mutateProject(p => { p.spec = spec }, 'Update event spec')
     },
 
+    updateProjectMeta: (fields) => {
+      mutateProject(p => { Object.assign(p.meta, fields) }, 'Update event info')
+    },
+
     // ── Map ──────────────────────────────────────────────────────────────
 
     setMapScale: (scale, source) => {
