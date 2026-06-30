@@ -177,6 +177,22 @@ export const useStore = create<Store>((set, get) => {
       mutateProjectLayout(p => { p.locked = !p.locked }, 'Toggle lock')
     },
 
+    toggleIgnoreCriterion: (criterionId) => {
+      set(s => {
+        const arr = s.editor.validationIgnoredCriteria
+        const next = arr.includes(criterionId) ? arr.filter(x => x !== criterionId) : [...arr, criterionId]
+        return { editor: { ...s.editor, validationIgnoredCriteria: next } }
+      })
+    },
+
+    toggleIgnoreInstance: (instanceKey) => {
+      set(s => {
+        const arr = s.editor.validationIgnoredInstances
+        const next = arr.includes(instanceKey) ? arr.filter(x => x !== instanceKey) : [...arr, instanceKey]
+        return { editor: { ...s.editor, validationIgnoredInstances: next } }
+      })
+    },
+
     setActiveTool: (tool) => {
       set(state => ({
         editor: { ...state.editor, activeTool: tool, pendingAnnotationPoints: [], gapRebuild: tool === 'gap' ? state.editor.gapRebuild : false },
