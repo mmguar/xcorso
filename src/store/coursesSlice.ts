@@ -424,13 +424,16 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           cc.markedRoute = undefined
         } else {
           cc.markedRoute = 'full'
-          // Auto-add a bend point for the start control so the drag handle is immediate
-          if (course.controls[0] === cc && !cc.legBendPoints?.length) {
-            const ctrl = p.controls.find(c => c.id === cc.controlId)
-            if (ctrl) {
-              const upm = unitsPerMm(p.map)
-              cc.legBendPoints = [{ x: ctrl.position.x - upm * 15, y: ctrl.position.y }]
+          if (course.controls[0] === cc) {
+            // Auto-add a bend point for the start control so the drag handle is immediate
+            if (!cc.legBendPoints?.length) {
+              const ctrl = p.controls.find(c => c.id === cc.controlId)
+              if (ctrl) {
+                const upm = unitsPerMm(p.map)
+                cc.legBendPoints = [{ x: ctrl.position.x - upm * 15, y: ctrl.position.y }]
+              }
             }
+            cc.mapIssueT = 0.5
           }
         }
       }, 'Toggle marked route')

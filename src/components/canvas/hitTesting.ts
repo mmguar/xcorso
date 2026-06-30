@@ -3,6 +3,7 @@ import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, 
 import { legKey, scaleBarLayoutMm } from '../../lib/distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { northArrowHeight, northArrowGeometry, crossingPointTotalHH, rotateAround } from '../../lib/symbolGeometry'
+import { interpolatePolyline, flattenSmooth } from '../../lib/geometry'
 
 const HIT_PX = 20
 
@@ -162,7 +163,10 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
     const startCtrl = controlMap.get(firstCc.controlId)
     const bends = firstCc.legBendPoints
     if (startCtrl && bends?.length) {
-      const pts: MapPoint[] = [...bends, startCtrl.position]
+      const rawPts: MapPoint[] = [...bends, startCtrl.position]
+      const numOrigSegs = rawPts.length - 1
+      const pts: MapPoint[] = flattenSmooth(rawPts)
+      const stepsPerSeg = numOrigSegs > 1 ? Math.round((pts.length - 1) / numOrigSegs) : 1
       let totalLen = 0
       for (let j = 1; j < pts.length; j++) totalLen += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y)
       let cumLen = 0
@@ -175,7 +179,8 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
           const lenSq = dx * dx + dy * dy
           const segT = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((mapPt.x - a.x) * dx + (mapPt.y - a.y) * dy) / lenSq))
           const t = totalLen === 0 ? 0 : (cumLen + segT * segLen) / totalLen
-          return { courseId: course.id, courseControlId: firstCc.id, t, segmentIndex: j, totalLen }
+          const origSeg = Math.min(Math.floor(j / stepsPerSeg), numOrigSegs - 1)
+          return { courseId: course.id, courseControlId: firstCc.id, t, segmentIndex: origSeg, totalLen }
         }
         cumLen += segLen
       }
@@ -189,15 +194,22 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
 
     const cc = course.controls[i]
     const isLastLeg = i === course.controls.length - 1
+    const effectiveMarked = cc.markedRoute
+      || (isLastLeg && course.finishType === 'taped' ? 'full' as const
+        : isLastLeg && course.finishType === 'funnel' ? 'partial' as const
+        : undefined)
     const effectivePartial = cc.markedRoute === 'partial' || (isLastLeg && course.finishType === 'funnel')
     const bendPts = cc.legBendPoints
     const divider = effectivePartial ? cc.markedRouteEnd : undefined
     const navBendPts = effectivePartial ? cc.legNavBendPoints : undefined
-    const pts: MapPoint[] = divider
+    const rawPts: MapPoint[] = divider
       ? partialLegHitPoints(fromCtrl.position, toCtrl.position, bendPts, navBendPts, divider)
       : bendPts?.length
         ? [fromCtrl.position, ...bendPts, toCtrl.position]
         : [fromCtrl.position, toCtrl.position]
+    const numOrigSegs = rawPts.length - 1
+    const pts = effectiveMarked ? flattenSmooth(rawPts) : rawPts
+    const stepsPerSeg = pts.length > rawPts.length ? Math.round((pts.length - 1) / numOrigSegs) : 1
 
     let totalLen = 0
     for (let j = 1; j < pts.length; j++) totalLen += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y)
@@ -212,7 +224,8 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
         const lenSq = dx * dx + dy * dy
         const segT = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((mapPt.x - a.x) * dx + (mapPt.y - a.y) * dy) / lenSq))
         const t = totalLen === 0 ? 0 : (cumLen + segT * segLen) / totalLen
-        return { courseId: course.id, courseControlId: cc.id, t, segmentIndex: j, totalLen }
+        const origSeg = Math.min(Math.floor(j / stepsPerSeg), numOrigSegs - 1)
+        return { courseId: course.id, courseControlId: cc.id, t, segmentIndex: origSeg, totalLen }
       }
       cumLen += segLen
     }
@@ -274,6 +287,59 @@ export function findMarkedRouteEndAt(screenX: number, screenY: number, vp: Viewp
     if (Math.hypot(mapPt.x - cc.markedRouteEnd.x, mapPt.y - cc.markedRouteEnd.y) < hitR) {
       return { courseId: course.id, courseControlId: cc.id }
     }
+  }
+  return null
+}
+
+// ── Map issue point hit testing ─────────────────────────────────────────────
+
+export interface MapIssueHit {
+  courseId: string
+  courseControlId: string
+  kind: 'bar' | 'delete' | 'add'
+}
+
+export function findMapIssueAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): MapIssueHit | null {
+  const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
+  if (!course || course.controls.length < 1) return null
+  const firstCc = course.controls[0]
+  if (!firstCc.markedRoute || !firstCc.legBendPoints?.length) return null
+
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const upm = unitsPerMm(project.map)
+
+  // No map issue point — test the green "+" add button at route start
+  if (firstCc.mapIssueT == null) {
+    const addPt = firstCc.legBendPoints[0]
+    const addR = handleHitRadius(1 * upm, vp)
+    if (Math.hypot(mapPt.x - addPt.x, mapPt.y - addPt.y) < addR) {
+      return { courseId: course.id, courseControlId: firstCc.id, kind: 'add' }
+    }
+    return null
+  }
+
+  const controlMap = controlsById(project.controls)
+  const startCtrl = controlMap.get(firstCc.controlId)
+  if (!startCtrl) return null
+  const pts: MapPoint[] = flattenSmooth([...firstCc.legBendPoints, startCtrl.position])
+  const pos = interpolatePolyline(pts, firstCc.mapIssueT)
+  const barHalf = 1.25 * upm
+
+  // Delete button
+  const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
+  const delX = pos.x + perpX * (barHalf + 1.5 * upm)
+  const delY = pos.y + perpY * (barHalf + 1.5 * upm)
+  const delR = handleHitRadius(1 * upm, vp)
+  if (Math.hypot(mapPt.x - delX, mapPt.y - delY) < delR) {
+    return { courseId: course.id, courseControlId: firstCc.id, kind: 'delete' }
+  }
+
+  // Bar drag
+  const endA = { x: pos.x + perpX * barHalf, y: pos.y + perpY * barHalf }
+  const endB = { x: pos.x - perpX * barHalf, y: pos.y - perpY * barHalf }
+  const hitR = pxToMap(HIT_PX, vp)
+  if (distToSegment(mapPt, endA, endB) < hitR) {
+    return { courseId: course.id, courseControlId: firstCc.id, kind: 'bar' }
   }
   return null
 }

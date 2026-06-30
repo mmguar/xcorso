@@ -104,6 +104,7 @@ export interface CourseControl {
   exchangeMode?: 'exchange' | 'flip'
   markedRoute?: 'full' | 'partial' // IOF 16.4 — leg TO this control drawn as dashed (taped route)
   markedRouteEnd?: MapPoint        // partial only — divider point where taping ends and navigation begins
+  mapIssueT?: number               // parametric position (0–1) of map-issue mark on pre-start taped route
 }
 
 // ─── Loops & Variations ────────────────────────────────────────────────────

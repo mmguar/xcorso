@@ -4,7 +4,7 @@ import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps, IOF_PURPLE } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
-import { startTriangleVertices, exchangeTriangleVertices } from '../../lib/symbolGeometry'
+import { startTriangleVertices, exchangeTriangleVertices, startTriangleAngle } from '../../lib/symbolGeometry'
 import type { SymbolDims } from '../../lib/symbolSpec'
 import { circleGapDashArray } from '../../lib/gapDash'
 import { assignControlColors, MULTICOLOR_PALETTE } from '../../lib/pdfExport'
@@ -25,6 +25,7 @@ interface ShapeProps {
   dims: SymbolDims
   scaleFactor: number
   showCrosshair: boolean
+  rotation?: number
 }
 
 function Crosshair({ x, y, extent, sw, color }: { x: number; y: number; extent: number; sw: number; color: string }) {
@@ -62,13 +63,13 @@ function ControlLabel({ x, y, cr, color, label, appearance, upm }: {
   )
 }
 
-function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
+function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair, rotation = 0 }: ShapeProps) {
   const scale = appearance.controlScale * scaleFactor
   const cr = dims.controlR * upm * scale
   const { x, y } = control.position
   const side = dims.startSide * upm * scale
   const h = side * Math.sqrt(3) / 2
-  const points = startTriangleVertices({ x, y }, side).map(p => `${p.x},${p.y}`).join(' ')
+  const points = startTriangleVertices({ x, y }, side, rotation).map(p => `${p.x},${p.y}`).join(' ')
   const perimeter = side * 3
   const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
@@ -267,6 +268,20 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     return assignControlColors(controls)
   }, [selectedCourse, multicolor, controls])
 
+  const startAngles = useMemo(() => {
+    if (!selectedCourse || selectedCourse.controls.length < 2) return null
+    const m = new Map<string, number>()
+    const ccs = selectedCourse.controls
+    const ctrlMap = new Map(controls.map(c => [c.id, c]))
+    for (let i = 0; i < ccs.length - 1; i++) {
+      const ctrl = ctrlMap.get(ccs[i].controlId)
+      if (ctrl?.type !== 'start') continue
+      const next = ctrlMap.get(ccs[i + 1].controlId)
+      if (next) m.set(ctrl.id, startTriangleAngle(ctrl.position, next.position))
+    }
+    return m
+  }, [selectedCourse, controls])
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {controls.map(control => {
@@ -359,7 +374,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         return (
           <g key={control.id} data-control-id={control.id} opacity={opacity}>
             {leaderLine}
-            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} />
+            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} rotation={startAngles?.get(control.id)} />
           </g>
         )
       })}

@@ -1,6 +1,6 @@
 import type { MapPoint, MapConfig, CourseDistances, Control, Course } from '../types'
 import { controlsById } from './courseUtils'
-import { distance, polylineLength } from './geometry'
+import { distance, polylineLength, flattenSmooth } from './geometry'
 
 /** Key for a measured leg polyline (direction-specific). */
 export function legKey(fromControlId: string, toControlId: string): string {
@@ -95,9 +95,9 @@ export function computeCourseDistances(
       const navPts: MapPoint[] = to.legNavBendPoints?.length
         ? [to.markedRouteEnd, ...to.legNavBendPoints, to.position]
         : [to.markedRouteEnd, to.position]
-      units = polylineLength(tapedPts) + polylineLength(navPts)
+      units = polylineLength(flattenSmooth(tapedPts)) + polylineLength(navPts)
     } else if (bendPts && bendPts.length > 0) {
-      units = polylineLength([from.position, ...bendPts, to.position])
+      units = polylineLength(flattenSmooth([from.position, ...bendPts, to.position]))
     } else if (waypoints && waypoints.length > 0) {
       units = polylineLength([from.position, ...waypoints, to.position])
     } else {
@@ -110,7 +110,7 @@ export function computeCourseDistances(
   let preStart = 0
   const first = resolved[0]
   if (first.markedRoute && first.legBendPoints?.length && first.position) {
-    preStart = mapUnitsToMetres(polylineLength([...first.legBendPoints, first.position]), map)
+    preStart = mapUnitsToMetres(polylineLength(flattenSmooth([...first.legBendPoints, first.position])), map)
   }
 
   return { legs, total: preStart + legs.reduce((s, d) => s + d, 0) }
