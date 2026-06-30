@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from 'react'
+import React, { memo, useState, type ReactNode } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import {
   DndContext,
@@ -16,11 +16,12 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
-import { useT } from '../i18n'
+import { useT, type TFn } from '../i18n'
 import { IofSymbolIcon, SymbolSvg } from './IofSymbolIcon'
 import { columns, getColumnSymbols, columnFields, isDimensionText, getSymbol } from '../lib/iofSymbols'
 import { defaultControlLabel, computeSubmaps, controlsById } from '../lib/courseUtils'
-import { computeCourseDistances, formatDistance, resolveCourseLength } from '../lib/distance'
+import { computeCourseDistances, formatDistance, resolveCourseLength, mapUnitsToMetres } from '../lib/distance'
+import { polylineLength } from '../lib/geometry'
 import { useRenderTracker } from '../lib/perf'
 import type { IofColumn, SymbolDef } from '../lib/iofSymbols'
 import type { Course, Control, CourseControl, FinishType } from '../types'
@@ -54,6 +55,9 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
+  const toggleMarkedRoute = useStore(s => s.toggleMarkedRoute)
+  const cycleMarkedRouteMode = useStore(s => s.cycleMarkedRouteMode)
+  const updateCourseFinishType = useStore(s => s.updateCourseFinishType)
   const setSelectedSubmap = useStore(s => s.setSelectedSubmap)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
@@ -204,9 +208,30 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                     onSelect: selectSubmap,
                     selected: shownSubmapIndex,
                   } : undefined
+                  const tapedMode = row.cc.markedRoute
+                  let tapedDist: string | null = null
+                  if (tapedMode && row.legDist != null) {
+                    if (tapedMode === 'partial' && row.cc.markedRouteEnd) {
+                      const ccIdx = course.controls.findIndex(c => c.id === row.cc.id)
+                      const prevCtrl = ccIdx > 0 ? controlMap.get(course.controls[ccIdx - 1].controlId) : undefined
+                      if (prevCtrl) {
+                        const pts = row.cc.legBendPoints?.length
+                          ? [prevCtrl.position, ...row.cc.legBendPoints, row.cc.markedRouteEnd]
+                          : [prevCtrl.position, row.cc.markedRouteEnd]
+                        tapedDist = formatDistance(mapUnitsToMetres(polylineLength(pts), mapConfig))
+                      }
+                    } else {
+                      tapedDist = formatDistance(row.legDist)
+                    }
+                  }
                   return (
+                    <React.Fragment key={row.cc.id}>
+                    {tapedDist != null && tapedMode && (
+                      <TapedRouteRow distText={tapedDist} mode={tapedMode}
+                        onSetMode={(m) => { if (m !== tapedMode) cycleMarkedRouteMode(course.id, row.cc.id) }}
+                        showExtraCol={showExtraCol} />
+                    )}
                     <SortableDescRow
-                      key={row.cc.id}
                       row={row}
                       courseId={course.id}
                       showExtraCol={showExtraCol}
@@ -215,6 +240,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       onRemove={onRemove}
                       onToggleLoop={toggleCourseLoop}
                       onToggleExchange={(ccId) => toggleExchangeControl(course.id, ccId)}
+                      onToggleMarkedRoute={(ccId) => toggleMarkedRoute(course.id, ccId)}
                       textDescriptions={course.textDescriptions}
                       submapButton={startButton}
                       exchangeSeparator={submapEndIdx != null ? {
@@ -227,6 +253,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                         seqLabel: String(row.seq),
                       } : undefined}
                     />
+                    </React.Fragment>
                   )
                 })}
                 {finishRow && (
@@ -235,6 +262,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       finishType={course.finishType ?? 'navigate'}
                       showExtraCol={showExtraCol}
                       onRemove={onRemove}
+                      onSetFinishType={(ft) => updateCourseFinishType(course.id, ft)}
                     />
                   )}
                 </>
@@ -274,6 +302,7 @@ function SortableDescRow({
   onRemove,
   onToggleLoop,
   onToggleExchange,
+  onToggleMarkedRoute,
   textDescriptions,
   submapButton,
   exchangeSeparator,
@@ -286,6 +315,7 @@ function SortableDescRow({
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
   onToggleExchange?: (ccId: string) => void
+  onToggleMarkedRoute?: (ccId: string) => void
   textDescriptions?: boolean
   submapButton?: SubmapButtonProps
   exchangeSeparator?: ExchangeSeparatorProps
@@ -382,6 +412,22 @@ function SortableDescRow({
                 {submapButton.label}
               </button>
             ) : legDist != null ? formatDistance(legDist) : ''}
+            {ctrl.type !== 'finish' && onToggleMarkedRoute && (
+              <button
+                onClick={() => onToggleMarkedRoute(cc.id)}
+                title={cc.markedRoute ? t('controlDesc.removeMarkedRoute') : t('controlDesc.setMarkedRoute')}
+                className={`absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity z-10 ${
+                  cc.markedRoute
+                    ? 'bg-purple-500 text-white opacity-100'
+                    : 'bg-gray-300 hover:bg-purple-400 text-white opacity-60 group-hover:opacity-100'
+                }`}
+              >
+                <svg width={10} height={6} viewBox="0 0 10 6">
+                  <line x1="0" y1="3" x2="3" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <line x1="7" y1="3" x2="10" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
             {ctrl.type === 'control' && onToggleExchange && (
               <button
                 onClick={() => onToggleExchange(cc.id)}
@@ -717,17 +763,42 @@ function finishRowElements(
   return elements
 }
 
+function FinishTypeSvg({ finishType, w }: { finishType: FinishType; w: number }) {
+  const CY = 18
+  const sw = 1.5
+  const circleR = 9
+  const circleX = 18
+  const finishX = w - 18
+  const finishR = 9
+  const finishRInner = 6
+  const contentLeft = circleX + circleR + 3
+  const contentRight = finishX - finishR - 3
+  return (
+    <svg viewBox={`0 0 ${w} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+      <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="currentColor" strokeWidth={sw} />
+      {finishRowElements(finishType, '', contentLeft, contentRight, CY, sw)}
+      <circle cx={finishX} cy={CY} r={finishR} fill="none" stroke="currentColor" strokeWidth={sw} />
+      <circle cx={finishX} cy={CY} r={finishRInner} fill="none" stroke="currentColor" strokeWidth={sw} />
+    </svg>
+  )
+}
+
+const FINISH_TYPES: FinishType[] = ['navigate', 'funnel', 'taped']
+
 function FinishDescRow({
   row,
   finishType,
   showExtraCol,
   onRemove,
+  onSetFinishType,
 }: {
   row: RowData
   finishType: FinishType
   showExtraCol: boolean
   onRemove?: (ccId: string) => void
+  onSetFinishType: (ft: FinishType) => void
 }) {
+  const [open, setOpen] = useState(false)
   const { cc, legDist } = row
   const distText = legDist != null ? formatDistance(legDist) : ''
 
@@ -743,12 +814,17 @@ function FinishDescRow({
   const contentLeft = circleX + circleR + 3
   const contentRight = finishX - finishR - 3
 
+  const otherTypes = FINISH_TYPES.filter(ft => ft !== finishType)
+
   return (
     <tr className="group">
       <td
         colSpan={8}
-        className={`${BORDER} relative`}
+        className={`${BORDER} relative cursor-pointer hover:bg-orange-50`}
         style={{ height: CELL, padding: 0 }}
+        tabIndex={0}
+        onClick={() => setOpen(v => !v)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
       >
         <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
           <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
@@ -758,11 +834,131 @@ function FinishDescRow({
         </svg>
         {onRemove && (
           <button
-            onClick={() => onRemove(cc.id)}
+            onClick={e => { e.stopPropagation(); onRemove(cc.id) }}
             className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-red-400 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity z-10"
           >
             <X size={8} />
           </button>
+        )}
+        {open && (
+          <div className="absolute left-0 bottom-full z-30 bg-white border border-gray-300 rounded shadow-md"
+            style={{ width: '100%' }}>
+            {otherTypes.map(ft => (
+              <div key={ft} className="px-1 py-0.5 hover:bg-orange-100 text-gray-600 cursor-pointer"
+                onClick={e => { e.stopPropagation(); onSetFinishType(ft); setOpen(false) }}>
+                <FinishTypeSvg finishType={ft} w={W} />
+              </div>
+            ))}
+          </div>
+        )}
+      </td>
+      {showExtraCol && <td />}
+    </tr>
+  )
+}
+
+function TapedRouteSvg({ mode, w }: { mode: 'full' | 'partial'; w: number }) {
+  const CY = 18
+  const sw = 1.5
+  const circleR = 9
+  const circleX = 18
+  const chevronW = 5
+  const chevronH = 8
+  const showRightCircle = mode === 'full'
+  const rightCircleX = w - 18
+  const contentLeft = circleX + circleR + 3
+  const contentRight = showRightCircle ? rightCircleX - circleR - 3 : w - 6
+  const rightChevronStart = contentRight - chevronW
+  const dashes = 6
+  const dashGapRatio = 1.8
+  const total = rightChevronStart - contentLeft
+  const dashLen = total / (dashes + (dashes - 1) / dashGapRatio)
+  const gapLen = dashLen / dashGapRatio
+  return (
+    <svg viewBox={`0 0 ${w} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+      <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="currentColor" strokeWidth={sw} />
+      {Array.from({ length: dashes }, (_, i) => {
+        const x1 = contentLeft + i * (dashLen + gapLen)
+        return <line key={`d${i}`} x1={x1} y1={CY} x2={x1 + dashLen} y2={CY} stroke="currentColor" strokeWidth={sw} strokeLinecap="round" />
+      })}
+      <Chevron x={rightChevronStart} cy={CY} w={chevronW} h={chevronH} direction=">" sw={sw} />
+      {showRightCircle && (
+        <circle cx={rightCircleX} cy={CY} r={circleR} fill="none" stroke="currentColor" strokeWidth={sw} />
+      )}
+    </svg>
+  )
+}
+
+function TapedRouteRow({ distText, mode, onSetMode, showExtraCol }: {
+  distText: string; mode: 'full' | 'partial'; onSetMode: (mode: 'full' | 'partial') => void; showExtraCol: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const W = 256
+  const CY = 18
+  const sw = 1.5
+  const circleR = 9
+  const circleX = 18
+  const chevronW = 5
+  const chevronH = 8
+
+  const showRightCircle = mode === 'full'
+  const rightCircleX = W - 18
+  const contentLeft = circleX + circleR + 3
+  const contentRight = showRightCircle ? rightCircleX - circleR - 3 : W - 6
+  const rightChevronStart = contentRight - chevronW
+
+  const textWidth = distText ? 38 : 0
+  const midX = (contentLeft + contentRight) / 2
+  const textLeft = midX - textWidth / 2
+  const textRight = midX + textWidth / 2
+
+  const leftDashes = 3
+  const rightDashes = 3
+  const dashGapRatio = 1.8
+
+  const leftRegionEnd = textLeft - 2
+  const leftTotal = leftRegionEnd - contentLeft
+  const leftDashLen = leftTotal / (leftDashes + (leftDashes - 1) / dashGapRatio)
+  const leftGapLen = leftDashLen / dashGapRatio
+
+  const rightRegionStart = textRight + 2
+  const rightRegionEnd = rightChevronStart - 2
+  const rightTotal = rightRegionEnd - rightRegionStart
+  const rightDashLen = rightTotal / (rightDashes + (rightDashes - 1) / dashGapRatio)
+  const rightGapLen = rightDashLen / dashGapRatio
+
+  const otherMode: 'full' | 'partial' = mode === 'full' ? 'partial' : 'full'
+
+  return (
+    <tr>
+      <td colSpan={8} className={`${BORDER} cursor-pointer hover:bg-orange-50 relative`} style={{ height: CELL, padding: 0 }}
+        tabIndex={0} onClick={() => setOpen(v => !v)} onBlur={() => setTimeout(() => setOpen(false), 150)}>
+        <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
+          <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
+          {Array.from({ length: leftDashes }, (_, i) => {
+            const x1 = contentLeft + i * (leftDashLen + leftGapLen)
+            return <line key={`ld${i}`} x1={x1} y1={CY} x2={x1 + leftDashLen} y2={CY} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+          })}
+          {distText && (
+            <text x={midX} y={CY + 1} textAnchor="middle" dominantBaseline="central" fontSize="11" fontFamily="sans-serif">{distText}</text>
+          )}
+          {Array.from({ length: rightDashes }, (_, i) => {
+            const x1 = rightRegionStart + i * (rightDashLen + rightGapLen)
+            return <line key={`rd${i}`} x1={x1} y1={CY} x2={x1 + rightDashLen} y2={CY} stroke="black" strokeWidth={sw} strokeLinecap="round" />
+          })}
+          <Chevron x={rightChevronStart} cy={CY} w={chevronW} h={chevronH} direction=">" sw={sw} />
+          {showRightCircle && (
+            <circle cx={rightCircleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
+          )}
+        </svg>
+        {open && (
+          <div className="absolute left-0 top-full z-30 bg-white border border-gray-300 rounded shadow-md"
+            style={{ width: '100%' }}>
+            <div className="px-1 py-0.5 hover:bg-orange-100 text-gray-600"
+              onClick={e => { e.stopPropagation(); onSetMode(otherMode); setOpen(false) }}>
+              <TapedRouteSvg mode={otherMode} w={W} />
+            </div>
+          </div>
         )}
       </td>
       {showExtraCol && <td />}
@@ -793,9 +989,9 @@ function SymbolPicker({
     ? symbols.filter(s => normalize(s.name).includes(searchNorm) || normalize(t('iof.' + s.code)).includes(searchNorm) || s.code.includes(search))
     : symbols
 
-  const grouped = column === 'G' ? groupLocationSymbols(filtered)
-    : column === 'E' ? groupBySourceColumn(filtered)
-    : column === 'C' ? groupDirectionSymbols(filtered)
+  const grouped = column === 'G' ? groupLocationSymbols(filtered, t)
+    : column === 'E' ? groupBySourceColumn(filtered, t)
+    : column === 'C' ? groupDirectionSymbols(filtered, t)
     : null
 
   return (
@@ -936,17 +1132,17 @@ function SymbolGrid({ symbols, current, onSelect }: {
   )
 }
 
-function groupBySourceColumn(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+function groupBySourceColumn(syms: SymbolDef[], t: TFn): Record<string, SymbolDef[]> {
   const groups: Record<string, SymbolDef[]> = {}
   for (const s of syms) {
-    const group = s.column === 'D' ? 'Feature' : 'Appearance'
+    const group = s.column === 'D' ? t('iofGroup.feature') : t('iofGroup.appearance')
     if (!groups[group]) groups[group] = []
     groups[group].push(s)
   }
   return groups
 }
 
-function groupDirectionSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+function groupDirectionSymbols(syms: SymbolDef[], t: TFn): Record<string, SymbolDef[]> {
   const dir: SymbolDef[] = []
   const other: SymbolDef[] = []
   for (const s of syms) {
@@ -954,17 +1150,18 @@ function groupDirectionSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
     else other.push(s)
   }
   const groups: Record<string, SymbolDef[]> = {}
-  if (dir.length) groups['Direction'] = dir
-  if (other.length) groups['Position'] = other
+  if (dir.length) groups[t('iofGroup.direction')] = dir
+  if (other.length) groups[t('iofGroup.position')] = other
   return groups
 }
 
-function groupLocationSymbols(syms: SymbolDef[]): Record<string, SymbolDef[]> {
+function groupLocationSymbols(syms: SymbolDef[], t: TFn): Record<string, SymbolDef[]> {
   const groups: Record<string, SymbolDef[]> = {}
   for (const s of syms) {
     const base = s.code.replace(/[NESW]+$/, '').replace(/\.$/, '')
-    const label = s.name.replace(/(North-east|North-west|South-east|South-west|North|South|East|West)\s*/i, '').trim()
-    const group = label || base
+    const group = t('iofGroup.' + base) !== 'iofGroup.' + base
+      ? t('iofGroup.' + base)
+      : t('iof.' + base)
     if (!groups[group]) groups[group] = []
     groups[group].push(s)
   }

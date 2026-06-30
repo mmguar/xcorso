@@ -198,6 +198,16 @@ export async function setSyncMeta(id: string, sync: SyncMeta): Promise<void> {
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSave: { id: string; project: Project; mapFileData: ArrayBuffer | null } | null = null
 const lastSavedMaps = new Map<string, ArrayBuffer | null | undefined>()
+let saveErrorFired = false
+
+let _onSaveError: (() => void) | null = null
+export function setOnSaveError(fn: () => void) { _onSaveError = fn }
+
+function handleSaveError(): void {
+  if (saveErrorFired) return
+  saveErrorFired = true
+  _onSaveError?.()
+}
 
 function executeSave(id: string, project: Project, mapFileData: ArrayBuffer | null): Promise<void> {
   if (mapFileData !== lastSavedMaps.get(id)) {
@@ -214,7 +224,7 @@ export function debouncedSave(id: string, project: Project, mapFileData: ArrayBu
     const s = pendingSave
     pendingSave = null
     debounceTimer = null
-    if (s) executeSave(s.id, s.project, s.mapFileData).catch(() => {})
+    if (s) executeSave(s.id, s.project, s.mapFileData).catch(handleSaveError)
   }, 500)
 }
 
@@ -225,5 +235,5 @@ export async function flushSave(): Promise<void> {
   }
   const s = pendingSave
   pendingSave = null
-  if (s) await executeSave(s.id, s.project, s.mapFileData).catch(() => {})
+  if (s) await executeSave(s.id, s.project, s.mapFileData).catch(handleSaveError)
 }

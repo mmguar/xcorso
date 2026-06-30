@@ -6,6 +6,8 @@ import { MapLayer } from './MapLayer'
 import { FpsCounter } from './FpsCounter'
 import { ControlsLayer } from './ControlsLayer'
 import { LegsLayer } from './LegsLayer'
+import { AllCoursesLegsLayer } from './AllCoursesLegsLayer'
+import { AllCoursesLegend } from './AllCoursesLegend'
 import { DragLegsLayer } from './DragLegsLayer'
 import type { DragLegsHandle } from './DragLegsLayer'
 import { AnnotationsLayer } from './AnnotationsLayer'
@@ -23,7 +25,7 @@ import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap, pxToMap,
-  findControlAt, findBendPointAt,
+  findControlAt, findBendPointAt, findMarkedRouteEndAt,
   findMeasureLegAt, findMeasurePointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
@@ -281,6 +283,8 @@ export function MapCanvas({ loadedMap }: Props) {
   const projectSpec = useStore(s => s.project!.spec)
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
+  const courseViewMode = useStore(s => s.editor.courseViewMode)
+  const isAllCoursesView = courseViewMode === 'all-courses'
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const selectedAnnotationId = useStore(s => s.editor.selectedAnnotationId)
   const appearance = useStore(s => s.editor.appearance)
@@ -502,8 +506,11 @@ export function MapCanvas({ loadedMap }: Props) {
       run?.()
     }
 
-    let dragBend: { courseId: string; courseControlId: string; bendIndex: number } | null = null
+    let dragBend: { courseId: string; courseControlId: string; bendIndex: number; nav?: boolean } | null = null
     let dragBendStarted = false
+
+    let dragMRE: { courseId: string; courseControlId: string } | null = null
+    let dragMREStarted = false
 
     let dragMeasure: MeasurePointHit | null = null
     let dragMeasureStarted = false
@@ -824,10 +831,16 @@ export function MapCanvas({ loadedMap }: Props) {
         const rect = getRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
-        const bpHit = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
-        if (bpHit) {
-          dragBend = bpHit
-          dragBendStarted = false
+        const mreHit = findMarkedRouteEndAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
+        if (mreHit) {
+          dragMRE = mreHit
+          dragMREStarted = false
+        } else {
+          const bpHit = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
+          if (bpHit) {
+            dragBend = bpHit
+            dragBendStarted = false
+          }
         }
       }
       if (activeTool === 'select' && pos.size === 1) {
@@ -1094,6 +1107,20 @@ export function MapCanvas({ loadedMap }: Props) {
         return
       }
 
+      if (dragMRE && pos.size === 1) {
+        if (!dragMREStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveMarkedRouteEnd()
+          dragMREStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const { courseId, courseControlId } = dragMRE
+        scheduleDragMutation(() => useStore.getState().moveMarkedRouteEnd(courseId, courseControlId, mapPt))
+        return
+      }
+
       if (dragBend && pos.size === 1) {
         if (!dragBendStarted) {
           const start = down.get(e.pointerId)
@@ -1114,8 +1141,8 @@ export function MapCanvas({ loadedMap }: Props) {
         }
         const rect = getRect()
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const { courseId, courseControlId, bendIndex } = dragBend
-        scheduleDragMutation(() => useStore.getState().moveLegBendPoint(courseId, courseControlId, bendIndex, mapPt))
+        const { courseId, courseControlId, bendIndex, nav } = dragBend
+        scheduleDragMutation(() => useStore.getState().moveLegBendPoint(courseId, courseControlId, bendIndex, mapPt, nav ? 'nav' : 'taped'))
         return
       }
 
@@ -1430,6 +1457,9 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragMeasure && dragMeasureStarted) { dragMeasure = null; dragMeasureStarted = false; return }
       dragMeasure = null; dragMeasureStarted = false
 
+      if (dragMRE && dragMREStarted) { dragMRE = null; dragMREStarted = false; return }
+      dragMRE = null; dragMREStarted = false
+
       if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
       dragBend = null; dragBendStarted = false
 
@@ -1647,6 +1677,7 @@ export function MapCanvas({ loadedMap }: Props) {
       dragOobVertex = null; dragOobVertexStarted = false
       dragPendingVertex = null; dragPendingVertexStarted = false
       dragBend = null; dragBendStarted = false
+      dragMRE = null; dragMREStarted = false
       dragOverlay = null; dragOverlayStarted = false
       dragResize = null; dragResizeStarted = false
       dragRotation = null; dragRotationStarted = false
@@ -1932,15 +1963,26 @@ export function MapCanvas({ loadedMap }: Props) {
         <g ref={courseGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           {overprintT < 1 && (
             <g opacity={(1 - overprintT) * measureDim}>
-              <LegsLayer
-                course={selectedCourse}
-                controls={controls}
-                map={map}
-                appearance={appearance}
-                projectSpec={projectSpec}
-                selectedSubmapIndex={selectedSubmapIndex}
-                _rev={projectRevision}
-              />
+              {isAllCoursesView ? (
+                <AllCoursesLegsLayer
+                  courses={courses}
+                  controls={controls}
+                  map={map}
+                  appearance={appearance}
+                  projectSpec={projectSpec}
+                  _rev={projectRevision}
+                />
+              ) : (
+                <LegsLayer
+                  course={selectedCourse}
+                  controls={controls}
+                  map={map}
+                  appearance={appearance}
+                  projectSpec={projectSpec}
+                  selectedSubmapIndex={selectedSubmapIndex}
+                  _rev={projectRevision}
+                />
+              )}
               <ControlsLayer
                 controls={layoutControls}
                 course={selectedCourse}
@@ -2015,15 +2057,26 @@ export function MapCanvas({ loadedMap }: Props) {
         <svg key="course-mult" width="100%" height="100%"
           style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply', opacity: overprintT * measureDim }}>
           <g ref={courseMultGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
-            <LegsLayer
-              course={selectedCourse}
-              controls={controls}
-              map={map}
-              appearance={appearance}
-              projectSpec={projectSpec}
-              selectedSubmapIndex={selectedSubmapIndex}
-              _rev={projectRevision}
-            />
+            {isAllCoursesView ? (
+              <AllCoursesLegsLayer
+                courses={courses}
+                controls={controls}
+                map={map}
+                appearance={appearance}
+                projectSpec={projectSpec}
+                _rev={projectRevision}
+              />
+            ) : (
+              <LegsLayer
+                course={selectedCourse}
+                controls={controls}
+                map={map}
+                appearance={appearance}
+                projectSpec={projectSpec}
+                selectedSubmapIndex={selectedSubmapIndex}
+                _rev={projectRevision}
+              />
+            )}
             <ControlsLayer
               controls={layoutControls}
               course={selectedCourse}
@@ -2198,34 +2251,37 @@ export function MapCanvas({ loadedMap }: Props) {
       </svg>
 
       {/* Saturation slider + HD toggle */}
-      <div className="absolute top-[var(--ui-top)] left-2 flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200 z-10">
-        <span className="text-[10px] text-gray-400 select-none">Map</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={mapSaturation}
-          onChange={e => useStore.getState().setMapSaturation(parseFloat(e.target.value))}
-          className="w-16 h-1 accent-orange-600"
-        />
-        {loadedMap.type === 'svg' && loadedMap.rasterUrl && (
-          <>
-            <div className="w-px h-4 bg-gray-300" />
-            <button
-              onClick={() => setUseRaster(r => !r)}
-              title={useRaster ? 'Switch to full-quality SVG (slower)' : 'Switch to raster (faster)'}
-              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors ${
-                useRaster ? 'text-gray-400' : 'text-orange-600 bg-orange-50'
-              }`}
-            >
-              HD
-            </button>
-          </>
-        )}
-        {layoutMode && layoutCourse?.layout && (
-          <LayoutScaleInput courseId={layoutCourse.id} printScale={layoutCourse.layout.printScale} />
-        )}
+      <div className="absolute top-[var(--ui-top)] left-2 flex flex-col gap-1 z-10">
+        <div className="flex items-center gap-1.5 bg-white/80 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm border border-gray-200">
+          <span className="text-[10px] text-gray-400 select-none">Map</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={mapSaturation}
+            onChange={e => useStore.getState().setMapSaturation(parseFloat(e.target.value))}
+            className="w-16 h-1 accent-orange-600"
+          />
+          {loadedMap.type === 'svg' && loadedMap.rasterUrl && (
+            <>
+              <div className="w-px h-4 bg-gray-300" />
+              <button
+                onClick={() => setUseRaster(r => !r)}
+                title={useRaster ? 'Switch to full-quality SVG (slower)' : 'Switch to raster (faster)'}
+                className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-colors ${
+                  useRaster ? 'text-gray-400' : 'text-orange-600 bg-orange-50'
+                }`}
+              >
+                HD
+              </button>
+            </>
+          )}
+          {layoutMode && layoutCourse?.layout && (
+            <LayoutScaleInput courseId={layoutCourse.id} printScale={layoutCourse.layout.printScale} />
+          )}
+        </div>
+        {isAllCoursesView && <AllCoursesLegend courses={courses} />}
       </div>
 
       {measureStart && !scaleDialogPoints && (

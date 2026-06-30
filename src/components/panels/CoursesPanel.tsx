@@ -5,15 +5,16 @@ import { useT } from '../../i18n'
 import { computeCourseDistances, formatDistance, resolveCourseLength } from '../../lib/distance'
 import { ControlDescriptionGrid } from '../ControlDescriptionGrid'
 import { useRenderTracker } from '../../lib/perf'
-import { SPEC_LABELS } from '../../lib/symbolSpec'
-import type { Course, CourseControl, EventSpec, FinishType } from '../../types'
-import { IOF_PURPLE } from '../../lib/courseUtils'
+import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
+import type { Course, CourseControl, EventSpec } from '../../types'
+import { IOF_PURPLE, courseOverviewColor } from '../../lib/courseUtils'
 
 function ClueSheetColorPicker({ label, value, onChange }: {
   label: string
   value: string | undefined
   onChange: (color: string | undefined) => void
 }) {
+  const t = useT()
   const current = value || '#000000'
   const isBlack = !value || value === '#000000'
   const isPurple = value === IOF_PURPLE
@@ -24,20 +25,20 @@ function ClueSheetColorPicker({ label, value, onChange }: {
         onClick={() => onChange(undefined)}
         className={`w-5 h-5 rounded border transition-all shrink-0 ${isBlack ? 'ring-2 ring-orange-500 ring-offset-1' : 'border-gray-300'}`}
         style={{ background: '#000000' }}
-        title="Black"
+        title={t('color.black')}
       />
       <button
         onClick={() => onChange(IOF_PURPLE)}
         className={`w-5 h-5 rounded border transition-all shrink-0 ${isPurple ? 'ring-2 ring-orange-500 ring-offset-1' : 'border-gray-300'}`}
         style={{ background: IOF_PURPLE }}
-        title="IOF purple"
+        title={t('color.iofPurple')}
       />
       <input
         type="color"
         value={current}
         onChange={e => onChange(e.target.value === '#000000' ? undefined : e.target.value)}
         className="w-5 h-5 rounded cursor-pointer border-0 p-0 shrink-0"
-        title="Custom color"
+        title={t('color.custom')}
       />
       {!isBlack && (
         <span className="text-[10px] text-gray-400 truncate">{current}</span>
@@ -145,8 +146,7 @@ function CourseEditor({ course }: { course: Course }) {
   const updateCourseClimb = useStore(s => s.updateCourseClimb)
   const setManualCourseLength = useStore(s => s.setManualCourseLength)
   const enterMeasureMode = useStore(s => s.enterMeasureMode)
-  const updateCourseFinishType = useStore(s => s.updateCourseFinishType)
-  const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
+    const updateCourseShowPoints = useStore(s => s.updateCourseShowPoints)
   const updateCourseTextDescriptions = useStore(s => s.updateCourseTextDescriptions)
   const updateCourseSpec = useStore(s => s.updateCourseSpec)
   const deleteCourse = useStore(s => s.deleteCourse)
@@ -181,8 +181,8 @@ function CourseEditor({ course }: { course: Course }) {
           title={t('courses.courseSpec')}
         >
           <option value="">{t('courses.projectDefault')}</option>
-          {(Object.entries(SPEC_LABELS) as [EventSpec, string][]).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
+          {(Object.entries(SPEC_LABEL_KEYS) as [EventSpec, string][]).map(([key, tKey]) => (
+            <option key={key} value={key}>{t(tKey)}</option>
           ))}
         </select>
         <div className="flex-1" />
@@ -322,20 +322,6 @@ function CourseEditor({ course }: { course: Course }) {
                 className="w-14 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
               />
               <span className="text-gray-400">m</span>
-            </label>
-          )}
-          {course.controls.some(cc => controls.find(c => c.id === cc.controlId)?.type === 'finish') && (
-            <label className="flex items-center gap-1 text-xs text-gray-500">
-              <span>{t('courses.finish')}</span>
-              <select
-                value={course.finishType ?? 'navigate'}
-                onChange={e => updateCourseFinishType(course.id, e.target.value as FinishType)}
-                className="text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
-              >
-                <option value="navigate">{t('courses.finishNavigate')}</option>
-                <option value="funnel">{t('courses.finishFunnel')}</option>
-                <option value="taped">{t('courses.finishTaped')}</option>
-              </select>
             </label>
           )}
         </div>
@@ -538,12 +524,15 @@ export function CoursesPanel() {
   const courses = useStore(s => s.project!.courses)
   const controlCount = useStore(s => s.project!.controls.length)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
+  const courseViewMode = useStore(s => s.editor.courseViewMode)
   const addCourse = useStore(s => s.addCourse)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
+  const setAllCoursesView = useStore(s => s.setAllCoursesView)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showClueOpts, setShowClueOpts] = useState(false)
   const clueOptsBtnRef = useRef<HTMLButtonElement>(null)
-  const isAllControls = selectedCourseId === null
+  const isAllControls = courseViewMode === 'all-controls'
+  const isAllCourses = courseViewMode === 'all-courses'
 
   useEffect(() => {
     if (selectedCourseId) {
@@ -586,6 +575,26 @@ export function CoursesPanel() {
             <div className="w-3 h-3 rounded-full bg-orange-600" />
             <span className="text-sm font-medium flex-1">{t('courses.allControls')}</span>
             <span className="text-xs text-gray-400">{t('courses.controls', { count: controlCount })}</span>
+          </div>
+        )}
+
+        {/* All courses view */}
+        {courses.length > 0 && (
+          <div
+            onClick={() => setAllCoursesView()}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer mb-1 transition-colors ${
+              isAllCourses
+                ? 'bg-orange-100'
+                : 'hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex gap-0.5 shrink-0">
+              {courses.slice(0, 4).map((c, i) => (
+                <div key={c.id} className="w-2 h-2 rounded-full" style={{ background: courseOverviewColor(i) }} />
+              ))}
+            </div>
+            <span className="text-sm font-medium flex-1">{t('courses.allCourses')}</span>
+            <span className="text-xs text-gray-400">{t('courses.courseCount', { count: courses.length })}</span>
           </div>
         )}
 

@@ -1,6 +1,6 @@
-import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType } from '../types'
+import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
-import { defaultControlLabel, generateAllPermutations, IOF_PURPLE } from '../lib/courseUtils'
+import { defaultControlLabel, generateAllPermutations, IOF_PURPLE, unitsPerMm } from '../lib/courseUtils'
 
 function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
   const getType = (id: string) => controls.find(c => c.id === id)?.type
@@ -27,6 +27,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         editor: {
           ...state.editor,
           selectedCourseId: course.id,
+          courseViewMode: 'single',
           selectedControlId: null,
           activeTool: 'select',
           pendingAnnotationPoints: [],
@@ -61,6 +62,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         editor: {
           ...state.editor,
           selectedCourseId: copy.id,
+          courseViewMode: 'single',
           selectedControlId: null,
           activeTool: 'select',
           pendingAnnotationPoints: [],
@@ -79,6 +81,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         editor: {
           ...state.editor,
           selectedCourseId: state.editor.selectedCourseId === id ? null : state.editor.selectedCourseId,
+          courseViewMode: state.editor.selectedCourseId === id ? 'all-controls' : state.editor.courseViewMode,
         },
       }))
     },
@@ -250,7 +253,27 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     updateCourseFinishType: (id: string, finishType: FinishType) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (c) c.finishType = finishType
+        if (!c) return
+        c.finishType = finishType
+        const finishCc = c.controls.length >= 2 ? c.controls[c.controls.length - 1] : undefined
+        const prevCc = c.controls.length >= 2 ? c.controls[c.controls.length - 2] : undefined
+        if (!finishCc || !prevCc) return
+        const controls = get().project!.controls
+        const finishCtrl = controls.find(ctrl => ctrl.id === finishCc.controlId)
+        const prevCtrl = controls.find(ctrl => ctrl.id === prevCc.controlId)
+        if (!finishCtrl || !prevCtrl) return
+        if (finishType === 'funnel') {
+          if (!finishCc.markedRouteEnd) {
+            const mid: MapPoint = {
+              x: (prevCtrl.position.x + finishCtrl.position.x) / 2,
+              y: (prevCtrl.position.y + finishCtrl.position.y) / 2,
+            }
+            finishCc.markedRouteEnd = mid
+          }
+        } else {
+          delete finishCc.markedRouteEnd
+          delete finishCc.legNavBendPoints
+        }
       }, 'Change finish type')
     },
 
@@ -389,6 +412,74 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const cc = course.controls.find(cc => cc.id === courseControlId)
         if (cc) cc.exchangeMode = cc.exchangeMode ? undefined : 'exchange'
       }, 'Toggle exchange')
+    },
+
+    toggleMarkedRoute: (courseId: string, courseControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc) return
+        if (cc.markedRoute) {
+          cc.markedRoute = undefined
+        } else {
+          cc.markedRoute = 'full'
+          // Auto-add a bend point for the start control so the drag handle is immediate
+          if (course.controls[0] === cc && !cc.legBendPoints?.length) {
+            const ctrl = p.controls.find(c => c.id === cc.controlId)
+            if (ctrl) {
+              const upm = unitsPerMm(p.map)
+              cc.legBendPoints = [{ x: ctrl.position.x - upm * 15, y: ctrl.position.y }]
+            }
+          }
+        }
+      }, 'Toggle marked route')
+    },
+
+    cycleMarkedRouteMode: (courseId: string, courseControlId: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        const cc = course.controls.find(cc => cc.id === courseControlId)
+        if (!cc || !cc.markedRoute) return
+        if (cc.markedRoute === 'full') {
+          cc.markedRoute = 'partial'
+          // Auto-create divider point at midpoint of leg
+          if (!cc.markedRouteEnd) {
+            const ccIdx = course.controls.indexOf(cc)
+            const prevCtrl = ccIdx > 0 ? p.controls.find(c => c.id === course.controls[ccIdx - 1].controlId) : undefined
+            const thisCtrl = p.controls.find(c => c.id === cc.controlId)
+            if (prevCtrl && thisCtrl) {
+              const bends = cc.legBendPoints
+              const lastBend = bends?.length ? bends[bends.length - 1] : prevCtrl.position
+              cc.markedRouteEnd = {
+                x: (lastBend.x + thisCtrl.position.x) / 2,
+                y: (lastBend.y + thisCtrl.position.y) / 2,
+              }
+            }
+          }
+        } else {
+          cc.markedRoute = 'full'
+          cc.markedRouteEnd = undefined
+          cc.legNavBendPoints = undefined
+        }
+      }, 'Cycle marked route mode')
+    },
+
+    beginMoveMarkedRouteEnd: () => h.pushUndoSnapshot('Move marked route end'),
+
+    moveMarkedRouteEnd: (courseId: string, courseControlId: string, position: MapPoint) => {
+      h.mutateProjectSilent(p => {
+        const ci = p.courses.findIndex(c => c.id === courseId)
+        if (ci === -1) return
+        const course = p.courses[ci]
+        const cci = course.controls.findIndex(cc => cc.id === courseControlId)
+        if (cci === -1) return
+        const cc = course.controls[cci]
+        const newCc = { ...cc, markedRouteEnd: position }
+        const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
+        p.courses = p.courses.map((c, j) => (j === ci ? { ...course, controls: newControls } : c))
+      })
     },
 
     setSelectedVariation: (id: string | null) => {

@@ -74,17 +74,19 @@ function extractTopOverprintColors(colors: unknown): string[] {
 }
 
 export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
-  // Dynamic import to keep initial bundle small
   const { readOcad, ocadToSvg } = await import('ocad2geojson')
 
-  // ocad2geojson expects a Node.js Buffer; convert from ArrayBuffer
-  const buffer = Buffer.from(data)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ocadFile = await readOcad(buffer as any)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svgEl = (ocadToSvg as any)(ocadFile) as SVGElement
+  let ocadFile, svgEl: SVGElement
+  try {
+    const buffer = Buffer.from(data)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ocadFile = await readOcad(buffer as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    svgEl = (ocadToSvg as any)(ocadFile) as SVGElement
+  } catch {
+    throw new Error('This file could not be read. It may be corrupted or an unsupported OCAD version.')
+  }
 
-  // Extract viewBox from the generated SVG to get bounds
   const viewBox = svgEl.getAttribute('viewBox')
   let bounds: MapBounds = { minX: 0, minY: 0, maxX: 1000, maxY: 1000, width: 1000, height: 1000 }
 
@@ -93,25 +95,17 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     bounds = { minX, minY, maxX: minX + width, maxY: minY + height, width, height }
   }
 
-  // Extract scale from OCAD header
-  // ocad2geojson exposes it via ocadFile.header or parameterStrings
   let detectedScale: number | undefined
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const header = (ocadFile as any).header
   if (header?.mapScale) detectedScale = header.mapScale
-  // Also check parameterStrings for newer OCAD versions
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const params = (ocadFile as any).parameterStrings
   if (params) {
-    // ScalePar block stores the scale
-    const scalePar = params[1039] // OCAD parameter string type 1039 = ScalePar
+    const scalePar = params[1039]
     if (scalePar?.[0]?.m) detectedScale = scalePar[0].m
   }
 
-  // OCAD parameter-string values are strings (e.g. "4000.000000"). Coerce to a
-  // finite positive number so map.scale is never persisted as a string — a
-  // string scale survives the editing session (JS coerces it in arithmetic) but
-  // is silently discarded by validateProject on reopen.
   if (detectedScale != null) {
     const n = Number(detectedScale)
     detectedScale = Number.isFinite(n) && n > 0 ? Math.round(n) : undefined
@@ -123,7 +117,6 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
   if (crs?.easting && crs?.northing && crs?.code) {
     const epsg = Number(crs.code)
     const angleDeg = params?.[1039]?.[0]?.a ? Number(params[1039][0].a) : 0
-    // EPSG 326xx = UTM North, 327xx = UTM South
     if (epsg >= 32601 && epsg <= 32660) {
       detectedGeoref = { easting: crs.easting, northing: crs.northing, utmZone: epsg - 32600, hemisphere: 'N', angleDeg }
     } else if (epsg >= 32701 && epsg <= 32760) {
@@ -131,9 +124,6 @@ export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
     }
   }
 
-  // ocad2geojson >= 2.1.21 removed the debug red circles that used to corrupt
-  // the library's z-order sort (so the old patch is gone). This stays as a
-  // defensive cleanup in case any stray debug circles reappear upstream.
   cleanupSvg(svgEl)
 
   const rasterUrl = await rasterizeSvg(svgEl, bounds)
@@ -284,8 +274,10 @@ export async function loadBitmapMap(data: ArrayBuffer, filename: string): Promis
   })
 }
 
+let previousPdfUrl: string | null = null
+
 export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
-  // Use the legacy bundle for better compatibility with older Safari/iPad WebKit.
+  if (previousPdfUrl) { URL.revokeObjectURL(previousPdfUrl); previousPdfUrl = null }
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   // Worker must be set up — point to the bundled worker
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
@@ -297,7 +289,12 @@ export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
 
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(data).slice() }).promise
   const page = await pdf.getPage(1)
-  const viewport = page.getViewport({ scale: 3 }) // 3× for crisp rendering
+  let scale = 3
+  const base = page.getViewport({ scale: 1 })
+  if (base.width * scale > MAX_RASTER_DIM || base.height * scale > MAX_RASTER_DIM) {
+    scale = MAX_RASTER_DIM / Math.max(base.width, base.height)
+  }
+  const viewport = page.getViewport({ scale })
 
   const canvas = document.createElement('canvas')
   canvas.width = viewport.width
@@ -317,7 +314,8 @@ export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
     }, 'image/png')
   })
 
-  return { type: 'image', content: url, bounds, renderScale: 3 }
+  previousPdfUrl = url
+  return { type: 'image', content: url, bounds, renderScale: scale }
 }
 
 export async function loadMap(data: ArrayBuffer, filename: string): Promise<LoadedMap> {

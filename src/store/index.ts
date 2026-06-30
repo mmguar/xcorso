@@ -3,6 +3,7 @@ import type { Project } from '../types'
 import type { Store, StoreHelpers, UndoEntry } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
+import * as persistence from '../lib/persistence'
 import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
@@ -70,6 +71,7 @@ export const useStore = create<Store>((set, get) => {
     syncConflict: null,
     versionHistory: [],
     projectRole: 'owner' as const,
+    localSaveFailed: false,
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
@@ -206,6 +208,7 @@ export const useStore = create<Store>((set, get) => {
             ...state.editor,
             ...(leavingMeasure ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] } : {}),
             selectedCourseId: id,
+            courseViewMode: id ? 'single' : 'all-controls',
             selectedVariationId: null,
             selectedSubmapIndex: null,
             selectedControlId: id ? null : state.editor.selectedControlId,
@@ -213,6 +216,26 @@ export const useStore = create<Store>((set, get) => {
             selectedAnnotationId: id ? null : state.editor.selectedAnnotationId,
             activeTool: id ? (courseOnlyTool ? tool : 'select') : (courseOnlyTool ? 'select' : tool),
             pendingAnnotationPoints: id ? [] : state.editor.pendingAnnotationPoints,
+          },
+        }
+      })
+    },
+
+    setAllCoursesView: () => {
+      set(state => {
+        const tool = state.editor.activeTool
+        const courseOnlyTool = tool === 'gap' || tool === 'bend'
+        const leavingMeasure = state.editor.measureMode
+        return {
+          editor: {
+            ...state.editor,
+            ...(leavingMeasure ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] } : {}),
+            selectedCourseId: null,
+            courseViewMode: 'all-courses',
+            selectedVariationId: null,
+            selectedSubmapIndex: null,
+            activeTool: courseOnlyTool ? 'select' : tool,
+            pendingAnnotationPoints: [],
           },
         }
       })
@@ -243,6 +266,7 @@ export const useStore = create<Store>((set, get) => {
           layoutMode: false,
           layoutCourseId: null,
           selectedCourseId: courseId,
+          courseViewMode: 'single',
           activeTool: 'select',
           selectedControlId: null,
           selectedAnnotationId: null,
@@ -560,19 +584,18 @@ export const useStore = create<Store>((set, get) => {
     jumpToHistory: (index: number) => {
       const { undoStack, project, editor, projectRevision } = get()
       if (!project || index < 0 || index >= undoStack.length) return
-      const target = undoStack[index]
-      // Build redo stack so redo steps forward through index+1..N-1..current.
-      // Redo pops from end, so first-to-redo goes last.
+      // Entries being sliced out of undoStack are already independent clones,
+      // so move them directly to redo — redo() clones when it pops.
       const newRedo: UndoEntry[] = []
-      newRedo.push({ project: structuredClone(project), label: undoStack[undoStack.length - 1].label })
+      newRedo.push({ project, label: undoStack[undoStack.length - 1].label })
       for (let i = undoStack.length - 1; i > index + 1; i--) {
-        newRedo.push({ project: structuredClone(undoStack[i].project), label: undoStack[i - 1].label })
+        newRedo.push({ project: undoStack[i].project, label: undoStack[i - 1].label })
       }
       if (index + 1 < undoStack.length) {
-        newRedo.push({ project: structuredClone(undoStack[index + 1].project), label: undoStack[index].label })
+        newRedo.push({ project: undoStack[index + 1].project, label: undoStack[index].label })
       }
       set({
-        project: structuredClone(target.project),
+        project: undoStack[index].project,
         projectRevision: projectRevision + 1,
         syncStatus: 'idle',
         undoStack: undoStack.slice(0, index),
@@ -582,6 +605,8 @@ export const useStore = create<Store>((set, get) => {
     },
   }
 })
+
+persistence.setOnSaveError(() => useStore.setState({ localSaveFailed: true }))
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 

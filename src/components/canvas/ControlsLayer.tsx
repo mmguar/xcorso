@@ -213,8 +213,9 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
   const selectedSubmapIndex = useStore(s => s.editor.selectedSubmapIndex)
   const labelSubmapStart = useStore(s => s.project!.labelSubmapStart ?? false)
   const allCourses = useStore(s => s.project!.courses)
-  const multicolor = useStore(s => s.project!.allControlsMulticolor)
-  const linkId = useStore(s => s.project!.allControlsLinkId)
+  const courseViewMode = useStore(s => s.editor.courseViewMode)
+  const multicolor = useStore(s => s.project!.allControlsMulticolor) && courseViewMode === 'all-controls'
+  const linkId = useStore(s => s.project!.allControlsLinkId) && courseViewMode === 'all-controls'
 
   const spec = resolveSpec(projectSpec, selectedCourse?.spec)
   const dims = getSymbolDims(spec)

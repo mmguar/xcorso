@@ -1,4 +1,4 @@
-import type { Annotation, Control, MapPoint, Project, Viewport } from '../../types'
+import type { Annotation, Control, Course, CourseControl, MapPoint, Project, Viewport } from '../../types'
 import { unitsPerMm, defaultLabelOffset, defaultControlLabel, buildSequenceMap, formatSequenceLabel, controlsById, computeSubmaps } from '../../lib/courseUtils'
 import { legKey, scaleBarLayoutMm } from '../../lib/distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
@@ -110,6 +110,45 @@ interface LegHit {
   totalLen: number
 }
 
+/** True when segmentIndex is the solid nav portion of a partial/funnel leg.
+ *  Polyline is [from, ...tapedBends, divider, ...navBends, to] — taped segments are 0..numTapedBends. */
+export function isPartialLegNavSegment(course: Course, cc: CourseControl, segmentIndex: number): boolean {
+  const ccIdx = course.controls.indexOf(cc)
+  if (ccIdx <= 0) return false
+  const isLastLeg = ccIdx === course.controls.length - 1
+  const effectivePartial = cc.markedRoute === 'partial' || (isLastLeg && course.finishType === 'funnel')
+  if (!effectivePartial || !cc.markedRouteEnd) return false
+  const numTapedBends = cc.legBendPoints?.length ?? 0
+  return segmentIndex > numTapedBends
+}
+
+export function legBendInsertIndex(
+  course: Course,
+  cc: CourseControl,
+  segmentIndex: number,
+): { segment: 'taped' | 'nav'; index: number } {
+  if (isPartialLegNavSegment(course, cc, segmentIndex)) {
+    const numTapedBends = cc.legBendPoints?.length ?? 0
+    return { segment: 'nav', index: segmentIndex - numTapedBends - 1 }
+  }
+  return { segment: 'taped', index: segmentIndex }
+}
+
+function partialLegHitPoints(
+  from: MapPoint,
+  to: MapPoint,
+  bendPts: MapPoint[] | undefined,
+  navBendPts: MapPoint[] | undefined,
+  divider: MapPoint,
+): MapPoint[] {
+  const pts: MapPoint[] = [from]
+  if (bendPts?.length) pts.push(...bendPts)
+  pts.push(divider)
+  if (navBendPts?.length) pts.push(...navBendPts)
+  pts.push(to)
+  return pts
+}
+
 export function findLegAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): LegHit | null {
   const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
   if (!course || course.type === 'score' || course.controls.length < 2) return null
@@ -117,16 +156,48 @@ export function findLegAt(screenX: number, screenY: number, vp: Viewport, projec
   const mapPt = screenToMap(screenX, screenY, vp)
   const hitR = pxToMap(HIT_PX, vp)
 
+  // Pre-start taped route
+  const firstCc = course.controls[0]
+  if (firstCc.markedRoute) {
+    const startCtrl = controlMap.get(firstCc.controlId)
+    const bends = firstCc.legBendPoints
+    if (startCtrl && bends?.length) {
+      const pts: MapPoint[] = [...bends, startCtrl.position]
+      let totalLen = 0
+      for (let j = 1; j < pts.length; j++) totalLen += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y)
+      let cumLen = 0
+      for (let j = 0; j < pts.length - 1; j++) {
+        const a = pts[j], b = pts[j + 1]
+        const d = distToSegment(mapPt, a, b)
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y)
+        if (d < hitR) {
+          const dx = b.x - a.x, dy = b.y - a.y
+          const lenSq = dx * dx + dy * dy
+          const segT = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((mapPt.x - a.x) * dx + (mapPt.y - a.y) * dy) / lenSq))
+          const t = totalLen === 0 ? 0 : (cumLen + segT * segLen) / totalLen
+          return { courseId: course.id, courseControlId: firstCc.id, t, segmentIndex: j, totalLen }
+        }
+        cumLen += segLen
+      }
+    }
+  }
+
   for (let i = 1; i < course.controls.length; i++) {
     const fromCtrl = controlMap.get(course.controls[i - 1].controlId)
     const toCtrl = controlMap.get(course.controls[i].controlId)
     if (!fromCtrl || !toCtrl) continue
 
     const cc = course.controls[i]
+    const isLastLeg = i === course.controls.length - 1
+    const effectivePartial = cc.markedRoute === 'partial' || (isLastLeg && course.finishType === 'funnel')
     const bendPts = cc.legBendPoints
-    const pts: MapPoint[] = bendPts?.length
-      ? [fromCtrl.position, ...bendPts, toCtrl.position]
-      : [fromCtrl.position, toCtrl.position]
+    const divider = effectivePartial ? cc.markedRouteEnd : undefined
+    const navBendPts = effectivePartial ? cc.legNavBendPoints : undefined
+    const pts: MapPoint[] = divider
+      ? partialLegHitPoints(fromCtrl.position, toCtrl.position, bendPts, navBendPts, divider)
+      : bendPts?.length
+        ? [fromCtrl.position, ...bendPts, toCtrl.position]
+        : [fromCtrl.position, toCtrl.position]
 
     let totalLen = 0
     for (let j = 1; j < pts.length; j++) totalLen += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y)
@@ -153,6 +224,7 @@ interface BendPointHit {
   courseId: string
   courseControlId: string
   bendIndex: number
+  nav?: boolean
 }
 
 export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): BendPointHit | null {
@@ -162,12 +234,45 @@ export function findBendPointAt(screenX: number, screenY: number, vp: Viewport, 
   const hitR = pxToMap(HIT_PX, vp)
 
   for (const cc of course.controls) {
-    if (!cc.legBendPoints) continue
-    for (let j = 0; j < cc.legBendPoints.length; j++) {
-      const bp = cc.legBendPoints[j]
-      if (Math.hypot(mapPt.x - bp.x, mapPt.y - bp.y) < hitR) {
-        return { courseId: course.id, courseControlId: cc.id, bendIndex: j }
+    if (cc.legBendPoints) {
+      for (let j = 0; j < cc.legBendPoints.length; j++) {
+        const bp = cc.legBendPoints[j]
+        if (Math.hypot(mapPt.x - bp.x, mapPt.y - bp.y) < hitR) {
+          return { courseId: course.id, courseControlId: cc.id, bendIndex: j }
+        }
       }
+    }
+    if (cc.legNavBendPoints) {
+      for (let j = 0; j < cc.legNavBendPoints.length; j++) {
+        const bp = cc.legNavBendPoints[j]
+        if (Math.hypot(mapPt.x - bp.x, mapPt.y - bp.y) < hitR) {
+          return { courseId: course.id, courseControlId: cc.id, bendIndex: j, nav: true }
+        }
+      }
+    }
+  }
+  return null
+}
+
+export interface MarkedRouteEndHit {
+  courseId: string
+  courseControlId: string
+}
+
+export function findMarkedRouteEndAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null): MarkedRouteEndHit | null {
+  const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
+  if (!course) return null
+  const mapPt = screenToMap(screenX, screenY, vp)
+  const hitR = pxToMap(HIT_PX, vp)
+
+  for (let i = 0; i < course.controls.length; i++) {
+    const cc = course.controls[i]
+    if (!cc.markedRouteEnd) continue
+    const isLastCc = i === course.controls.length - 1
+    const isPartial = cc.markedRoute === 'partial' || (isLastCc && course.finishType === 'funnel')
+    if (!isPartial) continue
+    if (Math.hypot(mapPt.x - cc.markedRouteEnd.x, mapPt.y - cc.markedRouteEnd.y) < hitR) {
+      return { courseId: course.id, courseControlId: cc.id }
     }
   }
   return null
