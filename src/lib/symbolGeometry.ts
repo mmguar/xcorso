@@ -17,15 +17,23 @@ export function rotateAround(p: Pt, center: Pt, deg: number): Pt {
   return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos }
 }
 
-/** Start symbol: equilateral triangle, apex up, centroid at `center`, edge `side`. */
-export function startTriangleVertices(center: Pt, side: number): [Pt, Pt, Pt] {
+/** Start symbol: equilateral triangle, centroid at `center`, edge `side`.
+ *  `angleDeg` rotates clockwise from the default apex-up orientation. */
+export function startTriangleVertices(center: Pt, side: number, angleDeg = 0): [Pt, Pt, Pt] {
   const h = side * Math.sqrt(3) / 2
   const half = side / 2
-  return [
+  const pts: [Pt, Pt, Pt] = [
     { x: center.x, y: center.y - h * 2 / 3 },
     { x: center.x - half, y: center.y + h / 3 },
     { x: center.x + half, y: center.y + h / 3 },
   ]
+  if (angleDeg === 0) return pts
+  return pts.map(p => rotateAround(p, center, angleDeg)) as [Pt, Pt, Pt]
+}
+
+/** Angle (degrees) to rotate the start triangle so its apex points from `from` toward `to`. */
+export function startTriangleAngle(from: Pt, to: Pt): number {
+  return Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI + 90
 }
 
 /** Exchange marker: equilateral triangle pointing down, inscribed in radius `r`. */

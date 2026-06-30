@@ -162,6 +162,11 @@ export interface AppActions {
   removeLegBendPoint: (courseId: string, courseControlId: string, index: number, segment?: 'taped' | 'nav') => void
   clearLegBendPoints: (courseId: string, courseControlId: string) => void
 
+  beginMoveMapIssue: () => void
+  moveMapIssue: (courseId: string, courseControlId: string, t: number) => void
+  removeMapIssue: (courseId: string, courseControlId: string) => void
+  addMapIssue: (courseId: string, courseControlId: string) => void
+
   beginMoveCourseLabel: (label?: string) => void
   moveCourseLabel: (courseId: string, courseControlId: string, offset: MapPoint) => void
 

@@ -25,7 +25,7 @@ import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap, pxToMap,
-  findControlAt, findBendPointAt, findMarkedRouteEndAt,
+  findControlAt, findBendPointAt, findMarkedRouteEndAt, findMapIssueAt,
   findMeasureLegAt, findMeasurePointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
@@ -33,6 +33,7 @@ import {
 import type { MeasurePointHit } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 import { computeCourseDistances, resolveCourseLength, formatDistance, legKey } from '../../lib/distance'
+import { projectOnPolyline, flattenSmooth } from '../../lib/geometry'
 
 const TAP_PX    = 8
 const MIN_SCALE = 0.05
@@ -512,6 +513,9 @@ export function MapCanvas({ loadedMap }: Props) {
     let dragMRE: { courseId: string; courseControlId: string } | null = null
     let dragMREStarted = false
 
+    let dragMapIssue: { courseId: string; courseControlId: string } | null = null
+    let dragMapIssueStarted = false
+
     let dragMeasure: MeasurePointHit | null = null
     let dragMeasureStarted = false
 
@@ -827,6 +831,23 @@ export function MapCanvas({ loadedMap }: Props) {
           }
         }
       }
+      if (pos.size === 1) {
+        const rect = getRect()
+        const sx = e.clientX - rect.left
+        const sy = e.clientY - rect.top
+        const miHit = findMapIssueAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
+        if (miHit?.kind === 'delete') {
+          useStore.getState().removeMapIssue(miHit.courseId, miHit.courseControlId)
+          return
+        } else if (miHit?.kind === 'add') {
+          useStore.getState().addMapIssue(miHit.courseId, miHit.courseControlId)
+          return
+        } else if (miHit?.kind === 'bar') {
+          dragMapIssue = { courseId: miHit.courseId, courseControlId: miHit.courseControlId }
+          dragMapIssueStarted = false
+          return
+        }
+      }
       if (activeTool === 'bend' && pos.size === 1) {
         const rect = getRect()
         const sx = e.clientX - rect.left
@@ -1104,6 +1125,30 @@ export function MapCanvas({ loadedMap }: Props) {
         const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
         const { fromControlId, toControlId, index } = dragMeasure
         scheduleDragMutation(() => useStore.getState().moveMeasurePoint(fromControlId, toControlId, index, mapPt))
+        return
+      }
+
+      if (dragMapIssue && pos.size === 1) {
+        if (!dragMapIssueStarted) {
+          const start = down.get(e.pointerId)
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
+          useStore.getState().beginMoveMapIssue()
+          dragMapIssueStarted = true
+        }
+        const rect = getRect()
+        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
+        const { courseId, courseControlId } = dragMapIssue
+        const st = useStore.getState()
+        const course = st.project?.courses.find(c => c.id === courseId)
+        const cc = course?.controls.find(c => c.id === courseControlId)
+        if (cc?.legBendPoints?.length && st.project) {
+          const startCtrl = st.project.controls.find(c => c.id === cc.controlId)
+          if (startCtrl) {
+            const pts = flattenSmooth([...cc.legBendPoints, startCtrl.position])
+            const t = projectOnPolyline(mapPt, pts)
+            scheduleDragMutation(() => useStore.getState().moveMapIssue(courseId, courseControlId, t))
+          }
+        }
         return
       }
 
@@ -1457,6 +1502,9 @@ export function MapCanvas({ loadedMap }: Props) {
       if (dragMeasure && dragMeasureStarted) { dragMeasure = null; dragMeasureStarted = false; return }
       dragMeasure = null; dragMeasureStarted = false
 
+      if (dragMapIssue && dragMapIssueStarted) { dragMapIssue = null; dragMapIssueStarted = false; return }
+      dragMapIssue = null; dragMapIssueStarted = false
+
       if (dragMRE && dragMREStarted) { dragMRE = null; dragMREStarted = false; return }
       dragMRE = null; dragMREStarted = false
 
@@ -1678,6 +1726,7 @@ export function MapCanvas({ loadedMap }: Props) {
       dragPendingVertex = null; dragPendingVertexStarted = false
       dragBend = null; dragBendStarted = false
       dragMRE = null; dragMREStarted = false
+      dragMapIssue = null; dragMapIssueStarted = false
       dragOverlay = null; dragOverlayStarted = false
       dragResize = null; dragResizeStarted = false
       dragRotation = null; dragRotationStarted = false
