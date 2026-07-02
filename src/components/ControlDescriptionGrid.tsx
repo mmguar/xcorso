@@ -43,6 +43,9 @@ interface RowData {
   legDist?: number
   forkEligible?: boolean
   isLoop?: boolean
+  phiEligible?: boolean
+  phiPartnerId?: string
+  isPhiLoop?: boolean
 }
 
 export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
@@ -53,6 +56,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   const mapConfig = useStore(s => s.project!.map)
   const measuredLegs = useStore(s => s.project!.measuredLegs)
   const toggleCourseLoop = useStore(s => s.toggleCourseLoop)
+  const togglePhiLoop = useStore(s => s.togglePhiLoop)
   const setExchangeMode = useStore(s => s.setExchangeMode)
   const toggleExchangeControl = useStore(s => s.toggleExchangeControl)
   const toggleMarkedRoute = useStore(s => s.toggleMarkedRoute)
@@ -98,6 +102,34 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
   }
 
   const loopForkIds = new Set((course.loops ?? []).map(l => l.forkControlId))
+  const phiLoopPairs = new Map<string, string>()
+  for (const l of course.loops ?? []) {
+    if (l.forkControlId2) {
+      phiLoopPairs.set(l.forkControlId, l.forkControlId2)
+      phiLoopPairs.set(l.forkControlId2, l.forkControlId)
+    }
+  }
+
+  // Detect phi-eligible pairs: two controls alternating (A...B...A...B), each 2+ times
+  const phiPartners = new Map<string, string>()
+  const multiIds = [...controlIdCounts.entries()].filter(([, n]) => n >= 2).map(([id]) => id)
+  for (let i = 0; i < multiIds.length; i++) {
+    for (let j = i + 1; j < multiIds.length; j++) {
+      const a = multiIds[i], b = multiIds[j]
+      const positions = course.controls
+        .map((cc, idx) => ({ cid: cc.controlId, idx }))
+        .filter(p => p.cid === a || p.cid === b)
+        .sort((x, y) => x.idx - y.idx)
+      let alternates = true
+      for (let k = 1; k < positions.length; k++) {
+        if (positions[k].cid === positions[k - 1].cid) { alternates = false; break }
+      }
+      if (alternates && positions.length >= 3) {
+        phiPartners.set(a, b)
+        phiPartners.set(b, a)
+      }
+    }
+  }
 
   let seq = 0
   let filteredIdx = 0
@@ -129,6 +161,9 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
       legDist: filteredIdx > 0 ? distances.legs[filteredIdx - 1] : undefined,
       forkEligible: isFirstOccurrence && ctrl.type === 'control' && (controlIdCounts.get(cc.controlId) ?? 0) >= 3,
       isLoop: loopForkIds.has(cc.controlId),
+      phiEligible: isFirstOccurrence && ctrl.type === 'control' && !loopForkIds.has(cc.controlId) && (phiPartners.has(cc.controlId) || phiLoopPairs.has(cc.controlId)),
+      phiPartnerId: phiLoopPairs.get(cc.controlId) ?? phiPartners.get(cc.controlId),
+      isPhiLoop: phiLoopPairs.has(cc.controlId),
     })
     filteredIdx++
   }
@@ -239,6 +274,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       setPicker={setPicker}
                       onRemove={onRemove}
                       onToggleLoop={toggleCourseLoop}
+                      onTogglePhiLoop={togglePhiLoop}
                       onToggleExchange={(ccId) => toggleExchangeControl(course.id, ccId)}
                       onToggleMarkedRoute={(ccId) => toggleMarkedRoute(course.id, ccId)}
                       textDescriptions={course.textDescriptions}
@@ -301,6 +337,7 @@ function SortableDescRow({
   setPicker,
   onRemove,
   onToggleLoop,
+  onTogglePhiLoop,
   onToggleExchange,
   onToggleMarkedRoute,
   textDescriptions,
@@ -314,6 +351,7 @@ function SortableDescRow({
   setPicker: (p: { controlId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
+  onTogglePhiLoop?: (courseId: string, controlId: string, controlId2: string) => void
   onToggleExchange?: (ccId: string) => void
   onToggleMarkedRoute?: (ccId: string) => void
   textDescriptions?: boolean
@@ -321,7 +359,7 @@ function SortableDescRow({
   exchangeSeparator?: ExchangeSeparatorProps
 }) {
   const t = useT()
-  const { cc, ctrl, seq, legDist, forkEligible, isLoop } = row
+  const { cc, ctrl, seq, legDist, forkEligible, isLoop, phiEligible, phiPartnerId, isPhiLoop } = row
   const updateControlDescription = useStore(s => s.updateControlDescription)
   const requestCenterOnControl = useStore(s => s.requestCenterOnControl)
   const {
@@ -480,6 +518,21 @@ function SortableDescRow({
                 className="accent-orange-600"
               />
               {t('controlDesc.butterflyLoop')}
+            </label>
+          </td>
+        </tr>
+      )}
+      {phiEligible && phiPartnerId && (
+        <tr>
+          <td colSpan={colCount} className="py-0.5 px-1">
+            <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isPhiLoop ?? false}
+                onChange={() => onTogglePhiLoop?.(courseId, ctrl.id, phiPartnerId)}
+                className="accent-orange-600"
+              />
+              {t('controlDesc.phiLoop')}
             </label>
           </td>
         </tr>

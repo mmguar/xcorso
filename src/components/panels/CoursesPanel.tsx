@@ -335,12 +335,33 @@ function VariationsSection({ course }: { course: Course }) {
   const variations = course.variations
   const selectedVariationId = useStore(s => s.editor.selectedVariationId)
   const setSelectedVariation = useStore(s => s.setSelectedVariation)
+  const setRelayLegs = useStore(s => s.setRelayLegs)
+  const setVariationRelayLeg = useStore(s => s.setVariationRelayLeg)
 
   if (!variations || variations.length === 0) return null
 
+  const relayLegs = course.relayLegs
+
   return (
     <div className="px-3 py-1.5 border-t border-gray-100">
-      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('courses.variations')}</div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{t('courses.variations')}</div>
+        <label className="flex items-center gap-1 text-[10px] text-gray-500">
+          {t('courses.relayLegs')}
+          <input
+            type="number"
+            min={0}
+            max={20}
+            value={relayLegs ?? ''}
+            placeholder="—"
+            onChange={e => {
+              const v = parseInt(e.target.value)
+              setRelayLegs(course.id, v > 0 ? v : undefined)
+            }}
+            className="w-10 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
+          />
+        </label>
+      </div>
       <div className="flex flex-wrap gap-1">
         <button
           onClick={() => setSelectedVariation(null)}
@@ -353,17 +374,34 @@ function VariationsSection({ course }: { course: Course }) {
           {t('courses.master')}
         </button>
         {variations.map(v => (
-          <button
-            key={v.id}
-            onClick={() => setSelectedVariation(v.id === selectedVariationId ? null : v.id)}
-            className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
-              v.id === selectedVariationId
-                ? 'bg-orange-100 border-orange-400 text-orange-700'
-                : 'border-gray-200 text-gray-500 hover:border-orange-300'
-            }`}
-          >
-            {v.name}
-          </button>
+          <div key={v.id} className="flex items-center gap-0.5">
+            <button
+              onClick={() => setSelectedVariation(v.id === selectedVariationId ? null : v.id)}
+              className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                v.id === selectedVariationId
+                  ? 'bg-orange-100 border-orange-400 text-orange-700'
+                  : 'border-gray-200 text-gray-500 hover:border-orange-300'
+              }`}
+            >
+              {v.name}
+            </button>
+            {relayLegs && relayLegs > 0 && (
+              <select
+                value={v.relayLeg ?? ''}
+                onChange={e => {
+                  const leg = parseInt(e.target.value)
+                  setVariationRelayLeg(course.id, v.id, leg > 0 ? leg : undefined)
+                }}
+                className="text-[10px] border rounded px-0.5 py-0 text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                title={t('courses.assignLeg')}
+              >
+                <option value="">—</option>
+                {Array.from({ length: relayLegs }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>{i + 1}</option>
+                ))}
+              </select>
+            )}
+          </div>
         ))}
       </div>
     </div>

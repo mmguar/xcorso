@@ -58,7 +58,12 @@ export async function getUser(request: Request, env: Env): Promise<TokenPayload 
   const cookie = request.headers.get('Cookie') ?? ''
   const match = cookie.match(/(?:^|;\s*)xcorso_token=([^;]+)/)
   if (!match) return null
-  return verifyToken(env, match[1])
+  const payload = await verifyToken(env, match[1])
+  if (!payload) return null
+  // Deleted accounts must lose access before the 30-day token expiry.
+  // ponytail: existence check only; per-session revocation would need a sessionVersion in the user record
+  if (await env.KV.get(`users:id:${payload.sub}`) === null) return null
+  return payload
 }
 
 export function tokenCookie(token: string, maxAge = TOKEN_TTL): string {
