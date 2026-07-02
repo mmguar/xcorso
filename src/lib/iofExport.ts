@@ -182,16 +182,33 @@ export function exportIofXml(project: Project): string {
   }).filter(Boolean).join('\n')
 
   // <ClassCourseAssignment> elements
-  const classAssignmentsXml = project.classes.map(rc => {
+  const classAssignments: string[] = []
+  for (const rc of project.classes) {
     const course = project.courses.find(c => c.id === rc.courseId)
-    if (!course) return ''
-    return [
-      '    <ClassCourseAssignment>',
-      `      <ClassName>${xmlEscape(rc.name)}</ClassName>`,
-      `      <CourseName>${xmlEscape(course.name)}</CourseName>`,
-      '    </ClassCourseAssignment>',
-    ].join('\n')
-  }).filter(Boolean).join('\n')
+    if (!course) continue
+
+    if (course.relayLegs && course.variations && course.variations.length > 0) {
+      for (const v of course.variations) {
+        if (v.relayLeg == null) continue
+        classAssignments.push([
+          '    <ClassCourseAssignment>',
+          `      <ClassName>${xmlEscape(rc.name)}</ClassName>`,
+          `      <CourseName>${xmlEscape(`${course.name} - ${v.name}`)}</CourseName>`,
+          `      <CourseFamily>${xmlEscape(course.name)}</CourseFamily>`,
+          `      <AllowedOnLeg>${v.relayLeg}</AllowedOnLeg>`,
+          '    </ClassCourseAssignment>',
+        ].join('\n'))
+      }
+    } else {
+      classAssignments.push([
+        '    <ClassCourseAssignment>',
+        `      <ClassName>${xmlEscape(rc.name)}</ClassName>`,
+        `      <CourseName>${xmlEscape(course.name)}</CourseName>`,
+        '    </ClassCourseAssignment>',
+      ].join('\n'))
+    }
+  }
+  const classAssignmentsXml = classAssignments.join('\n')
 
   const now = new Date().toISOString()
 

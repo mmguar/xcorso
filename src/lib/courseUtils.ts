@@ -57,10 +57,11 @@ export function defaultLabelOffset(type: ControlType, upm: number, controlScale:
 }
 
 export function buildSequenceMap(course: Course, controls: Control[]): Map<string, number[]> {
+  const byId = controlsById(controls)
   const map = new Map<string, number[]>()
   let seq = 1
   for (const cc of course.controls) {
-    const ctrl = controls.find(c => c.id === cc.controlId)
+    const ctrl = byId.get(cc.controlId)
     if (ctrl && ctrl.type === 'control') {
       const existing = map.get(cc.controlId)
       if (existing) existing.push(seq)
@@ -124,7 +125,9 @@ export function submapLayoutView(layout: CourseLayout, index: number): SubmapLay
 function extractBranches(course: Course, loop: CourseLoop): CourseControl[][] {
   const forkIndices: number[] = []
   for (let i = 0; i < course.controls.length; i++) {
-    if (course.controls[i].controlId === loop.forkControlId) forkIndices.push(i)
+    const cid = course.controls[i].controlId
+    if (cid === loop.forkControlId || (loop.forkControlId2 && cid === loop.forkControlId2))
+      forkIndices.push(i)
   }
   const branches: CourseControl[][] = []
   for (let i = 0; i < forkIndices.length - 1; i++) {
@@ -143,7 +146,9 @@ export function resolveVariation(course: Course, variation: CourseVariation): Co
     const loop = loops[li]
     const forkIndices: number[] = []
     for (let i = 0; i < course.controls.length; i++) {
-      if (course.controls[i].controlId === loop.forkControlId) forkIndices.push(i)
+      const cid = course.controls[i].controlId
+      if (cid === loop.forkControlId || (loop.forkControlId2 && cid === loop.forkControlId2))
+        forkIndices.push(i)
     }
     if (forkIndices.length < 2) continue
     spans.push({ start: forkIndices[0], end: forkIndices[forkIndices.length - 1], loopIdx: li })
@@ -161,14 +166,31 @@ export function resolveVariation(course: Course, variation: CourseVariation): Co
     const perm = variation.loopOrders.find(lo => lo.loopId === loop.id)
     const order = perm ? perm.order : branches.map((_, i) => i)
 
-    const forkCc = course.controls[span.start]
-    for (const branchIdx of order) {
-      result.push(forkCc)
-      if (branchIdx >= 0 && branchIdx < branches.length) {
-        result.push(...branches[branchIdx])
+    if (loop.forkControlId2) {
+      // Phi loop: alternate between two fork controls
+      const forkCcs: CourseControl[] = []
+      for (let i = span.start; i <= span.end; i++) {
+        const cid = course.controls[i].controlId
+        if (cid === loop.forkControlId || cid === loop.forkControlId2)
+          forkCcs.push(course.controls[i])
       }
+      for (let bi = 0; bi < order.length; bi++) {
+        result.push(forkCcs[bi] ?? forkCcs[0])
+        const branchIdx = order[bi]
+        if (branchIdx >= 0 && branchIdx < branches.length)
+          result.push(...branches[branchIdx])
+      }
+      result.push(forkCcs[forkCcs.length - 1])
+    } else {
+      // Butterfly: single fork control
+      const forkCc = course.controls[span.start]
+      for (const branchIdx of order) {
+        result.push(forkCc)
+        if (branchIdx >= 0 && branchIdx < branches.length)
+          result.push(...branches[branchIdx])
+      }
+      result.push(course.controls[span.end])
     }
-    result.push(course.controls[span.end])
     cursor = span.end + 1
   }
 
