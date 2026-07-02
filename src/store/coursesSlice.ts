@@ -382,6 +382,42 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       }, 'Toggle loop')
     },
 
+    togglePhiLoop: (courseId: string, forkControlId: string, forkControlId2: string) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        if (!course.loops) course.loops = []
+        const existing = course.loops.findIndex(l =>
+          l.forkControlId2 && (
+            (l.forkControlId === forkControlId && l.forkControlId2 === forkControlId2) ||
+            (l.forkControlId === forkControlId2 && l.forkControlId2 === forkControlId)
+          )
+        )
+        if (existing >= 0) {
+          const loopId = course.loops[existing].id
+          course.loops.splice(existing, 1)
+          if (course.loops.length === 0) course.loops = undefined
+          if (course.variations) {
+            course.variations = course.variations
+              .map(v => ({ ...v, loopOrders: v.loopOrders.filter(lo => lo.loopId !== loopId) }))
+            if (course.variations.every(v => v.loopOrders.length === 0)) course.variations = undefined
+          }
+        } else {
+          const forkIds = new Set([forkControlId, forkControlId2])
+          const forkIndices: number[] = []
+          for (let i = 0; i < course.controls.length; i++) {
+            if (forkIds.has(course.controls[i].controlId)) forkIndices.push(i)
+          }
+          if (forkIndices.length < 3) return
+          const branchCount = forkIndices.length - 1
+          const names = Array.from({ length: branchCount }, (_, i) => String.fromCharCode(65 + i))
+          const loop = { id: crypto.randomUUID(), forkControlId, forkControlId2, branchNames: names }
+          course.loops.push(loop)
+          course.variations = generateAllPermutations(course)
+        }
+      }, 'Toggle phi loop')
+    },
+
     removeCourseLoop: (courseId: string, loopId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
@@ -394,6 +430,26 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           if (course.variations.every(v => v.loopOrders.length === 0)) course.variations = undefined
         }
       }, 'Remove loop')
+    },
+
+    setRelayLegs: (courseId: string, legs: number | undefined) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course) return
+        course.relayLegs = legs
+        if (!legs && course.variations) {
+          for (const v of course.variations) v.relayLeg = undefined
+        }
+      }, legs ? `Set relay legs: ${legs}` : 'Remove relay')
+    },
+
+    setVariationRelayLeg: (courseId: string, variationId: string, leg: number | undefined) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.variations) return
+        const v = course.variations.find(v => v.id === variationId)
+        if (v) v.relayLeg = leg
+      }, 'Assign variation to relay leg')
     },
 
     setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => {

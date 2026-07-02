@@ -141,7 +141,10 @@ export interface AppActions {
   clearMeasureLeg: (fromControlId: string, toControlId: string) => void
 
   toggleCourseLoop: (courseId: string, forkControlId: string) => void
+  togglePhiLoop: (courseId: string, forkControlId: string, forkControlId2: string) => void
   removeCourseLoop: (courseId: string, loopId: string) => void
+  setRelayLegs: (courseId: string, legs: number | undefined) => void
+  setVariationRelayLeg: (courseId: string, variationId: string, leg: number | undefined) => void
   setSelectedVariation: (id: string | null) => void
 
   addClass: (name: string, courseId: string) => RaceClass

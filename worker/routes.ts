@@ -100,6 +100,13 @@ async function computeIndexEtag(index: ProjectMeta[]): Promise<string> {
   return `"${[...new Uint8Array(hashBuf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)}"`
 }
 
+function codesEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder()
+  const ab = enc.encode(a), bb = enc.encode(b)
+  if (ab.byteLength !== bb.byteLength) return false
+  return crypto.subtle.timingSafeEqual(ab, bb)
+}
+
 // --- Auth ---
 
 export async function authSend(request: Request, env: Env, _params: Params) {
@@ -124,6 +131,10 @@ export async function authSend(request: Request, env: Env, _params: Params) {
     return Response.json({ error: 'Wait a minute before requesting a new code' }, { status: 429 })
   }
 
+  // Count the send before it happens — incrementing after let parallel
+  // requests all pass the sends check and spam the address.
+  await env.KV.put(`auth:sends:${email}`, String(sends + 1), { expirationTtl: 60 })
+
   const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000))
   await env.KV.put(`auth:code:${email}`, code, { expirationTtl: 600 })
   await env.KV.delete(`auth:attempts:${email}`)
@@ -145,7 +156,6 @@ export async function authSend(request: Request, env: Env, _params: Params) {
   if (!res.ok) {
     return Response.json({ error: 'Failed to send email' }, { status: 502 })
   }
-  await env.KV.put(`auth:sends:${email}`, String(sends + 1), { expirationTtl: 60 })
   return Response.json({ ok: true })
 }
 
@@ -164,7 +174,7 @@ export async function authVerify(request: Request, env: Env, _params: Params) {
   }
 
   const stored = await env.KV.get(`auth:code:${email}`)
-  if (!stored || stored !== code) {
+  if (!stored || !codesEqual(stored, code)) {
     await env.KV.put(`auth:attempts:${email}`, String(attempts + 1), { expirationTtl: 600 })
     return Response.json({ error: 'Invalid or expired code' }, { status: 401 })
   }
@@ -245,7 +255,12 @@ export async function authDeleteAccount(request: Request, env: Env, _params: Par
     }
     await putShares(env, p.id, [])
   }
-  // Clean up shared-with-me refs
+  // Remove this user from other owners' share lists, then drop the refs
+  const refs = await getSharedWithMe(env, userId)
+  for (const ref of refs) {
+    const shares = await getShares(env, ref.projectId)
+    await putShares(env, ref.projectId, shares.filter(s => s.userId !== userId))
+  }
   await env.KV.delete(`projects:shared:${userId}`)
 
   await env.KV.delete(`users:id:${userId}`)
@@ -312,8 +327,11 @@ export async function projectGet(request: Request, env: Env, params: Params) {
   const obj = await env.BUCKET.get(`${r2Prefix(access.ownerId, params.id)}/current.json`)
   if (!obj) return Response.json({ error: 'Not found' }, { status: 404 })
 
+  // Sync version travels in a header: the body is the client-uploaded JSON,
+  // whose `version` field is the project *format* version ("1.0").
+  const meta = access.index.find(p => p.id === params.id)
   return new Response(obj.body, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Version': String(meta?.version ?? 0) },
   })
 }
 
@@ -334,8 +352,10 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
+  // Mandatory once the project has a version — omitting If-Match must not
+  // silently overwrite someone else's push (KV/R2 have no other concurrency control).
   const ifMatch = request.headers.get('If-Match')
-  if (ifMatch && Number(ifMatch) !== meta.version) {
+  if (meta.version > 0 && Number(ifMatch) !== meta.version) {
     return Response.json({ error: 'Conflict', serverVersion: meta.version }, { status: 409 })
   }
 
@@ -355,6 +375,8 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   }
 
   const body = await request.arrayBuffer()
+  // Re-check after reading — chunked requests have no Content-Length.
+  if (body.byteLength > MAX_PROJECT_BYTES) return Response.json({ error: 'Project too large (max 10 MB)' }, { status: 413 })
   await env.BUCKET.put(`${prefix}/current.json`, body, {
     httpMetadata: { contentType: 'application/json' },
   })
@@ -486,7 +508,7 @@ export async function historyGet(request: Request, env: Env, params: Params) {
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  if (!/^\d{1,3}$/.test(params.version)) return Response.json({ error: 'Invalid version' }, { status: 400 })
+  if (!/^\d{1,6}$/.test(params.version)) return Response.json({ error: 'Invalid version' }, { status: 400 })
 
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })
@@ -504,7 +526,7 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   const user = await getUser(request, env)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  if (!/^\d{1,3}$/.test(params.version)) return Response.json({ error: 'Invalid version' }, { status: 400 })
+  if (!/^\d{1,6}$/.test(params.version)) return Response.json({ error: 'Invalid version' }, { status: 400 })
 
   const access = await resolveAccess(env, user.sub, params.id)
   if (!access) return Response.json({ error: 'Not found' }, { status: 404 })

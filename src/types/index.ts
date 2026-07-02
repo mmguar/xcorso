@@ -112,6 +112,7 @@ export interface CourseControl {
 export interface CourseLoop {
   id: string
   forkControlId: string      // references Control.id — must appear ≥ N+1 times for N branches
+  forkControlId2?: string    // phi loop: second fork control alternating with the first
   branchNames: string[]      // label per branch in master order, e.g. ["A", "B", "C"]
 }
 
@@ -124,6 +125,7 @@ export interface CourseVariation {
   id: string
   name: string               // e.g. "BAC" — auto-generated or user-set
   loopOrders: BranchPermutation[]
+  relayLeg?: number          // 1-indexed relay leg assignment (relay courses only)
 }
 
 // ─── Course ────────────────────────────────────────────────────────────────
@@ -140,6 +142,7 @@ export interface Course {
   finishType?: FinishType    // IOF 16.1/16.2/16.3 — defaults to 'taped'
   color: string              // overprint color, default IOF_PURPLE
   showPoints?: boolean       // display [points] next to controls on map
+  relayLegs?: number          // number of relay legs; when set, variations are assigned to legs
   loops?: CourseLoop[]
   variations?: CourseVariation[]
   textDescriptions?: boolean

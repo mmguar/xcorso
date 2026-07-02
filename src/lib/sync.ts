@@ -186,7 +186,8 @@ export async function downloadProject(
     project: cleanProject,
     mapData,
     mapHash: serverMapHash,
-    version: (project as unknown as { version: number }).version,
+    // Sync version comes from the header — project.version is the format version "1.0".
+    version: Number(res.headers.get('X-Version') ?? 0),
   }
 }
 

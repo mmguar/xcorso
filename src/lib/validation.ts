@@ -113,7 +113,10 @@ export function validateProject(project: Project): ValidationResult {
   const forkIds = new Map<string, Set<string>>()
   for (const c of courses) {
     const s = new Set<string>()
-    for (const l of c.loops ?? []) s.add(l.forkControlId)
+    for (const l of c.loops ?? []) {
+      s.add(l.forkControlId)
+      if (l.forkControlId2) s.add(l.forkControlId2)
+    }
     forkIds.set(c.id, s)
   }
 

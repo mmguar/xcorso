@@ -20,24 +20,43 @@ import { createLayoutSlice } from './layoutSlice'
 
 const MAX_UNDO = 100
 
+// structuredClone copies string bytes, and imageOverlay dataUrls can be MBs.
+// Strings are immutable, so every clone (undo snapshots included) shares them.
+function cloneProject(project: Project): Project {
+  const overlays = project.imageOverlays
+  if (!overlays?.length) return timeClone('project', project)
+  const clone = timeClone('project', { ...project, imageOverlays: overlays.map(o => ({ ...o, dataUrl: '' })) })
+  clone.imageOverlays.forEach((o, i) => { o.dataUrl = overlays[i].dataUrl })
+  return clone
+}
+
 export const useStore = create<Store>((set, get) => {
+  // Standalone snapshots (drag starts) must clone: silent mutations then edit
+  // the current project in place, and the snapshot has to stay frozen.
   function pushUndoSnapshot(label = 'Edit') {
     const { project, undoStack } = get()
     if (!project) return
     set({
-      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), { project: structuredClone(project), label }],
+      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), { project: cloneProject(project), label }],
       redoStack: [],
     })
   }
 
-  function mutateProjectCore(fn: (p: Project) => void, label?: string, skipLock = false) {
-    const { project, projectRole } = get()
+  function mutateProjectCore(fn: (p: Project) => void, label = 'Edit', skipLock = false) {
+    const { project, projectRole, undoStack } = get()
     if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
-    pushUndoSnapshot(label)
-    const p = timeClone('project', project)
+    const p = cloneProject(project)
     p.meta.updatedAt = new Date().toISOString()
     fn(p)
-    set({ project: p, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
+    // The replaced project object is frozen from here on (in-place mutations
+    // only ever touch the current one), so the undo stack holds it by reference.
+    set({
+      project: p,
+      projectRevision: get().projectRevision + 1,
+      syncStatus: 'idle',
+      undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), { project, label }],
+      redoStack: [],
+    })
   }
 
   function mutateProjectSilentCore(fn: (p: Project) => void, skipLock = false) {
@@ -501,9 +520,11 @@ export const useStore = create<Store>((set, get) => {
         } else if (keep === 'local' && project) {
           await flushSave()
           const localMapHash = mapFileData ? await hashMap(mapFileData) : null
+          // Overwrite the server version we saw in the conflict — the server
+          // requires If-Match, so a still-newer push surfaces as a fresh conflict.
           const result = await uploadProject(
             syncConflict.cloudId, project, mapFileData,
-            localMapHash, null, 0,
+            localMapHash, null, syncConflict.serverVersion,
           )
           if (result.status === 'ok') {
             await setSyncMeta(projectId, {
@@ -578,7 +599,9 @@ export const useStore = create<Store>((set, get) => {
         projectRevision: projectRevision + 1,
         syncStatus: 'idle',
         undoStack: undoStack.slice(0, -1),
-        redoStack: [...redoStack, { project: structuredClone(project), label: entry.label }],
+        // Ref, not clone: the outgoing project stops being current right here,
+        // and only the current project is ever mutated in place.
+        redoStack: [...redoStack, { project, label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
@@ -592,7 +615,7 @@ export const useStore = create<Store>((set, get) => {
         projectRevision: projectRevision + 1,
         syncStatus: 'idle',
         redoStack: redoStack.slice(0, -1),
-        undoStack: [...undoStack, { project: structuredClone(project), label: entry.label }],
+        undoStack: [...undoStack, { project, label: entry.label }],
         ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
       })
     },
@@ -630,7 +653,7 @@ useStore.subscribe((state, prev) => {
   if (state.project && state.projectId && state.project !== prev.project && state.projectRole !== 'viewer') {
     debouncedSave(state.projectId, state.project, state.mapFileData)
 
-    // Auto-sync to cloud after 5s of inactivity — but not on initial load
+    // Auto-sync to cloud after 5 minutes of inactivity — but not on initial load
     // (project just loaded from IDB/cloud, nothing to push back).
     const isProjectSwitch = !prev.project || state.projectId !== prev.projectId
     if (state.cloudUser && !isProjectSwitch && state.project.map.type === 'ocad') {
