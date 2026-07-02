@@ -65,7 +65,7 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy-Report-Only': CSP,
+  'Content-Security-Policy': CSP,
 } as const
 
 export default {
