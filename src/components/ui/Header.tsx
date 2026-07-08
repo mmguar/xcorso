@@ -6,7 +6,8 @@ import { saveProjectFile, downloadBlob } from '../../lib/projectFile'
 import { exportIofXml, exportIofXmlV2 } from '../../lib/iofExport'
 import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
-import { logout as cloudLogout, addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
+import { addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
+import { LogoutDialog } from '../LogoutDialog'
 import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
 import { validateProject, countActiveIssues } from '../../lib/validation'
 import { ValidationDialog } from './ValidationDialog'
@@ -57,6 +58,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
 
   // Project switcher dropdown
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const [otherProjects, setOtherProjects] = useState<ProjectSummary[]>([])
   const switcherRef = useRef<HTMLDivElement>(null)
 
@@ -453,12 +455,22 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
         {/* Logout — rightmost */}
         {cloudUser && (
           <button
-            onClick={() => { cloudLogout(); setCloudUser(null) }}
+            onClick={() => setLogoutOpen(true)}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
             title={t('header.signOut')}
           >
             <LogOut size={14} />
           </button>
+        )}
+        {logoutOpen && (
+          <LogoutDialog
+            onClose={() => setLogoutOpen(false)}
+            onLoggedOut={() => {
+              setLogoutOpen(false)
+              // The open project was purged with the logout — leave the editor.
+              if (!useStore.getState().project) onGoHome()
+            }}
+          />
         )}
       </div>
     </header>

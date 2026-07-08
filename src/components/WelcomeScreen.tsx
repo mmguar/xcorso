@@ -11,7 +11,9 @@ import { loadMap } from '../lib/mapLoader'
 import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, type SharedProject } from '../lib/sync'
+import { deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, type SharedProject } from '../lib/sync'
+import { purgeCloudCopies } from '../lib/logoutPurge'
+import { LogoutDialog } from './LogoutDialog'
 import { SPEC_LABEL_KEYS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -44,6 +46,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
   const [cloudVersions, setCloudVersions] = useState<Record<string, number>>({})
@@ -296,7 +299,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               <Cloud size={14} className="text-green-500" />
               <span>{cloudUser.email}</span>
               <button
-                onClick={() => { cloudLogout(); setCloudUser(null) }}
+                onClick={() => setLogoutOpen(true)}
                 className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
                 title={t('welcome.signOut')}
               >
@@ -305,7 +308,19 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               {confirmDeleteAccount ? (
                 <span className="flex items-center gap-1 ml-1">
                   <button
-                    onClick={async () => { try { await deleteAccount(); setCloudUser(null) } catch { /* network error — keep user signed in */ } setConfirmDeleteAccount(false) }}
+                    onClick={async () => {
+                      try {
+                        await deleteAccount()
+                        // Account is gone server-side; remove its copies here too.
+                        const purged = await purgeCloudCopies()
+                        const { projectId } = useStore.getState()
+                        if (projectId && purged.includes(projectId)) {
+                          useStore.setState({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], syncStatus: 'idle', versionHistory: [], projectRole: 'owner' })
+                        }
+                        setCloudUser(null)
+                      } catch { /* network error — keep user signed in */ }
+                      setConfirmDeleteAccount(false)
+                    }}
                     className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
                   >
                     {t('welcome.confirmDelete')}
@@ -495,6 +510,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           type="file" accept=".oco" className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) handleOpenProject(f) }}
         />
+        {logoutOpen && <LogoutDialog onClose={() => setLogoutOpen(false)} onLoggedOut={() => setLogoutOpen(false)} />}
       </div>
     )
   }
