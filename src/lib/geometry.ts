@@ -104,7 +104,7 @@ export function interpolatePolyline(pts: Point[], t: number): { x: number; y: nu
   if (pts.length < 2) return { x: pts[0]?.x ?? 0, y: pts[0]?.y ?? 0, angle: 0 }
   let totalLen = 0
   for (let i = 1; i < pts.length; i++) totalLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-  let target = Math.max(0, Math.min(1, t)) * totalLen
+  const target = Math.max(0, Math.min(1, t)) * totalLen
   let cum = 0
   for (let i = 0; i < pts.length - 1; i++) {
     const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y

@@ -36,7 +36,7 @@ function matchRoute(method: string, pathname: string): [Handler, Record<string, 
     let match = true
     for (let i = 0; i < patternParts.length; i++) {
       if (patternParts[i].startsWith(':')) {
-        params[patternParts[i].slice(1)] = pathParts[i]
+        params[patternParts[i].slice(1)] = decodeURIComponent(pathParts[i])
       } else if (patternParts[i] !== pathParts[i]) {
         match = false
         break
@@ -49,7 +49,7 @@ function matchRoute(method: string, pathname: string): [Handler, Record<string, 
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com https://*.sentry.io",
+  "script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data:",
   "font-src 'self'",
@@ -61,6 +61,7 @@ const CSP = [
 ].join('; ')
 
 const SECURITY_HEADERS = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -74,6 +75,14 @@ export default {
     let res: Response
 
     if (url.pathname.startsWith('/api/')) {
+      // CSRF defense-in-depth on top of SameSite=Lax: browsers send Origin on
+      // all cross-origin requests, so a mismatch means a cross-site call.
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        const origin = request.headers.get('Origin')
+        if (origin && origin !== url.origin) {
+          return Response.json({ error: 'Forbidden' }, { status: 403 })
+        }
+      }
       const matched = matchRoute(request.method, url.pathname)
       if (!matched) return Response.json({ error: 'Not found' }, { status: 404 })
       const [handler, params] = matched
