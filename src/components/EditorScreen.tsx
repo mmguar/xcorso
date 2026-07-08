@@ -74,6 +74,19 @@ function SaveFailedBanner() {
   )
 }
 
+function TabConflictBanner() {
+  const show = useStore(s => s.tabConflict)
+  const [dismissed, setDismissed] = useState(false)
+  const t = useT()
+  if (!show || dismissed) return null
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 text-sm max-w-md">
+      <span>{t('editor.tabConflict')}</span>
+      <button onClick={() => setDismissed(true)} className="shrink-0 text-white/80 hover:text-white font-bold">&times;</button>
+    </div>
+  )
+}
+
 interface Props { onGoHome: () => void; onLogin: () => void; guardLeave: (action: () => void) => void }
 
 export function EditorScreen({ onGoHome, onLogin, guardLeave }: Props) {
@@ -167,6 +180,7 @@ export function EditorScreen({ onGoHome, onLogin, guardLeave }: Props) {
       {showShortcuts && <ShortcutsOverlay onClose={closeShortcuts} />}
       <OnboardingTour />
       <SaveFailedBanner />
+      <TabConflictBanner />
     </div>
   )
 }

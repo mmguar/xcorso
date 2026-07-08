@@ -109,6 +109,7 @@ export function hashMap(data: ArrayBuffer): Promise<string> {
 export type SyncResult =
   | { status: 'ok'; version: number }
   | { status: 'conflict'; serverVersion: number }
+  | { status: 'not-found' }   // cloud project deleted or access revoked
   | { status: 'error'; message: string }
 
 export async function uploadProject(
@@ -128,6 +129,7 @@ export async function uploadProject(
       credentials: 'include',
       body: mapData,
     })
+    if (mapRes.status === 404) return { status: 'not-found' }
     if (!mapRes.ok) return { status: 'error', message: 'Map upload failed' }
     const { hash } = await mapRes.json() as { hash: string }
     mapHash = hash
@@ -150,6 +152,7 @@ export async function uploadProject(
     const { serverVersion } = await res.json() as { serverVersion: number }
     return { status: 'conflict', serverVersion }
   }
+  if (res.status === 404) return { status: 'not-found' }
   if (!res.ok) return { status: 'error', message: `Upload failed (${res.status})` }
 
   const data = await res.json() as { version: number; indexEtag?: string }
@@ -305,8 +308,34 @@ export interface SyncMeta {
   syncedAt: string
   mapHash: string | null
   projectHash?: string
+  /** Set when the project is shared with this user; absent = owned. */
+  role?: 'editor' | 'viewer'
 }
 
 export function hashProject(project: Project): Promise<string> {
   return sha256Hex(new TextEncoder().encode(JSON.stringify(project)))
+}
+
+/**
+ * Build a complete SyncMeta. Every writer must go through this so projectHash
+ * is never missing — a missing hash defeats the "skip upload if unchanged"
+ * check and causes phantom version bumps on other devices.
+ * Pass the project as it lives in the store (post-normalization), since that
+ * is what future syncs will hash and compare against.
+ */
+export async function makeSyncMeta(
+  cloudId: string,
+  syncVersion: number,
+  mapHash: string | null,
+  project: Project,
+  role?: 'editor' | 'viewer',
+): Promise<SyncMeta> {
+  return {
+    cloudId,
+    syncVersion,
+    syncedAt: new Date().toISOString(),
+    mapHash,
+    projectHash: await hashProject(project),
+    ...(role ? { role } : {}),
+  }
 }
