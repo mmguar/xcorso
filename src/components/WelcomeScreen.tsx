@@ -11,9 +11,9 @@ import { loadMap } from '../lib/mapLoader'
 import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, hashProject, type SharedProject } from '../lib/sync'
-import { purgeCloudCopies } from '../lib/logoutPurge'
+import { fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, hashProject, type SharedProject } from '../lib/sync'
 import { LogoutDialog } from './LogoutDialog'
+import { DeleteAccountDialog } from './DeleteAccountDialog'
 import { SPEC_LABEL_KEYS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -55,7 +55,6 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const loadProject = useStore(s => s.loadProject)
   const switchProject = useStore(s => s.switchProject)
   const cloudUser = useStore(s => s.cloudUser)
-  const setCloudUser = useStore(s => s.setCloudUser)
 
   const openFileRef = useRef<HTMLInputElement>(null)
   const mapFileRef = useRef<HTMLInputElement>(null)
@@ -301,49 +300,13 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               >
                 <LogOut size={14} />
               </button>
-              {confirmDeleteAccount ? (
-                <span className="flex items-center gap-1 ml-1">
-                  <button
-                    onClick={async () => {
-                      try {
-                        // Purge local copies only after the server confirms —
-                        // deleting them on a failed request loses data while
-                        // the account (and its cloud data) still exists.
-                        if (await deleteAccount()) {
-                          const purged = await purgeCloudCopies()
-                          const { projectId } = useStore.getState()
-                          if (projectId && purged.includes(projectId)) {
-                            useStore.setState({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], syncStatus: 'idle', versionHistory: [], projectRole: 'owner' })
-                          }
-                          setCloudUser(null)
-                        } else {
-                          setError(t('welcome.deleteAccountFailed'))
-                        }
-                      } catch {
-                        setError(t('welcome.deleteAccountFailed'))
-                      }
-                      setConfirmDeleteAccount(false)
-                    }}
-                    className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
-                  >
-                    {t('welcome.confirmDelete')}
-                  </button>
-                  <button
-                    onClick={() => setConfirmDeleteAccount(false)}
-                    className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500"
-                  >
-                    {t('welcome.cancel')}
-                  </button>
-                </span>
-              ) : (
-                <button
-                  onClick={() => setConfirmDeleteAccount(true)}
-                  className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1"
-                  title={t('welcome.deleteAccountTitle')}
-                >
-                  {t('welcome.deleteAccount')}
-                </button>
-              )}
+              <button
+                onClick={() => setConfirmDeleteAccount(true)}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1"
+                title={t('welcome.deleteAccountTitle')}
+              >
+                {t('welcome.deleteAccount')}
+              </button>
             </div>
           ) : (
             <button
@@ -514,6 +477,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           onChange={e => { const f = e.target.files?.[0]; if (f) handleOpenProject(f) }}
         />
         {logoutOpen && <LogoutDialog onClose={() => setLogoutOpen(false)} onLoggedOut={() => setLogoutOpen(false)} />}
+        {confirmDeleteAccount && <DeleteAccountDialog onClose={() => setConfirmDeleteAccount(false)} />}
       </div>
     )
   }
