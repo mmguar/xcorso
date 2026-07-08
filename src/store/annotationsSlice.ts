@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationType, MapPoint } from '../types'
+import type { Annotation, AnnotationType, MapPoint, Project } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 
 export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHelpers) {
@@ -19,7 +19,9 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
       const annotation: Annotation = { id: crypto.randomUUID(), type, points,
         ...(type === 'north_arrow' ? { color: '#38bdf8' } : {}),
       }
-      h.mutateProject(p => { p.annotations.push(annotation) }, `Add ${type.replace(/_/g, ' ')}`)
+      // Keep the pending points when the mutation is blocked — the user can
+      // still cancel explicitly, but their drawing isn't silently discarded.
+      if (!h.mutateProject(p => { p.annotations.push(annotation) }, `Add ${type.replace(/_/g, ' ')}`)) return
       set(state => ({ editor: { ...state.editor, pendingAnnotationPoints: [] } }))
     },
 
@@ -36,23 +38,31 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
     },
 
     deleteAnnotation: (id: string) => {
-      h.mutateProject(p => { p.annotations = p.annotations.filter(a => a.id !== id) }, 'Delete annotation')
+      const ok = h.mutateProject(p => {
+        if (!p.annotations.some(a => a.id === id)) return false
+        p.annotations = p.annotations.filter(a => a.id !== id)
+      }, 'Delete annotation')
+      if (!ok) return
       set(state => ({
         editor: { ...state.editor, selectedAnnotationId: state.editor.selectedAnnotationId === id ? null : state.editor.selectedAnnotationId },
       }))
     },
 
-    updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => {
-      h.mutateProject(p => {
+    updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>, silent?: boolean) => {
+      const fn = (p: Project) => {
         const i = p.annotations.findIndex(a => a.id === id)
-        if (i !== -1) p.annotations[i] = { ...p.annotations[i], ...updates }
-      }, 'Update annotation')
+        if (i === -1) return false
+        p.annotations[i] = { ...p.annotations[i], ...updates }
+      }
+      if (silent) h.mutateProjectSilent(fn)
+      else h.mutateProject(fn, 'Update annotation')
     },
 
     beginMoveAnnotation: (label?: string) => h.pushUndoSnapshot(label ?? 'Move annotation'),
 
     moveAnnotation: (id: string, position: MapPoint) => {
       h.mutateProjectSilent(p => {
+        if (!p.annotations.some(a => a.id === id)) return false
         p.annotations = p.annotations.map(a => {
           if (a.id !== id) return a
           if (a.type === 'out_of_bounds' || a.type === 'forbidden_route') {
@@ -69,6 +79,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
 
     moveAnnotationVertex: (id: string, vertexIndex: number, position: MapPoint) => {
       h.mutateProjectSilent(p => {
+        if (!p.annotations.some(a => a.id === id)) return false
         p.annotations = p.annotations.map(a => {
           if (a.id !== id || vertexIndex < 0 || vertexIndex >= a.points.length) return a
           const pts = [...a.points]
@@ -82,6 +93,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
 
     rotateAnnotation: (id: string, rotation: number) => {
       h.mutateProjectSilent(p => {
+        if (!p.annotations.some(a => a.id === id)) return false
         p.annotations = p.annotations.map(a => a.id === id ? { ...a, rotation } : a)
       })
     },
@@ -90,6 +102,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
 
     resizeAnnotation: (id: string, scale: number) => {
       h.mutateProjectSilent(p => {
+        if (!p.annotations.some(a => a.id === id)) return false
         p.annotations = p.annotations.map(a => a.id === id ? { ...a, scale } : a)
       })
     },
@@ -98,6 +111,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
 
     elongateAnnotation: (id: string, elongation: number) => {
       h.mutateProjectSilent(p => {
+        if (!p.annotations.some(a => a.id === id)) return false
         p.annotations = p.annotations.map(a => a.id === id ? { ...a, elongation } : a)
       })
     },

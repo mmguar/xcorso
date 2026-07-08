@@ -23,7 +23,7 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     addControlGap: (controlId: string, gap: CircleGap) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
-        if (!c) return
+        if (!c) return false
         if (!c.gaps) c.gaps = []
         c.gaps.push(gap)
       }, `Add gap ${ctrlName(controlId)}`)
@@ -32,7 +32,7 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     removeControlGap: (controlId: string, index: number) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
-        if (!c || !c.gaps) return
+        if (!c || !c.gaps) return false
         c.gaps.splice(index, 1)
         if (c.gaps.length === 0) c.gaps = undefined
       }, `Remove gap ${ctrlName(controlId)}`)
@@ -42,13 +42,15 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     removeControlGapAtAngle: (controlId: string, angle: number) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
-        if (!c || !c.gaps) return
+        if (!c || !c.gaps) return false
         const a = normalizeDeg(angle)
+        const before = c.gaps.length
         c.gaps = c.gaps.filter(g => {
           const span = normalizeDeg(g.endAngle - g.startAngle)
           const dist = normalizeDeg(a - g.startAngle)
           return dist > span
         })
+        if (c.gaps.length === before) return false
         if (c.gaps.length === 0) c.gaps = undefined
       }, `Rebuild gap ${ctrlName(controlId)}`)
     },
@@ -56,16 +58,17 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     clearControlGaps: (controlId: string) => {
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
-        if (c) c.gaps = undefined
+        if (!c || !c.gaps) return false
+        c.gaps = undefined
       }, `Clear gaps ${ctrlName(controlId)}`)
     },
 
     addLegGap: (courseId: string, courseControlId: string, gap: LegGap) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc) return
+        if (!cc) return false
         if (!cc.legGaps) cc.legGaps = []
         cc.legGaps.push(gap)
       }, `Add leg gap ${legName(courseId, courseControlId)}`)
@@ -74,9 +77,9 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     removeLegGap: (courseId: string, courseControlId: string, index: number) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc || !cc.legGaps) return
+        if (!cc || !cc.legGaps) return false
         cc.legGaps.splice(index, 1)
         if (cc.legGaps.length === 0) cc.legGaps = undefined
       }, `Remove leg gap ${legName(courseId, courseControlId)}`)
@@ -86,10 +89,12 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     removeLegGapAtT: (courseId: string, courseControlId: string, t: number) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc || !cc.legGaps) return
+        if (!cc || !cc.legGaps) return false
+        const before = cc.legGaps.length
         cc.legGaps = cc.legGaps.filter(g => t < g.start || t > g.end)
+        if (cc.legGaps.length === before) return false
         if (cc.legGaps.length === 0) cc.legGaps = undefined
       }, `Rebuild leg gap ${legName(courseId, courseControlId)}`)
     },
@@ -97,9 +102,10 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     clearLegGaps: (courseId: string, courseControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.legGaps = undefined
+        if (!cc || !cc.legGaps) return false
+        cc.legGaps = undefined
       }, `Clear leg gaps ${legName(courseId, courseControlId)}`)
     },
   }

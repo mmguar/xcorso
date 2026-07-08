@@ -84,10 +84,10 @@ export interface AppActions {
   setMapGeoref: (georef: MapGeoref) => void
   replaceMapFile: (filename: string, type: MapType, mapData: ArrayBuffer) => void
 
-  addControl: (type: ControlType, position: MapPoint, code?: number) => Control
+  addControl: (type: ControlType, position: MapPoint, code?: number) => Control | null
   beginMoveControl: (label?: string) => void
   moveControl: (id: string, position: MapPoint) => void
-  splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint) => Control
+  splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint) => Control | null
   beginMoveControlLabel: (label?: string) => void
   moveControlLabel: (id: string, offset: MapPoint) => void
   deleteControl: (id: string) => void
@@ -98,7 +98,7 @@ export interface AppActions {
   updateSkipCodes: (codes: number[]) => void
   reassignControlIds: () => void
 
-  addCourse: (name: string, type?: CourseType) => Course
+  addCourse: (name: string, type?: CourseType) => Course | null
   duplicateCourse: (id: string) => Course | null
   deleteCourse: (id: string) => void
   updateCourseName: (id: string, name: string) => void
@@ -182,7 +182,7 @@ export interface AppActions {
   cancelAnnotation: () => void
   movePendingAnnotationPoint: (index: number, position: MapPoint) => void
   deleteAnnotation: (id: string) => void
-  updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => void
+  updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>, silent?: boolean) => void
   beginMoveAnnotation: (label?: string) => void
   moveAnnotation: (id: string, position: MapPoint) => void
   beginMoveAnnotationVertex: () => void
@@ -260,13 +260,23 @@ export interface AppActions {
   undo: () => void
   redo: () => void
   jumpToHistory: (index: number) => void
+
+  /** Push one undo snapshot before a burst of silent updates (sliders, color pickers). */
+  beginEdit: (label: string) => void
 }
 
 export type Store = AppState & AppActions
 
 export interface StoreHelpers {
-  mutateProject: (fn: (p: Project) => void, label?: string) => void
-  mutateProjectSilent: (fn: (p: Project) => void) => void
+  /**
+   * Returns true when the mutation was applied. False means it was blocked
+   * (viewer role / locked project) or the callback signalled a no-op by
+   * returning false — in both cases no undo entry, updatedAt bump, or
+   * revision change happens. Callbacks must signal `false` on their
+   * target-missing guard paths so stale ids can't dirty the project.
+   */
+  mutateProject: (fn: (p: Project) => void | false, label?: string) => boolean
+  mutateProjectSilent: (fn: (p: Project) => void | false) => boolean
   pushUndoSnapshot: (label?: string) => void
 }
 

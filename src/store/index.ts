@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Project } from '../types'
-import type { Store, StoreHelpers, UndoEntry } from './types'
+import type { EditorState, Store, StoreHelpers, UndoEntry } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta, clearSyncMeta } from '../lib/persistence'
 import * as persistence from '../lib/persistence'
@@ -45,6 +45,51 @@ function acquireTabLock(id: string) {
   }).catch(() => {})
 }
 
+// Undo/redo swap the project wholesale, so editor selections and modes can be
+// left pointing at objects the restored project no longer contains (undo of
+// "Add course" while it's selected, redo of a delete). Null out anything
+// dangling — render code guards against these ids, but acting on them mints
+// phantom mutations.
+function reconcileEditorSelections(project: Project, editor: EditorState): EditorState {
+  const patch: Partial<EditorState> = {}
+  if (editor.selectedControlId && !project.controls.some(c => c.id === editor.selectedControlId)) {
+    patch.selectedControlId = null
+  }
+  const course = editor.selectedCourseId ? project.courses.find(c => c.id === editor.selectedCourseId) : undefined
+  if (editor.selectedCourseId && !course) {
+    patch.selectedCourseId = null
+    patch.selectedVariationId = null
+    patch.selectedSubmapIndex = null
+    if (editor.courseViewMode === 'single') patch.courseViewMode = 'all-controls'
+    if (editor.activeTool === 'gap' || editor.activeTool === 'bend') patch.activeTool = 'select'
+  } else if (editor.selectedVariationId && course && !course.variations?.some(v => v.id === editor.selectedVariationId)) {
+    patch.selectedVariationId = null
+  }
+  if (editor.selectedOverlayId) {
+    const id = editor.selectedOverlayId
+    if (!project.scaleBars.some(s => s.id === id)
+        && !project.textLabels.some(t => t.id === id)
+        && !project.imageOverlays.some(o => o.id === id)) {
+      patch.selectedOverlayId = null
+    }
+  }
+  if (editor.selectedAnnotationId && !project.annotations.some(a => a.id === editor.selectedAnnotationId)) {
+    patch.selectedAnnotationId = null
+  }
+  if (editor.measureMode && editor.measureCourseId && !project.courses.some(c => c.id === editor.measureCourseId)) {
+    patch.measureMode = false
+    patch.measureCourseId = null
+    patch.measureHiddenLegs = []
+  }
+  if (editor.layoutMode && editor.layoutCourseId && !project.courses.some(c => c.id === editor.layoutCourseId)) {
+    patch.layoutMode = false
+    patch.layoutCourseId = null
+    patch.layoutSubmapIndex = 0
+    patch.selectedSubmapIndex = null
+  }
+  return Object.keys(patch).length > 0 ? { ...editor, ...patch } : editor
+}
+
 // structuredClone copies string bytes, and imageOverlay dataUrls can be MBs.
 // Strings are immutable, so every clone (undo snapshots included) shares them.
 function cloneProject(project: Project): Project {
@@ -58,21 +103,27 @@ function cloneProject(project: Project): Project {
 export const useStore = create<Store>((set, get) => {
   // Standalone snapshots (drag starts) must clone: silent mutations then edit
   // the current project in place, and the snapshot has to stay frozen.
-  function pushUndoSnapshot(label = 'Edit') {
-    const { project, undoStack } = get()
-    if (!project) return
+  // Same viewer/locked guard as the mutation helpers — a snapshot whose
+  // mutations get swallowed is a phantom undo entry.
+  function pushUndoSnapshotCore(label = 'Edit', skipLock = false) {
+    const { project, undoStack, projectRole } = get()
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
     set({
       undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), { project: cloneProject(project), label }],
       redoStack: [],
     })
   }
+  const pushUndoSnapshot = (label?: string) => pushUndoSnapshotCore(label)
+  const pushUndoSnapshotLayout = (label?: string) => pushUndoSnapshotCore(label, true)
 
-  function mutateProjectCore(fn: (p: Project) => void, label = 'Edit', skipLock = false) {
+  function mutateProjectCore(fn: (p: Project) => void | false, label = 'Edit', skipLock = false): boolean {
     const { project, projectRole, undoStack } = get()
-    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return false
     const p = cloneProject(project)
+    // fn returning false signals "nothing to change" — drop the clone so a
+    // stale-id call doesn't push an undo entry or dirty the project.
+    if (fn(p) === false) return false
     p.meta.updatedAt = new Date().toISOString()
-    fn(p)
     // The replaced project object is frozen from here on (in-place mutations
     // only ever touch the current one), so the undo stack holds it by reference.
     set({
@@ -82,23 +133,31 @@ export const useStore = create<Store>((set, get) => {
       undoStack: [...undoStack.slice(-(MAX_UNDO - 1)), { project, label }],
       redoStack: [],
     })
+    return true
   }
 
-  function mutateProjectSilentCore(fn: (p: Project) => void, skipLock = false) {
+  function mutateProjectSilentCore(fn: (p: Project) => void | false, skipLock = false): boolean {
     const { project, projectRole } = get()
-    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return
-    fn(project)
+    if (!project || projectRole === 'viewer' || (!skipLock && project.locked)) return false
+    // Silent callbacks must guard before mutating: the current project is
+    // edited in place, so a false return can't roll anything back.
+    if (fn(project) === false) return false
+    // Bump updatedAt so drag-only sessions still sort/display as modified
+    // (sync dirty-checks use content hashes, not this timestamp). Safe to
+    // mutate in place: the current project is never aliased into the stacks.
+    project.meta.updatedAt = new Date().toISOString()
     set({ project: { ...project } as Project, projectRevision: get().projectRevision + 1, syncStatus: 'idle' })
+    return true
   }
 
-  const mutateProject = (fn: (p: Project) => void, label?: string) => mutateProjectCore(fn, label)
-  const mutateProjectSilent = (fn: (p: Project) => void) => mutateProjectSilentCore(fn)
+  const mutateProject = (fn: (p: Project) => void | false, label?: string) => mutateProjectCore(fn, label)
+  const mutateProjectSilent = (fn: (p: Project) => void | false) => mutateProjectSilentCore(fn)
   // Layout mutations bypass the lock — layout editing is allowed while locked.
-  const mutateProjectLayout = (fn: (p: Project) => void, label?: string) => mutateProjectCore(fn, label, true)
-  const mutateProjectLayoutSilent = (fn: (p: Project) => void) => mutateProjectSilentCore(fn, true)
+  const mutateProjectLayout = (fn: (p: Project) => void | false, label?: string) => mutateProjectCore(fn, label, true)
+  const mutateProjectLayoutSilent = (fn: (p: Project) => void | false) => mutateProjectSilentCore(fn, true)
 
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
-  const layoutH: StoreHelpers = { mutateProject: mutateProjectLayout, mutateProjectSilent: mutateProjectLayoutSilent, pushUndoSnapshot }
+  const layoutH: StoreHelpers = { mutateProject: mutateProjectLayout, mutateProjectSilent: mutateProjectLayoutSilent, pushUndoSnapshot: pushUndoSnapshotLayout }
 
   return {
     projectId: null,
@@ -202,11 +261,24 @@ export const useStore = create<Store>((set, get) => {
     },
 
     replaceMapFile: (filename, type, mapData) => {
-      mutateProject(p => {
-        p.map.filename = filename
-        p.map.type = type
-      }, 'Replace map file')
-      set({ mapFileData: mapData, loadedMap: null })
+      const { project, projectRole, undoStack, redoStack, projectRevision } = get()
+      if (!project || projectRole === 'viewer' || project.locked) return
+      // Not undoable: the map bytes aren't in the undo snapshots, so restoring
+      // an older map config would desync it from mapFileData. Instead, graft
+      // the new file identity onto every history entry — undo keeps working
+      // across the replacement and never reverts the map itself.
+      const retarget = (p: Project): Project => ({ ...p, map: { ...p.map, filename, type } })
+      const cur = retarget(project)
+      cur.meta = { ...cur.meta, updatedAt: new Date().toISOString() }
+      set({
+        project: cur,
+        mapFileData: mapData,
+        loadedMap: null,
+        projectRevision: projectRevision + 1,
+        syncStatus: 'idle',
+        undoStack: undoStack.map(e => ({ ...e, project: retarget(e.project) })),
+        redoStack: redoStack.map(e => ({ ...e, project: retarget(e.project) })),
+      })
     },
 
     // ── Domain slices ────────────────────────────────────────────────────
@@ -372,12 +444,18 @@ export const useStore = create<Store>((set, get) => {
 
     setOverprint: (overprint) => {
       const v = Math.max(0, Math.min(1, overprint))
+      // Silent per slider tick; the slider pushes one beginEdit snapshot per drag.
       mutateProjectSilent(p => { p.overprint = v })
     },
 
     setOverprintMode: (mode) => {
-      mutateProjectSilent(p => { p.overprintMode = mode })
+      mutateProject(p => {
+        if (p.overprintMode === mode) return false
+        p.overprintMode = mode
+      }, 'Change overprint mode')
     },
+
+    beginEdit: (label) => pushUndoSnapshot(label),
 
     setGapSize: (size) => {
       set(state => ({ editor: { ...state.editor, gapSize: size } }))
@@ -622,9 +700,9 @@ export const useStore = create<Store>((set, get) => {
         if (remoteVersion == null || remoteVersion < syncMeta.syncVersion) return
 
         const { project } = get()
-        // Dirty check by content hash, not updatedAt: silent mutations (control
-        // drags, label moves) never bump updatedAt, so a timestamp check would
-        // silently overwrite drag-only edits with the remote version.
+        // Dirty check by content hash — robust regardless of updatedAt
+        // semantics; the timestamp compare survives only as a legacy fallback
+        // for sync meta written before projectHash existed.
         const dirty = project != null && (syncMeta.projectHash
           ? await hashProject(project) !== syncMeta.projectHash
           : project.meta.updatedAt > syncMeta.syncedAt) // legacy meta without hash
@@ -667,6 +745,8 @@ export const useStore = create<Store>((set, get) => {
       const { undoStack, project, redoStack, editor, projectRevision } = get()
       if (undoStack.length === 0 || !project) return
       const entry = undoStack[undoStack.length - 1]
+      let ed = reconcileEditorSelections(entry.project, editor)
+      if (ed.layoutMode) ed = { ...ed, layoutSnapRequest: ed.layoutSnapRequest + 1 }
       set({
         project: entry.project,
         projectRevision: projectRevision + 1,
@@ -675,7 +755,7 @@ export const useStore = create<Store>((set, get) => {
         // Ref, not clone: the outgoing project stops being current right here,
         // and only the current project is ever mutated in place.
         redoStack: [...redoStack, { project, label: entry.label }],
-        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
+        ...(ed !== editor ? { editor: ed } : {}),
       })
     },
 
@@ -683,13 +763,15 @@ export const useStore = create<Store>((set, get) => {
       const { redoStack, project, undoStack, editor, projectRevision } = get()
       if (redoStack.length === 0 || !project) return
       const entry = redoStack[redoStack.length - 1]
+      let ed = reconcileEditorSelections(entry.project, editor)
+      if (ed.layoutMode) ed = { ...ed, layoutSnapRequest: ed.layoutSnapRequest + 1 }
       set({
         project: entry.project,
         projectRevision: projectRevision + 1,
         syncStatus: 'idle',
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, { project, label: entry.label }],
-        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
+        ...(ed !== editor ? { editor: ed } : {}),
       })
     },
 
@@ -706,13 +788,15 @@ export const useStore = create<Store>((set, get) => {
       if (index + 1 < undoStack.length) {
         newRedo.push({ project: undoStack[index + 1].project, label: undoStack[index].label })
       }
+      let ed = reconcileEditorSelections(undoStack[index].project, editor)
+      if (ed.layoutMode) ed = { ...ed, layoutSnapRequest: ed.layoutSnapRequest + 1 }
       set({
         project: undoStack[index].project,
         projectRevision: projectRevision + 1,
         syncStatus: 'idle',
         undoStack: undoStack.slice(0, index),
         redoStack: newRedo,
-        ...(editor.layoutMode ? { editor: { ...editor, layoutSnapRequest: editor.layoutSnapRequest + 1 } } : {}),
+        ...(ed !== editor ? { editor: ed } : {}),
       })
     },
   }

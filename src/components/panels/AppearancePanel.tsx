@@ -16,6 +16,7 @@ export function AppearancePanel() {
   const setAppearance = useStore(s => s.setAppearance)
   const overprint = useStore(s => s.project?.overprint ?? 1)
   const setOverprint = useStore(s => s.setOverprint)
+  const beginEdit = useStore(s => s.beginEdit)
   const overprintMode = useStore(s => s.project?.overprintMode ?? 'simulated')
   const setOverprintMode = useStore(s => s.setOverprintMode)
   const labelSubmapStart = useStore(s => s.project?.labelSubmapStart ?? false)
@@ -59,6 +60,7 @@ export function AppearancePanel() {
               value={overprint}
               min={0} max={1} step={0.05}
               format={v => `${Math.round(v * 100)}%`}
+              onBegin={() => beginEdit('Change overprint')}
               onChange={v => setOverprint(v)}
             />
           </div>
@@ -164,10 +166,12 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function SliderRow({ value, min, max, step, format, onChange }: {
+function SliderRow({ value, min, max, step, format, onChange, onBegin }: {
   value: number; min: number; max: number; step: number
   format: (v: number) => string
   onChange: (v: number) => void
+  /** Undo snapshot hook, fired once per drag (project-backed sliders only). */
+  onBegin?: () => void
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -175,6 +179,7 @@ function SliderRow({ value, min, max, step, format, onChange }: {
         type="range"
         min={min} max={max} step={step}
         value={value}
+        onPointerDown={onBegin}
         onChange={e => onChange(parseFloat(e.target.value))}
         className="flex-1 h-1 accent-orange-600"
       />

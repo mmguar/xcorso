@@ -107,9 +107,16 @@ function HistoryDropdown({ onJump, onClose }: { onJump: (index: number) => void;
 
   return (
     <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-64 overflow-y-auto">
-      {redoStack.slice().reverse().map((entry, i) => (
+      {/* Natural order: redoStack[0] is the furthest-future state (top), the
+          last entry is the next redo step (adjacent to "current"). Clicking an
+          entry redoes all the way to it, mirroring how undo entries jump. */}
+      {redoStack.map((entry, i) => (
         <button key={`redo-${i}`}
-          onClick={() => { redo(); onClose() }}
+          onClick={() => {
+            const steps = redoStack.length - i
+            for (let k = 0; k < steps; k++) redo()
+            onClose()
+          }}
           className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-50 transition-colors"
         >
           <span className="opacity-50">↻</span> {entry.label}

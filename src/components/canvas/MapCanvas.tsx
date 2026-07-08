@@ -1702,8 +1702,8 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'place-image': {
           const pi = state.editor.pendingImage
           if (pi) {
+            // addImageOverlay clears pendingImage itself when the add succeeds.
             state.addImageOverlay(mapPt, pi.dataUrl, pi.filename, pi.naturalWidth, pi.naturalHeight)
-            state.setPendingImage(null)
             state.setActiveTool('select')
           }
           break
@@ -2421,7 +2421,7 @@ export function MapCanvas({ loadedMap }: Props) {
               className="flex-1 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-left"
               onClick={() => {
                 const nc = useStore.getState().splitControl(splitPrompt.controlId, splitPrompt.courseId, splitPrompt.newPos, splitPrompt.origPos)
-                useStore.getState().setSelectedControl(nc.id)
+                if (nc) useStore.getState().setSelectedControl(nc.id)
                 setSplitPrompt(null)
               }}
             >
