@@ -56,7 +56,7 @@ export async function verifyToken(env: Env, token: string): Promise<TokenPayload
 
 export async function getUser(request: Request, env: Env): Promise<TokenPayload | null> {
   const cookie = request.headers.get('Cookie') ?? ''
-  const match = cookie.match(/(?:^|;\s*)xcorso_token=([^;]+)/)
+  const match = cookie.match(/(?:^|;\s*)__Host-xcorso_token=([^;]+)/)
   if (!match) return null
   const payload = await verifyToken(env, match[1])
   if (!payload) return null
@@ -67,5 +67,5 @@ export async function getUser(request: Request, env: Env): Promise<TokenPayload 
 }
 
 export function tokenCookie(token: string, maxAge = TOKEN_TTL): string {
-  return `xcorso_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`
+  return `__Host-xcorso_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`
 }

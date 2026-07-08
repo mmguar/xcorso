@@ -95,9 +95,13 @@ export async function fetchCloudProjects(): Promise<CloudProjectMeta[]> {
 
 // ── Map hash ──────────────────────────────────────────────────────────────────
 
-export async function hashMap(data: ArrayBuffer): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', data)
+async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', data as ArrayBuffer)
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export function hashMap(data: ArrayBuffer): Promise<string> {
+  return sha256Hex(data)
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
@@ -249,7 +253,8 @@ export async function addShare(cloudId: string, email: string, role: 'editor' | 
 }
 
 export async function removeShare(cloudId: string, userId: string): Promise<boolean> {
-  const res = await fetch(`${API}/projects/${cloudId}/share/${userId}`, { method: 'DELETE', credentials: 'include' })
+  // userId may be "pending:<email>" for not-yet-registered invitees
+  const res = await fetch(`${API}/projects/${cloudId}/share/${encodeURIComponent(userId)}`, { method: 'DELETE', credentials: 'include' })
   return res.ok
 }
 
@@ -302,7 +307,6 @@ export interface SyncMeta {
   projectHash?: string
 }
 
-export async function hashProject(project: Project): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(project)))
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+export function hashProject(project: Project): Promise<string> {
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(project)))
 }
