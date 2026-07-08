@@ -9,7 +9,7 @@ import { EditorScreen } from './components/EditorScreen'
 import { AboutPage } from './components/AboutPage'
 import { LoginModal } from './components/LoginModal'
 import { ConflictModal } from './components/ConflictModal'
-import { getActiveId, loadProject as loadPersistedProject } from './lib/persistence'
+import { getActiveId, getSyncMeta, loadProject as loadPersistedProject, flushSave } from './lib/persistence'
 import { fetchUser } from './lib/sync'
 
 function ErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
@@ -74,7 +74,10 @@ export default function App() {
       if (!id) return
       const saved = await loadPersistedProject(id)
       if (saved?.project) {
-        loadProject(saved.project, saved.mapFileData, id)
+        // Restore the share role — defaulting to 'owner' on refresh let shared
+        // projects silently fork into the editor's own cloud account.
+        const sync = await getSyncMeta(id)
+        loadProject(saved.project, saved.mapFileData, id, sync?.role)
         setScreen('editor')
       }
     }).finally(() => setRestoring(false))
@@ -91,8 +94,24 @@ export default function App() {
     function onBeforeUnload(e: BeforeUnloadEvent) {
       if (hasUnsyncedChanges()) e.preventDefault()
     }
+    // Returning to the tab is the common "other device pushed meanwhile"
+    // moment (startup was the only check before). Dirty local state raises
+    // the conflict dialog; a clean pull replaces the project (undo stack
+    // resets — accepted tradeoff, the alternative is merge machinery).
+    function onVisibility() {
+      if (!document.hidden) useStore.getState().checkForRemoteUpdate()
+    }
+    // Best-effort: closes the 500ms debounce window where the last edit is
+    // lost if the tab closes. IDB writes started here usually complete.
+    function onPageHide() { flushSave() }
     window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   const guardedAction = useCallback((action: () => void) => {

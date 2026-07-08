@@ -11,7 +11,9 @@ import { loadMap } from '../lib/mapLoader'
 import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, type SyncMeta, type SharedProject } from '../lib/sync'
+import { deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, type SharedProject } from '../lib/sync'
+import { purgeCloudCopies } from '../lib/logoutPurge'
+import { LogoutDialog } from './LogoutDialog'
 import { SPEC_LABEL_KEYS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -44,6 +46,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
   const [cloudVersions, setCloudVersions] = useState<Record<string, number>>({})
@@ -96,11 +99,14 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     try {
       const [cloud, shared] = await Promise.all([fetchCloudProjects(), fetchSharedProjects()])
       setCloudVersions(Object.fromEntries(cloud.map(c => [c.id, c.version])))
-      const localCloudIds = new Set(local.map(p => p.sync?.cloudId).filter(Boolean))
+      // Local copies of shared projects (sync.role set) appear under
+      // "Shared with me" only, not in the recent list.
+      const own = local.filter(p => !p.sync?.role)
+      const localCloudIds = new Set(own.map(p => p.sync?.cloudId).filter(Boolean))
       const cloudOnly: ProjectSummary[] = cloud
         .filter(c => !localCloudIds.has(c.id))
         .map(c => ({ id: c.id, name: c.name, updatedAt: c.updatedAt, sync: { cloudId: c.id, syncVersion: c.version, syncedAt: c.updatedAt, mapHash: null } }))
-      setProjects([...local, ...cloudOnly].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+      setProjects([...own, ...cloudOnly].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
       setSharedProjects(shared)
     } catch {
       setProjects(local)
@@ -136,8 +142,10 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           if (result) {
             const mapData = result.mapData ?? isLocallyAvailable.mapFileData
             await saveProject(p.id, result.project, mapData)
-            await setSyncMeta(p.id, { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash })
             loadProject(result.project, mapData, p.id)
+            // Hash the store's project (loadProject normalizes it) so the next
+            // sync's no-change check compares like with like.
+            await setSyncMeta(p.id, await makeSyncMeta(cloudId, result.version, result.mapHash, useStore.getState().project!))
             useStore.setState({ syncStatus: 'synced' })
             onProjectLoaded()
             return
@@ -150,9 +158,8 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
         const result = await downloadProject(cloudId, null)
         if (!result) throw new Error(t('welcome.downloadFailed'))
         await saveProject(p.id, result.project, result.mapData)
-        const sync: SyncMeta = { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash }
-        await setSyncMeta(p.id, sync)
         loadProject(result.project, result.mapData, p.id)
+        await setSyncMeta(p.id, await makeSyncMeta(cloudId, result.version, result.mapHash, useStore.getState().project!))
         useStore.setState({ syncStatus: 'synced' })
       } else {
         throw new Error(t('welcome.projectNotFound'))
@@ -187,9 +194,28 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   async function handleOpenShared(sp: SharedProject) {
     setLoading(true); setError(null)
     try {
-      const result = await downloadProject(sp.projectId, null)
-      if (!result) throw new Error(t('welcome.downloadFailed'))
-      loadProject(result.project, result.mapData, sp.projectId, sp.role)
+      // Editor copies persist locally (with role in SyncMeta) so refresh and
+      // project switching keep the role and sync targets the owner's project.
+      const localCopy = sp.role === 'editor' ? await loadPersistedProject(sp.projectId) : null
+      const localSync = localCopy ? await getSyncMeta(sp.projectId) : null
+      const result = await downloadProject(sp.projectId, localSync?.mapHash ?? null)
+      if (result) {
+        const mapData = result.mapData ?? localCopy?.mapFileData ?? null
+        if (sp.role === 'editor') {
+          await saveProject(sp.projectId, result.project, mapData)
+          loadProject(result.project, mapData, sp.projectId, sp.role)
+          await setSyncMeta(sp.projectId, await makeSyncMeta(sp.projectId, result.version, result.mapHash, useStore.getState().project!, sp.role))
+          useStore.setState({ syncStatus: 'synced' })
+        } else {
+          // Viewers stay in-memory only — the autosave subscriber skips them.
+          loadProject(result.project, mapData, sp.projectId, sp.role)
+        }
+      } else if (localCopy) {
+        // Offline or download failed — fall back to the local copy.
+        loadProject(localCopy.project, localCopy.mapFileData, sp.projectId, sp.role)
+      } else {
+        throw new Error(t('welcome.downloadFailed'))
+      }
       onProjectLoaded()
     } catch (e) {
       setError(t('welcome.failedOpenShared', { error: e instanceof Error ? e.message : String(e) }))
@@ -273,7 +299,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               <Cloud size={14} className="text-green-500" />
               <span>{cloudUser.email}</span>
               <button
-                onClick={() => { cloudLogout(); setCloudUser(null) }}
+                onClick={() => setLogoutOpen(true)}
                 className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
                 title={t('welcome.signOut')}
               >
@@ -282,7 +308,19 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               {confirmDeleteAccount ? (
                 <span className="flex items-center gap-1 ml-1">
                   <button
-                    onClick={async () => { try { await deleteAccount(); setCloudUser(null) } catch { /* network error — keep user signed in */ } setConfirmDeleteAccount(false) }}
+                    onClick={async () => {
+                      try {
+                        await deleteAccount()
+                        // Account is gone server-side; remove its copies here too.
+                        const purged = await purgeCloudCopies()
+                        const { projectId } = useStore.getState()
+                        if (projectId && purged.includes(projectId)) {
+                          useStore.setState({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], syncStatus: 'idle', versionHistory: [], projectRole: 'owner' })
+                        }
+                        setCloudUser(null)
+                      } catch { /* network error — keep user signed in */ }
+                      setConfirmDeleteAccount(false)
+                    }}
                     className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
                   >
                     {t('welcome.confirmDelete')}
@@ -472,6 +510,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           type="file" accept=".oco" className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) handleOpenProject(f) }}
         />
+        {logoutOpen && <LogoutDialog onClose={() => setLogoutOpen(false)} onLoggedOut={() => setLogoutOpen(false)} />}
       </div>
     )
   }
