@@ -24,7 +24,10 @@ export function LogoutDialog({ onClose, onLoggedOut }: { onClose: () => void; on
     flushSave()
       .then(listCloudCopies)
       .then(found => {
-        if (found.length === 0) { doLogout() } else { setCopies(found) }
+        // Set copies even when logging out immediately: if doLogout fails,
+        // the error branch needs copies !== null or the spinner never yields.
+        setCopies(found)
+        if (found.length === 0) doLogout()
       })
       .catch(() => setCopies([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -34,19 +37,27 @@ export function LogoutDialog({ onClose, onLoggedOut }: { onClose: () => void; on
 
   async function doLogout() {
     setBusy(true)
-    await cloudLogout()
-    const purged = await purgeCloudCopies()
-    const { projectId } = useStore.getState()
-    if (projectId && purged.includes(projectId)) {
-      // The open project was purged — drop it from memory too, or the autosave
-      // subscriber would resurrect it in IDB on the next mutation.
-      useStore.setState({
-        projectId: null, project: null, mapFileData: null, loadedMap: null,
-        undoStack: [], redoStack: [], syncStatus: 'idle', versionHistory: [], projectRole: 'owner',
-      })
+    setError(null)
+    try {
+      await cloudLogout()
+      const purged = await purgeCloudCopies()
+      const { projectId } = useStore.getState()
+      if (projectId && purged.includes(projectId)) {
+        // The open project was purged — drop it from memory too, or the autosave
+        // subscriber would resurrect it in IDB on the next mutation.
+        useStore.setState({
+          projectId: null, project: null, mapFileData: null, loadedMap: null,
+          undoStack: [], redoStack: [], syncStatus: 'idle', versionHistory: [], projectRole: 'owner',
+        })
+      }
+      useStore.getState().setCloudUser(null)
+      onLoggedOut()
+    } catch {
+      // Offline or server error: the session cookie wasn't cleared, so don't
+      // purge or pretend to be signed out — surface it and let the user retry.
+      setBusy(false)
+      setError(t('logout.failed'))
     }
-    useStore.getState().setCloudUser(null)
-    onLoggedOut()
   }
 
   async function handleSyncAll() {

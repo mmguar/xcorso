@@ -239,6 +239,8 @@ export interface SharedProject {
   role: 'editor' | 'viewer'
   name: string
   updatedAt: string
+  /** Optional: absent until the worker is redeployed with version enrichment. */
+  version?: number
 }
 
 export async function addShare(cloudId: string, email: string, role: 'editor' | 'viewer'): Promise<{ ok: boolean; error?: string }> {

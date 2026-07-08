@@ -4,7 +4,7 @@ import type { Store, StoreHelpers, UndoEntry } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta, clearSyncMeta } from '../lib/persistence'
 import * as persistence from '../lib/persistence'
-import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, makeSyncMeta, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
+import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, makeSyncMeta, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects, fetchSharedProjects } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
@@ -140,6 +140,9 @@ export const useStore = create<Store>((set, get) => {
       }
       const rev = get().projectRevision + 1
       set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], projectRevision: rev, loadedRevision: rev })
+      // An auto-sync armed for the previous project must not fire on this one
+      // — it could even first-sync-create a cloud copy uninvited.
+      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
       setActiveId(id).catch(() => {})
       acquireTabLock(id)
     },
@@ -155,6 +158,9 @@ export const useStore = create<Store>((set, get) => {
       const projectId = id ?? get().projectId ?? crypto.randomUUID()
       const rev = get().projectRevision + 1
       set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner', projectRevision: rev, loadedRevision: rev })
+      // An auto-sync armed for the previous project must not fire on this one
+      // — it could even first-sync-create a cloud copy uninvited.
+      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
       setActiveId(projectId).catch(() => {})
       acquireTabLock(projectId)
     },
@@ -404,11 +410,16 @@ export const useStore = create<Store>((set, get) => {
     setCloudUser: (user) => set({ cloudUser: user }),
 
     syncProject: async () => {
-      const { project, projectId, mapFileData, cloudUser, projectRole } = get()
+      const { project, projectId, mapFileData, cloudUser, projectRole, syncStatus, syncConflict } = get()
       if (!project || !projectId || !cloudUser || projectRole === 'viewer') return
+      // Re-entry guard: the 5-min auto-sync timer can fire mid-manual-sync or
+      // while the conflict dialog is open; the loser of two concurrent uploads
+      // 409s and raises a phantom conflict with identical content. Set
+      // 'syncing' before the first await so the guard has no gap.
+      if (syncStatus === 'syncing' || syncConflict) return
+      set({ syncStatus: 'syncing' })
 
       await flushSave()
-      set({ syncStatus: 'syncing' })
       try {
         let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
 
@@ -491,11 +502,13 @@ export const useStore = create<Store>((set, get) => {
     },
 
     saveSnapshot: async () => {
-      const { project, projectId, mapFileData, cloudUser, projectRole } = get()
+      const { project, projectId, mapFileData, cloudUser, projectRole, syncStatus, syncConflict } = get()
       if (!project || !projectId || !cloudUser || projectRole === 'viewer') return
+      // Same re-entry guard as syncProject.
+      if (syncStatus === 'syncing' || syncConflict) return
+      set({ syncStatus: 'syncing' })
 
       await flushSave()
-      set({ syncStatus: 'syncing' })
       try {
         let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
         if (!syncMeta) {
@@ -601,11 +614,12 @@ export const useStore = create<Store>((set, get) => {
       if (!syncMeta) return
 
       try {
-        const cloudProjects = await fetchCloudProjects()
-        const cp = cloudProjects.find(p => p.id === syncMeta.cloudId)
-        if (!cp) return
-        if (cp.version === syncMeta.syncVersion) { set({ syncStatus: 'synced' }); return }
-        if (cp.version < syncMeta.syncVersion) return
+        // Shared projects live in the owner's index, not this user's, so their
+        // version comes from the shared-with-me list.
+        const remoteVersion = syncMeta.role
+          ? (await fetchSharedProjects()).find(p => p.projectId === syncMeta.cloudId)?.version
+          : (await fetchCloudProjects()).find(p => p.id === syncMeta.cloudId)?.version
+        if (remoteVersion == null || remoteVersion < syncMeta.syncVersion) return
 
         const { project } = get()
         // Dirty check by content hash, not updatedAt: silent mutations (control
@@ -614,6 +628,14 @@ export const useStore = create<Store>((set, get) => {
         const dirty = project != null && (syncMeta.projectHash
           ? await hashProject(project) !== syncMeta.projectHash
           : project.meta.updatedAt > syncMeta.syncedAt) // legacy meta without hash
+
+        if (remoteVersion === syncMeta.syncVersion) {
+          // "Synced" disarms the unsaved-changes guards, so only claim it when
+          // local content actually matches what was last synced.
+          if (!dirty) set({ syncStatus: 'synced' })
+          return
+        }
+
         if (project && dirty) {
           // Local unsynced edits + remote newer = conflict
           const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
@@ -621,7 +643,7 @@ export const useStore = create<Store>((set, get) => {
             set({
               syncConflict: {
                 cloudId: syncMeta.cloudId,
-                serverVersion: cp.version,
+                serverVersion: remoteVersion,
                 remoteProject: remote.project,
               },
             })
