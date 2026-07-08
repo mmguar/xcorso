@@ -8,6 +8,7 @@ interface HistoryEntry {
   timestamp: string
   projectSizeBytes: number
   editedBy?: string // e.g. "ma" (first 2 chars of email)
+  mapHash?: string // map referenced by this version; entries without it block map GC
 }
 
 interface ProjectMeta {
@@ -36,6 +37,14 @@ interface SharedRef {
   role: ShareRole
 }
 
+// Shares to emails without an account yet use userId "pending:<email>" and a
+// KV list keyed by email instead of projects:shared:<userId>. Resolved on first login.
+const PENDING = 'pending:'
+
+function sharedRefsKey(share: Pick<ShareEntry, 'userId' | 'email'>): string {
+  return share.userId.startsWith(PENDING) ? `projects:pending:${share.email}` : `projects:shared:${share.userId}`
+}
+
 async function getShares(env: Env, projectId: string): Promise<ShareEntry[]> {
   return await env.KV.get(`projects:shares:${projectId}`, 'json') as ShareEntry[] ?? []
 }
@@ -52,6 +61,26 @@ async function getSharedWithMe(env: Env, userId: string): Promise<SharedRef[]> {
 async function putSharedWithMe(env: Env, userId: string, refs: SharedRef[]): Promise<void> {
   if (refs.length === 0) await env.KV.delete(`projects:shared:${userId}`)
   else await env.KV.put(`projects:shared:${userId}`, JSON.stringify(refs))
+}
+
+// Drop a project ref from a share target's list (real user or pending email).
+async function removeSharedRef(env: Env, share: Pick<ShareEntry, 'userId' | 'email'>, projectId: string): Promise<void> {
+  const key = sharedRefsKey(share)
+  const refs = await env.KV.get(key, 'json') as SharedRef[] | null ?? []
+  const remaining = refs.filter(r => r.projectId !== projectId)
+  if (remaining.length === 0) await env.KV.delete(key)
+  else await env.KV.put(key, JSON.stringify(remaining))
+}
+
+async function deleteR2Prefix(env: Env, prefix: string): Promise<void> {
+  let cursor: string | undefined
+  do {
+    const listed = await env.BUCKET.list({ prefix, cursor })
+    if (listed.objects.length > 0) {
+      await env.BUCKET.delete(listed.objects.map((o: R2Object) => o.key))
+    }
+    cursor = listed.truncated ? listed.cursor : undefined
+  } while (cursor)
 }
 
 interface Access { ownerId: string; role: ShareRole | 'owner'; index: ProjectMeta[] }
@@ -94,10 +123,14 @@ async function putIndex(env: Env, userId: string, index: ProjectMeta[]): Promise
   await env.KV.put(`projects:index:${userId}`, JSON.stringify(index))
 }
 
+function toHex(buf: ArrayBuffer): string {
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 async function computeIndexEtag(index: ProjectMeta[]): Promise<string> {
   const body = JSON.stringify({ projects: index })
   const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))
-  return `"${[...new Uint8Array(hashBuf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)}"`
+  return `"${toHex(hashBuf).slice(0, 16)}"`
 }
 
 function codesEqual(a: string, b: string): boolean {
@@ -116,15 +149,17 @@ export async function authSend(request: Request, env: Env, _params: Params) {
     return Response.json({ error: 'Invalid email' }, { status: 400 })
   }
 
-  if (env.TURNSTILE_SECRET) {
-    const cfRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret: env.TURNSTILE_SECRET, response: body.cfToken ?? '' }),
-    })
-    const cfData = await cfRes.json() as { success: boolean }
-    if (!cfData.success) return Response.json({ error: 'Verification failed' }, { status: 403 })
+  // Fail closed: without bot verification this endpoint sends unlimited email.
+  if (!env.TURNSTILE_SECRET) {
+    return Response.json({ error: 'Login is not configured (missing TURNSTILE_SECRET)' }, { status: 503 })
   }
+  const cfRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret: env.TURNSTILE_SECRET, response: body.cfToken ?? '' }),
+  })
+  const cfData = await cfRes.json() as { success: boolean }
+  if (!cfData.success) return Response.json({ error: 'Verification failed' }, { status: 403 })
 
   const sends = parseInt(await env.KV.get(`auth:sends:${email}`) ?? '0')
   if (sends >= 2) {
@@ -188,6 +223,21 @@ export async function authVerify(request: Request, env: Env, _params: Params) {
     user = { userId, createdAt, termsVersion: body.termsVersion }
     await env.KV.put(`users:email:${email}`, JSON.stringify(user))
     await env.KV.put(`users:id:${userId}`, JSON.stringify({ email, createdAt, termsVersion: body.termsVersion }))
+
+    // Resolve shares that were created before this account existed
+    const pending = await env.KV.get(`projects:pending:${email}`, 'json') as SharedRef[] | null
+    if (pending) {
+      for (const ref of pending) {
+        const shares = await getShares(env, ref.projectId)
+        const entry = shares.find(s => s.userId === `${PENDING}${email}`)
+        if (entry) {
+          entry.userId = userId
+          await putShares(env, ref.projectId, shares)
+        }
+      }
+      await putSharedWithMe(env, userId, pending)
+      await env.KV.delete(`projects:pending:${email}`)
+    }
   } else if (body.termsVersion && user.termsVersion !== body.termsVersion) {
     user.termsVersion = body.termsVersion
     await env.KV.put(`users:email:${email}`, JSON.stringify(user))
@@ -235,23 +285,14 @@ export async function authDeleteAccount(request: Request, env: Env, _params: Par
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = user.sub
-  const prefix = `users/${userId}/`
-  let cursor: string | undefined
-  do {
-    const listed = await env.BUCKET.list({ prefix, cursor })
-    if (listed.objects.length > 0) {
-      await env.BUCKET.delete(listed.objects.map((o: R2Object) => o.key))
-    }
-    cursor = listed.truncated ? listed.cursor : undefined
-  } while (cursor)
+  await deleteR2Prefix(env, `users/${userId}/`)
 
   // Clean up shares for owned projects
   const ownedIndex = await getIndex(env, userId)
   for (const p of ownedIndex) {
     const shares = await getShares(env, p.id)
     for (const s of shares) {
-      const refs = await getSharedWithMe(env, s.userId)
-      await putSharedWithMe(env, s.userId, refs.filter(r => r.projectId !== p.id))
+      await removeSharedRef(env, s, p.id)
     }
     await putShares(env, p.id, [])
   }
@@ -397,12 +438,27 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   meta.projectSizeBytes = body.byteLength
   if (archived) {
     meta.history = [
-      { version: newVersion, timestamp: meta.updatedAt, projectSizeBytes: body.byteLength, editedBy: emailInitials(user.email) },
+      { version: newVersion, timestamp: meta.updatedAt, projectSizeBytes: body.byteLength, editedBy: emailInitials(user.email), mapHash },
       ...meta.history,
     ].slice(0, 50)
   }
 
   await putIndex(env, access.ownerId, index)
+
+  // GC map blobs no longer referenced by current or any history entry.
+  // Skipped while pre-mapHash entries remain (they roll off the 50-entry cap).
+  // ponytail: best-effort — a map uploaded by a concurrent editor between their
+  // mapUpload and projectPut can be swept; their next map change re-uploads it.
+  if (archived && !meta.history.some(h => h.mapHash == null)) {
+    const referenced = new Set([mapHash, ...meta.history.map(h => h.mapHash)])
+    const mapsPrefix = `${prefix}/maps/`
+    const listed = await env.BUCKET.list({ prefix: mapsPrefix })
+    const stale = listed.objects
+      .filter((o: R2Object) => !referenced.has(o.key.slice(mapsPrefix.length).replace(/\.bin$/, '')))
+      .map((o: R2Object) => o.key)
+    if (stale.length > 0) await env.BUCKET.delete(stale)
+  }
+
   const indexEtag = await computeIndexEtag(index)
   return Response.json({ version: newVersion, indexEtag })
 }
@@ -418,16 +474,11 @@ export async function projectDelete(request: Request, env: Env, params: Params) 
   // Remove shares and shared-with-me refs
   const shares = await getShares(env, params.id)
   for (const s of shares) {
-    const refs = await getSharedWithMe(env, s.userId)
-    await putSharedWithMe(env, s.userId, refs.filter(r => r.projectId !== params.id))
+    await removeSharedRef(env, s, params.id)
   }
   await putShares(env, params.id, [])
 
-  const prefix = r2Prefix(user.sub, params.id)
-  const listed = await env.BUCKET.list({ prefix: `${prefix}/` })
-  if (listed.objects.length > 0) {
-    await env.BUCKET.delete(listed.objects.map((o: R2Object) => o.key))
-  }
+  await deleteR2Prefix(env, `${r2Prefix(user.sub, params.id)}/`)
 
   const filtered = access.index.filter(p => p.id !== params.id)
   await putIndex(env, user.sub, filtered)
@@ -459,8 +510,7 @@ export async function mapUpload(request: Request, env: Env, params: Params) {
   const magic = new DataView(body).getUint16(0, true)
   if (magic !== 0x0CAD) return Response.json({ error: 'Only OCAD map files can be synced to the cloud' }, { status: 400 })
 
-  const hashBuf = await crypto.subtle.digest('SHA-256', body)
-  const hash = [...new Uint8Array(hashBuf)].map(b => b.toString(16).padStart(2, '0')).join('')
+  const hash = toHex(await crypto.subtle.digest('SHA-256', body))
   const key = `users/${access.ownerId}/projects/${params.id}/maps/${hash}.bin`
 
   const existing = await env.BUCKET.head(key)
@@ -559,16 +609,17 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   meta.version = newVersion
   meta.updatedAt = new Date().toISOString()
   meta.projectSizeBytes = snapshotBytes.byteLength
-  meta.history = [
-    { version: newVersion, timestamp: meta.updatedAt, projectSizeBytes: snapshotBytes.byteLength, editedBy: emailInitials(user.email) },
-    ...meta.history,
-  ].slice(0, 50)
 
   try {
     const parsed = JSON.parse(new TextDecoder().decode(snapshotBytes))
     meta.name = parsed.meta?.name ?? meta.name
     meta.mapHash = parsed.meta?.mapHash ?? meta.mapHash
   } catch { /* keep existing */ }
+
+  meta.history = [
+    { version: newVersion, timestamp: meta.updatedAt, projectSizeBytes: snapshotBytes.byteLength, editedBy: emailInitials(user.email), mapHash: meta.mapHash },
+    ...meta.history,
+  ].slice(0, 50)
 
   await putIndex(env, access.ownerId, index)
   const indexEtag = await computeIndexEtag(index)
@@ -591,23 +642,24 @@ export async function shareAdd(request: Request, env: Env, params: Params) {
 
   if (email === user.email) return Response.json({ error: 'Cannot share with yourself' }, { status: 400 })
 
-  // Look up the target user
+  // Look up the target user; no account yet → pending share, resolved on their first login
   const targetUser = await env.KV.get(`users:email:${email}`, 'json') as { userId: string } | null
-  if (!targetUser) return Response.json({ error: 'User not found — they need to sign in first' }, { status: 404 })
+  const targetId = targetUser?.userId ?? `${PENDING}${email}`
 
   // Update shares list
   const shares = await getShares(env, params.id)
-  const existing = shares.find(s => s.userId === targetUser.userId)
+  const existing = shares.find(s => s.userId === targetId)
   if (existing) {
     existing.role = role
     existing.email = email
   } else {
-    shares.push({ userId: targetUser.userId, email, role })
+    shares.push({ userId: targetId, email, role })
   }
   await putShares(env, params.id, shares)
 
-  // Update target user's shared-with-me list
-  const refs = await getSharedWithMe(env, targetUser.userId)
+  // Update target's shared-with-me (or pending) list
+  const refsKey = sharedRefsKey({ userId: targetId, email })
+  const refs = await env.KV.get(refsKey, 'json') as SharedRef[] | null ?? []
   const existingRef = refs.find(r => r.projectId === params.id)
   if (existingRef) {
     existingRef.role = role
@@ -615,7 +667,7 @@ export async function shareAdd(request: Request, env: Env, params: Params) {
   } else {
     refs.push({ projectId: params.id, ownerId: user.sub, ownerEmail: user.email, role })
   }
-  await putSharedWithMe(env, targetUser.userId, refs)
+  await env.KV.put(refsKey, JSON.stringify(refs))
 
   return Response.json({ ok: true, shares })
 }
@@ -632,10 +684,9 @@ export async function shareRemove(request: Request, env: Env, params: Params) {
   }
 
   const shares = await getShares(env, params.id)
+  const removed = shares.find(s => s.userId === params.userId)
   await putShares(env, params.id, shares.filter(s => s.userId !== params.userId))
-
-  const refs = await getSharedWithMe(env, params.userId)
-  await putSharedWithMe(env, params.userId, refs.filter(r => r.projectId !== params.id))
+  if (removed) await removeSharedRef(env, removed, params.id)
 
   return Response.json({ ok: true })
 }

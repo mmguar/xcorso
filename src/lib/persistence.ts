@@ -108,28 +108,17 @@ export async function listProjects(): Promise<ProjectSummary[]> {
   } catch { return [] }
 }
 
-export async function saveProject(id: string, project: Project, mapFileData: ArrayBuffer | null): Promise<void> {
+// mapFileData: undefined = leave the stored map untouched; null = store "no map".
+export async function saveProject(id: string, project: Project, mapFileData?: ArrayBuffer | null): Promise<void> {
   const db = await openDB()
-  const tx = db.transaction([PROJECTS_STORE, MAPS_STORE], 'readwrite')
+  const tx = db.transaction(mapFileData === undefined ? [PROJECTS_STORE] : [PROJECTS_STORE, MAPS_STORE], 'readwrite')
   const store = tx.objectStore(PROJECTS_STORE)
   const req = store.get(id)
   req.onsuccess = () => {
     const existing = req.result as { sync?: SyncMeta } | undefined
     store.put(existing?.sync ? { project, sync: existing.sync } : { project }, id)
   }
-  tx.objectStore(MAPS_STORE).put(mapFileData, id)
-  return txDone(db, tx)
-}
-
-async function saveProjectOnly(id: string, project: Project): Promise<void> {
-  const db = await openDB()
-  const tx = db.transaction(PROJECTS_STORE, 'readwrite')
-  const store = tx.objectStore(PROJECTS_STORE)
-  const req = store.get(id)
-  req.onsuccess = () => {
-    const existing = req.result as { sync?: SyncMeta } | undefined
-    store.put(existing?.sync ? { project, sync: existing.sync } : { project }, id)
-  }
+  if (mapFileData !== undefined) tx.objectStore(MAPS_STORE).put(mapFileData, id)
   return txDone(db, tx)
 }
 
@@ -214,7 +203,7 @@ function executeSave(id: string, project: Project, mapFileData: ArrayBuffer | nu
     return saveProject(id, project, mapFileData)
       .then(() => { lastSavedMaps.set(id, mapFileData) })
   }
-  return saveProjectOnly(id, project)
+  return saveProject(id, project)
 }
 
 export function debouncedSave(id: string, project: Project, mapFileData: ArrayBuffer | null): void {

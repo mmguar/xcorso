@@ -301,7 +301,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
                     {shares.map(s => (
                       <div key={s.userId} className="flex items-center justify-between text-xs px-1">
                         <span className="text-gray-700 truncate flex-1">{s.email}</span>
-                        <span className="text-gray-400 text-[10px] mx-2">{s.role}</span>
+                        <span className="text-gray-400 text-[10px] mx-2">{s.role}{s.userId.startsWith('pending:') && ` · ${t('header.invited')}`}</span>
                         <button onClick={() => handleRemoveShare(s.userId)} className="text-gray-300 hover:text-red-400 transition-colors">
                           <X size={12} />
                         </button>

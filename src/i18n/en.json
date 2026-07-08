@@ -190,6 +190,7 @@
   "header.syncFirst": "Sync the project first",
   "header.failedShare": "Failed to share",
   "header.notShared": "Not shared with anyone",
+  "header.invited": "invited",
   "header.signedInAs": "Signed in as {{email}}",
   "header.cloudOcadOnly": "Cloud sync is only available for OCAD maps",
   "header.termsUpdated": "Our terms have been updated — accept to resume syncing",
