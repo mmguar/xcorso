@@ -77,13 +77,29 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         p.courses = p.courses.filter(c => c.id !== id)
         p.classes = p.classes.filter(c => c.courseId !== id)
       }, name ? `Delete course "${name}"` : 'Delete course')
-      set(state => ({
-        editor: {
-          ...state.editor,
-          selectedCourseId: state.editor.selectedCourseId === id ? null : state.editor.selectedCourseId,
-          courseViewMode: state.editor.selectedCourseId === id ? 'all-controls' : state.editor.courseViewMode,
-        },
-      }))
+      set(state => {
+        const ed = state.editor
+        const wasSelected = ed.selectedCourseId === id
+        const courseOnlyTool = ed.activeTool === 'gap' || ed.activeTool === 'bend'
+        return {
+          editor: {
+            ...ed,
+            selectedCourseId: wasSelected ? null : ed.selectedCourseId,
+            courseViewMode: wasSelected ? 'all-controls' : ed.courseViewMode,
+            selectedSubmapIndex: wasSelected ? null : ed.selectedSubmapIndex,
+            // gap/bend only exist in the course banner — don't leave them armed
+            // with no course (and no visible button) behind them.
+            activeTool: wasSelected && courseOnlyTool ? 'select' : ed.activeTool,
+            // A mode bound to the deleted course must not outlive it.
+            ...(ed.measureCourseId === id
+              ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] }
+              : {}),
+            ...(ed.layoutCourseId === id
+              ? { layoutMode: false, layoutCourseId: null, layoutSubmapIndex: 0 }
+              : {}),
+          },
+        }
+      })
     },
 
     updateCourseName: (id: string, name: string) => {

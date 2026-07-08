@@ -189,6 +189,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           courseViewMode: 'single',
           selectedControlId: null,
           selectedOverlayId: null,
+          selectedAnnotationId: null,
           activeTool: 'select',
           pendingAnnotationPoints: [],
         },

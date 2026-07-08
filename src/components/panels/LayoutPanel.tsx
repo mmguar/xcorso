@@ -381,7 +381,6 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
   const setLayoutSubmap = useStore(s => s.setLayoutSubmap)
-  const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
   const requestLayoutSnap = useStore(s => s.requestLayoutSnap)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
@@ -459,8 +458,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
       return
     }
     if (isActive) {
+      // Leave layout mode but keep the course selected — matches the
+      // courses-tab exit path; deselection stays an explicit user action.
       exitLayoutMode()
-      setSelectedCourse(null)
     } else {
       enterLayoutMode(courseId)
     }

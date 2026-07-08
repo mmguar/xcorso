@@ -56,6 +56,11 @@ export function SidePanel() {
   }, [layoutMode])
 
   function switchMode(tabKey: Tab) {
+    // A destructive/placement tool must not stay silently armed across a
+    // panel change.
+    if (tabKey !== tab && useStore.getState().editor.activeTool !== 'select') {
+      useStore.getState().setActiveTool('select')
+    }
     if (tabKey === 'controls') {
       if (layoutMode) exitLayoutMode()
       if (selectedCourseId) setSelectedCourse(null)

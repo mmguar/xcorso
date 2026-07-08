@@ -138,6 +138,7 @@ export function Toolbar() {
   const activeTool = useStore(s => s.editor.activeTool)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const layoutMode = useStore(s => s.editor.layoutMode)
+  const measureMode = useStore(s => s.editor.measureMode)
   const gapRebuild = useStore(s => s.editor.gapRebuild)
   const setActiveTool = useStore(s => s.setActiveTool)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
@@ -158,7 +159,9 @@ export function Toolbar() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if ((e.target as Element).closest?.('.fixed.inset-0')) return
+      // An open modal keeps keyboard focus on <body>, so target-based checks
+      // miss it — block editor shortcuts whenever any modal overlay is up.
+      if (document.querySelector('.fixed.inset-0')) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return }
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -180,6 +183,7 @@ export function Toolbar() {
       if (e.key === 'Escape') {
         const st = useStore.getState()
         if (st.editor.layoutMode) { exitLayoutMode(); return }
+        if (st.editor.measureMode) { st.exitMeasureMode(); return }
         if (st.editor.pendingAnnotationPoints.length > 0) { st.cancelAnnotation(); return }
         if (st.editor.selectedControlId) { st.setSelectedControl(null); return }
         if (st.editor.selectedOverlayId) { st.setSelectedOverlay(null); return }
@@ -187,14 +191,24 @@ export function Toolbar() {
         if (selectedCourseId) { setSelectedCourse(null); return }
         return
       }
-      if (useStore.getState().editor.layoutMode) return
+      const ed = useStore.getState().editor
+      if (ed.layoutMode || ed.measureMode) return
       if (selectedCourseId) {
         if (e.key.toLowerCase() === 'g') setActiveTool(activeTool === 'gap' ? 'select' : 'gap')
         else if (e.key.toLowerCase() === 'b') setActiveTool(activeTool === 'bend' ? 'select' : 'bend')
         return
       }
       const t = allTools.find(t => t.shortcut?.toLowerCase() === e.key.toLowerCase())
-      if (t) setActiveTool(t.tool)
+      if (t) {
+        // place-image needs an image first — go through the file picker like
+        // the toolbar button does, instead of arming a tool that does nothing.
+        if (t.tool === 'place-image') {
+          imageInputRef.current!.value = ''
+          imageInputRef.current!.click()
+        } else {
+          setActiveTool(t.tool)
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -295,6 +309,23 @@ export function Toolbar() {
           <span className="md:hidden">{t('toolbar.layoutMode')}</span>
         </span>
         <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
+        {undoRedo}
+      </div>
+    )
+  }
+
+  // Measure mode: the canvas intercepts all taps for measuring, so the
+  // course-building banner and gap/bend toggles would be dead UI — the teal
+  // top banner carries the instructions, keep only undo/redo down here.
+  if (measureMode) {
+    return (
+      <div className="
+        absolute bottom-4 left-1/2 -translate-x-1/2
+        flex items-center gap-1.5 md:gap-2
+        bg-white/95 backdrop-blur border border-teal-300 shadow-lg
+        rounded-2xl px-3 py-1.5 md:px-4 md:py-2
+        z-20
+      ">
         {undoRedo}
       </div>
     )
