@@ -9,7 +9,7 @@ import { EditorScreen } from './components/EditorScreen'
 import { AboutPage } from './components/AboutPage'
 import { LoginModal } from './components/LoginModal'
 import { ConflictModal } from './components/ConflictModal'
-import { getActiveId, getSyncMeta, loadProject as loadPersistedProject } from './lib/persistence'
+import { getActiveId, getSyncMeta, loadProject as loadPersistedProject, flushSave } from './lib/persistence'
 import { fetchUser } from './lib/sync'
 
 function ErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
@@ -101,10 +101,15 @@ export default function App() {
     function onVisibility() {
       if (!document.hidden) useStore.getState().checkForRemoteUpdate()
     }
+    // Best-effort: closes the 500ms debounce window where the last edit is
+    // lost if the tab closes. IDB writes started here usually complete.
+    function onPageHide() { flushSave() }
     window.addEventListener('beforeunload', onBeforeUnload)
+    window.addEventListener('pagehide', onPageHide)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload)
+      window.removeEventListener('pagehide', onPageHide)
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])

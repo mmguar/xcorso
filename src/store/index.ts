@@ -20,6 +20,31 @@ import { createLayoutSlice } from './layoutSlice'
 
 const MAX_UNDO = 100
 
+// ── Per-project web lock: detects the same project open in two tabs ────────
+// ponytail: detection only, editing is not blocked; and the flag doesn't
+// clear if the other tab closes later — refresh does. Real multi-tab
+// coordination (BroadcastChannel) only if users actually hit this.
+let releaseTabLock: (() => void) | null = null
+let heldLockId: string | null = null
+
+function acquireTabLock(id: string) {
+  if (!('locks' in navigator)) return
+  if (heldLockId === id) return
+  releaseTabLock?.()
+  releaseTabLock = null
+  heldLockId = null
+  navigator.locks.request(`xcorso-project-${id}`, { ifAvailable: true }, lock => {
+    if (!lock) {
+      useStore.setState({ tabConflict: true })
+      return
+    }
+    heldLockId = id
+    useStore.setState({ tabConflict: false })
+    // Hold until the next acquireTabLock or tab close.
+    return new Promise<void>(resolve => { releaseTabLock = resolve })
+  }).catch(() => {})
+}
+
 // structuredClone copies string bytes, and imageOverlay dataUrls can be MBs.
 // Strings are immutable, so every clone (undo snapshots included) shares them.
 function cloneProject(project: Project): Project {
@@ -91,6 +116,7 @@ export const useStore = create<Store>((set, get) => {
     versionHistory: [],
     projectRole: 'owner' as const,
     localSaveFailed: false,
+    tabConflict: false,
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
@@ -115,6 +141,7 @@ export const useStore = create<Store>((set, get) => {
       const rev = get().projectRevision + 1
       set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], projectRevision: rev, loadedRevision: rev })
       setActiveId(id).catch(() => {})
+      acquireTabLock(id)
     },
 
     loadProject: (project, mapData, id, role) => {
@@ -129,6 +156,7 @@ export const useStore = create<Store>((set, get) => {
       const rev = get().projectRevision + 1
       set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner', projectRevision: rev, loadedRevision: rev })
       setActiveId(projectId).catch(() => {})
+      acquireTabLock(projectId)
     },
 
     updateProjectName: (name) => {

@@ -59,6 +59,15 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   // Project switcher dropdown
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
+  // Was this project ever synced? Distinguishes "sync not applicable" from
+  // "sync silently stopped because the map was replaced with a non-OCAD file".
+  const [wasSynced, setWasSynced] = useState(false)
+  useEffect(() => {
+    let stale = false
+    if (!projectId) return
+    getSyncMeta(projectId).then(sm => { if (!stale) setWasSynced(!!sm) })
+    return () => { stale = true }
+  }, [projectId, canSync])
   const [otherProjects, setOtherProjects] = useState<ProjectSummary[]>([])
   const switcherRef = useRef<HTMLDivElement>(null)
 
@@ -415,10 +424,13 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
         )}
         {!canSync && (
           <span
-            className="flex items-center gap-1 text-xs text-gray-300 border border-gray-100 rounded-lg px-2 py-1.5 cursor-not-allowed"
-            title={t('header.cloudOcadOnly')}
+            className={wasSynced
+              ? 'flex items-center gap-1 text-xs font-medium text-amber-600 border border-amber-300 bg-amber-50 rounded-lg px-2 py-1.5'
+              : 'flex items-center gap-1 text-xs text-gray-300 border border-gray-100 rounded-lg px-2 py-1.5 cursor-not-allowed'}
+            title={wasSynced ? t('header.syncStale') : t('header.cloudOcadOnly')}
           >
             <CloudOff size={14} />
+            {wasSynced && <span className="hidden sm:inline">{t('header.syncOff')}</span>}
           </span>
         )}
 

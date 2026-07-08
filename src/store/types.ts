@@ -68,6 +68,8 @@ export interface AppState {
   versionHistory: VersionEntry[]
   projectRole: ShareRole
   localSaveFailed: boolean
+  /** Another tab holds this project's web lock — edits may overwrite each other. */
+  tabConflict: boolean
 }
 
 export interface AppActions {
