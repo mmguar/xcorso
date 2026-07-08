@@ -403,15 +403,19 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   const forceSnapshot = request.headers.get('X-Snapshot') === 'true'
   const lastHistoryTs = meta.history[0]?.timestamp
   const historyStale = !lastHistoryTs || (Date.now() - new Date(lastHistoryTs).getTime()) > 10 * 60_000
-  let archived = false
+  // The history entry must describe the snapshot actually written (the OLD
+  // current, archived under the OLD version key) — recording the new version
+  // here points the entry at a key that may never exist, and restore 404s.
+  let archived: { version: number; sizeBytes: number; mapHash: string } | null = null
   if (meta.version > 0 && (forceSnapshot || historyStale)) {
     const current = await env.BUCKET.get(`${prefix}/current.json`)
     if (current) {
+      const bytes = await current.arrayBuffer()
       const vKey = `${prefix}/history/v${String(meta.version).padStart(3, '0')}.json`
-      await env.BUCKET.put(vKey, await current.arrayBuffer(), {
+      await env.BUCKET.put(vKey, bytes, {
         httpMetadata: { contentType: 'application/json' },
       })
-      archived = true
+      archived = { version: meta.version, sizeBytes: bytes.byteLength, mapHash: meta.mapHash }
     }
   }
 
@@ -438,7 +442,9 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   meta.projectSizeBytes = body.byteLength
   if (archived) {
     meta.history = [
-      { version: newVersion, timestamp: meta.updatedAt, projectSizeBytes: body.byteLength, editedBy: emailInitials(user.email), mapHash },
+      // ponytail: editedBy is the archiver, not necessarily the snapshot's
+      // author — tracking the true author means storing it per version.
+      { version: archived.version, timestamp: meta.updatedAt, projectSizeBytes: archived.sizeBytes, editedBy: emailInitials(user.email), mapHash: archived.mapHash },
       ...meta.history,
     ].slice(0, 50)
   }
@@ -593,12 +599,16 @@ export async function historyRestore(request: Request, env: Env, params: Params)
   const meta = index.find(p => p.id === params.id)
   if (!meta) return Response.json({ error: 'Project not found' }, { status: 404 })
 
+  // Same rule as projectPut: the entry describes the archived OLD current.
   const current = await env.BUCKET.get(`${prefix}/current.json`)
+  let archived: { version: number; sizeBytes: number; mapHash: string } | null = null
   if (current) {
+    const bytes = await current.arrayBuffer()
     const archiveKey = `${prefix}/history/v${String(meta.version).padStart(3, '0')}.json`
-    await env.BUCKET.put(archiveKey, await current.arrayBuffer(), {
+    await env.BUCKET.put(archiveKey, bytes, {
       httpMetadata: { contentType: 'application/json' },
     })
+    archived = { version: meta.version, sizeBytes: bytes.byteLength, mapHash: meta.mapHash }
   }
 
   await env.BUCKET.put(`${prefix}/current.json`, snapshotBytes, {
@@ -616,10 +626,12 @@ export async function historyRestore(request: Request, env: Env, params: Params)
     meta.mapHash = parsed.meta?.mapHash ?? meta.mapHash
   } catch { /* keep existing */ }
 
-  meta.history = [
-    { version: newVersion, timestamp: meta.updatedAt, projectSizeBytes: snapshotBytes.byteLength, editedBy: emailInitials(user.email), mapHash: meta.mapHash },
-    ...meta.history,
-  ].slice(0, 50)
+  if (archived) {
+    meta.history = [
+      { version: archived.version, timestamp: meta.updatedAt, projectSizeBytes: archived.sizeBytes, editedBy: emailInitials(user.email), mapHash: archived.mapHash },
+      ...meta.history,
+    ].slice(0, 50)
+  }
 
   await putIndex(env, access.ownerId, index)
   const indexEtag = await computeIndexEtag(index)

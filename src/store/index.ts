@@ -4,7 +4,7 @@ import type { Store, StoreHelpers, UndoEntry } from './types'
 import { defaultEditor } from './types'
 import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
 import * as persistence from '../lib/persistence'
-import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
+import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, makeSyncMeta, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
 import { normalizeProject } from '../lib/projectFile'
 import { timeClone } from '../lib/perf'
@@ -453,10 +453,7 @@ export const useStore = create<Store>((set, get) => {
         )
 
         if (result.status === 'ok') {
-          await setSyncMeta(projectId, {
-            cloudId: syncMeta.cloudId, syncVersion: result.version,
-            syncedAt: new Date().toISOString(), mapHash: localMapHash,
-          })
+          await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, result.version, localMapHash, project))
           set({ syncStatus: 'synced' })
           await get().fetchVersionHistory()
         } else if (result.status === 'conflict') {
@@ -491,10 +488,8 @@ export const useStore = create<Store>((set, get) => {
       if (!remote) return
 
       get().loadProject(remote.project, remote.mapData ?? mapFileData)
-      await setSyncMeta(projectId, {
-        cloudId: syncMeta.cloudId, syncVersion: remote.version,
-        syncedAt: new Date().toISOString(), mapHash: remote.mapHash,
-      })
+      // Hash the store's project (loadProject normalizes it), not remote.project.
+      await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, remote.version, remote.mapHash, get().project!))
       set({ syncStatus: 'synced' })
       await get().fetchVersionHistory()
     },
@@ -509,12 +504,10 @@ export const useStore = create<Store>((set, get) => {
           const remote = await downloadProject(syncConflict.cloudId, null)
           if (remote) {
             get().loadProject(remote.project, remote.mapData ?? mapFileData)
-            await setSyncMeta(projectId, {
-              cloudId: syncConflict.cloudId,
-              syncVersion: syncConflict.serverVersion,
-              syncedAt: new Date().toISOString(),
-              mapHash: remote.mapHash,
-            })
+            // remote.version, not syncConflict.serverVersion: the server may have
+            // advanced since the 409, and recording the stale version makes the
+            // next sync 409 again with identical content.
+            await setSyncMeta(projectId, await makeSyncMeta(syncConflict.cloudId, remote.version, remote.mapHash, get().project!))
             ok = true
           }
         } else if (keep === 'local' && project) {
@@ -527,12 +520,7 @@ export const useStore = create<Store>((set, get) => {
             localMapHash, null, syncConflict.serverVersion,
           )
           if (result.status === 'ok') {
-            await setSyncMeta(projectId, {
-              cloudId: syncConflict.cloudId,
-              syncVersion: result.version,
-              syncedAt: new Date().toISOString(),
-              mapHash: localMapHash,
-            })
+            await setSyncMeta(projectId, await makeSyncMeta(syncConflict.cloudId, result.version, localMapHash, project))
             ok = true
           }
         }
@@ -558,7 +546,13 @@ export const useStore = create<Store>((set, get) => {
         if (cp.version < syncMeta.syncVersion) return
 
         const { project } = get()
-        if (project && project.meta.updatedAt > syncMeta.syncedAt) {
+        // Dirty check by content hash, not updatedAt: silent mutations (control
+        // drags, label moves) never bump updatedAt, so a timestamp check would
+        // silently overwrite drag-only edits with the remote version.
+        const dirty = project != null && (syncMeta.projectHash
+          ? await hashProject(project) !== syncMeta.projectHash
+          : project.meta.updatedAt > syncMeta.syncedAt) // legacy meta without hash
+        if (project && dirty) {
           // Local unsynced edits + remote newer = conflict
           const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
           if (remote) {
@@ -576,12 +570,7 @@ export const useStore = create<Store>((set, get) => {
         const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
         if (!remote) return
         get().loadProject(remote.project, remote.mapData ?? mapFileData, projectId)
-        await setSyncMeta(projectId, {
-          cloudId: syncMeta.cloudId,
-          syncVersion: remote.version,
-          syncedAt: new Date().toISOString(),
-          mapHash: remote.mapHash,
-        })
+        await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, remote.version, remote.mapHash, get().project!))
         set({ syncStatus: 'synced' })
       } catch {
         // Silently fail — local version is still usable

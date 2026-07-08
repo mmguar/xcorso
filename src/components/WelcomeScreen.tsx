@@ -11,7 +11,7 @@ import { loadMap } from '../lib/mapLoader'
 import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, type SyncMeta, type SharedProject } from '../lib/sync'
+import { logout as cloudLogout, deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, type SharedProject } from '../lib/sync'
 import { SPEC_LABEL_KEYS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -136,8 +136,10 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           if (result) {
             const mapData = result.mapData ?? isLocallyAvailable.mapFileData
             await saveProject(p.id, result.project, mapData)
-            await setSyncMeta(p.id, { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash })
             loadProject(result.project, mapData, p.id)
+            // Hash the store's project (loadProject normalizes it) so the next
+            // sync's no-change check compares like with like.
+            await setSyncMeta(p.id, await makeSyncMeta(cloudId, result.version, result.mapHash, useStore.getState().project!))
             useStore.setState({ syncStatus: 'synced' })
             onProjectLoaded()
             return
@@ -150,9 +152,8 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
         const result = await downloadProject(cloudId, null)
         if (!result) throw new Error(t('welcome.downloadFailed'))
         await saveProject(p.id, result.project, result.mapData)
-        const sync: SyncMeta = { cloudId, syncVersion: result.version, syncedAt: new Date().toISOString(), mapHash: result.mapHash }
-        await setSyncMeta(p.id, sync)
         loadProject(result.project, result.mapData, p.id)
+        await setSyncMeta(p.id, await makeSyncMeta(cloudId, result.version, result.mapHash, useStore.getState().project!))
         useStore.setState({ syncStatus: 'synced' })
       } else {
         throw new Error(t('welcome.projectNotFound'))

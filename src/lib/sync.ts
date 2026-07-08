@@ -310,3 +310,25 @@ export interface SyncMeta {
 export function hashProject(project: Project): Promise<string> {
   return sha256Hex(new TextEncoder().encode(JSON.stringify(project)))
 }
+
+/**
+ * Build a complete SyncMeta. Every writer must go through this so projectHash
+ * is never missing — a missing hash defeats the "skip upload if unchanged"
+ * check and causes phantom version bumps on other devices.
+ * Pass the project as it lives in the store (post-normalization), since that
+ * is what future syncs will hash and compare against.
+ */
+export async function makeSyncMeta(
+  cloudId: string,
+  syncVersion: number,
+  mapHash: string | null,
+  project: Project,
+): Promise<SyncMeta> {
+  return {
+    cloudId,
+    syncVersion,
+    syncedAt: new Date().toISOString(),
+    mapHash,
+    projectHash: await hashProject(project),
+  }
+}
