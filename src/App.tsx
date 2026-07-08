@@ -94,8 +94,19 @@ export default function App() {
     function onBeforeUnload(e: BeforeUnloadEvent) {
       if (hasUnsyncedChanges()) e.preventDefault()
     }
+    // Returning to the tab is the common "other device pushed meanwhile"
+    // moment (startup was the only check before). Dirty local state raises
+    // the conflict dialog; a clean pull replaces the project (undo stack
+    // resets — accepted tradeoff, the alternative is merge machinery).
+    function onVisibility() {
+      if (!document.hidden) useStore.getState().checkForRemoteUpdate()
+    }
     window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   const guardedAction = useCallback((action: () => void) => {

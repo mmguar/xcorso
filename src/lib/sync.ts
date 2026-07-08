@@ -109,6 +109,7 @@ export function hashMap(data: ArrayBuffer): Promise<string> {
 export type SyncResult =
   | { status: 'ok'; version: number }
   | { status: 'conflict'; serverVersion: number }
+  | { status: 'not-found' }   // cloud project deleted or access revoked
   | { status: 'error'; message: string }
 
 export async function uploadProject(
@@ -128,6 +129,7 @@ export async function uploadProject(
       credentials: 'include',
       body: mapData,
     })
+    if (mapRes.status === 404) return { status: 'not-found' }
     if (!mapRes.ok) return { status: 'error', message: 'Map upload failed' }
     const { hash } = await mapRes.json() as { hash: string }
     mapHash = hash
@@ -150,6 +152,7 @@ export async function uploadProject(
     const { serverVersion } = await res.json() as { serverVersion: number }
     return { status: 'conflict', serverVersion }
   }
+  if (res.status === 404) return { status: 'not-found' }
   if (!res.ok) return { status: 'error', message: `Upload failed (${res.status})` }
 
   const data = await res.json() as { version: number; indexEtag?: string }

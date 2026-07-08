@@ -170,6 +170,18 @@ export async function getSyncMeta(id: string): Promise<SyncMeta | null> {
   } catch { return null }
 }
 
+export async function clearSyncMeta(id: string): Promise<void> {
+  const db = await openDB()
+  const tx = db.transaction(PROJECTS_STORE, 'readwrite')
+  const store = tx.objectStore(PROJECTS_STORE)
+  const req = store.get(id)
+  req.onsuccess = () => {
+    const entry = req.result as { project: Project; sync?: SyncMeta } | undefined
+    if (entry?.sync) store.put({ project: entry.project }, id)
+  }
+  return txDone(db, tx)
+}
+
 export async function setSyncMeta(id: string, sync: SyncMeta): Promise<void> {
   const db = await openDB()
   const tx = db.transaction(PROJECTS_STORE, 'readwrite')

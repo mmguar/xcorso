@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Project } from '../types'
 import type { Store, StoreHelpers, UndoEntry } from './types'
 import { defaultEditor } from './types'
-import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta } from '../lib/persistence'
+import { debouncedSave, loadProject as loadPersistedProject, setActiveId, flushSave, getSyncMeta, setSyncMeta, clearSyncMeta } from '../lib/persistence'
 import * as persistence from '../lib/persistence'
 import { uploadProject, downloadProject, createCloudProject, hashMap, hashProject, makeSyncMeta, fetchHistory, restoreVersion as restoreCloudVersion, fetchCloudProjects } from '../lib/sync'
 import type { SyncMeta } from '../lib/sync'
@@ -365,6 +365,10 @@ export const useStore = create<Store>((set, get) => {
       if (!saved) return
       const syncMeta = await getSyncMeta(id)
       get().loadProject(saved.project, saved.mapFileData, id, syncMeta?.role)
+      // The IDB copy may be stale — pull remote if it advanced (the
+      // welcome-screen switch path already does this; the header switcher
+      // lands here).
+      get().checkForRemoteUpdate()
     },
 
     // ── Cloud sync ───────────────────────────────────────────────────────
@@ -427,6 +431,28 @@ export const useStore = create<Store>((set, get) => {
             })
           } else {
             set({ syncStatus: 'error' })
+          }
+        } else if (result.status === 'not-found') {
+          // The cloud project vanished — deleted on another device, or share
+          // access revoked. A dangling cloudId means every future sync 404s
+          // with no way out, so detach and recover here.
+          await clearSyncMeta(projectId)
+          if (syncMeta.role) {
+            // Shared copy: the share is gone, so this becomes an ordinary
+            // local project owned by this user. Next sync uploads it as such.
+            set({ syncStatus: 'idle', projectRole: 'owner' })
+          } else {
+            // Owned: re-create in the cloud and re-upload (no recursion — a
+            // fresh project can legitimately 404 only on server breakage).
+            const cloudId = await createCloudProject(project.meta.name)
+            if (!cloudId) { set({ syncStatus: 'error' }); return }
+            const retry = await uploadProject(cloudId, project, mapFileData, localMapHash, null, 0)
+            if (retry.status === 'ok') {
+              await setSyncMeta(projectId, await makeSyncMeta(cloudId, retry.version, localMapHash, project))
+              set({ syncStatus: 'synced' })
+            } else {
+              set({ syncStatus: 'error' })
+            }
           }
         } else {
           set({ syncStatus: 'error' })
@@ -539,8 +565,10 @@ export const useStore = create<Store>((set, get) => {
     },
 
     checkForRemoteUpdate: async () => {
-      const { projectId, cloudUser, mapFileData } = get()
+      const { projectId, cloudUser, mapFileData, syncStatus, syncConflict } = get()
       if (!projectId || !cloudUser) return
+      // Don't race an in-flight sync or stack onto an open conflict dialog.
+      if (syncStatus === 'syncing' || syncConflict) return
       const syncMeta = await getSyncMeta(projectId)
       if (!syncMeta) return
 
