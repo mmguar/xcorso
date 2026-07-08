@@ -305,6 +305,8 @@ export interface SyncMeta {
   syncedAt: string
   mapHash: string | null
   projectHash?: string
+  /** Set when the project is shared with this user; absent = owned. */
+  role?: 'editor' | 'viewer'
 }
 
 export function hashProject(project: Project): Promise<string> {
@@ -323,6 +325,7 @@ export async function makeSyncMeta(
   syncVersion: number,
   mapHash: string | null,
   project: Project,
+  role?: 'editor' | 'viewer',
 ): Promise<SyncMeta> {
   return {
     cloudId,
@@ -330,5 +333,6 @@ export async function makeSyncMeta(
     syncedAt: new Date().toISOString(),
     mapHash,
     projectHash: await hashProject(project),
+    ...(role ? { role } : {}),
   }
 }

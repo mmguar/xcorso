@@ -363,7 +363,8 @@ export const useStore = create<Store>((set, get) => {
       await flushSave()
       const saved = await loadPersistedProject(id)
       if (!saved) return
-      get().loadProject(saved.project, saved.mapFileData, id)
+      const syncMeta = await getSyncMeta(id)
+      get().loadProject(saved.project, saved.mapFileData, id, syncMeta?.role)
     },
 
     // ── Cloud sync ───────────────────────────────────────────────────────
@@ -371,16 +372,18 @@ export const useStore = create<Store>((set, get) => {
     setCloudUser: (user) => set({ cloudUser: user }),
 
     syncProject: async () => {
-      const { project, projectId, mapFileData, cloudUser } = get()
-      if (!project || !projectId || !cloudUser) return
+      const { project, projectId, mapFileData, cloudUser, projectRole } = get()
+      if (!project || !projectId || !cloudUser || projectRole === 'viewer') return
 
       await flushSave()
       set({ syncStatus: 'syncing' })
       try {
         let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
 
-        // First sync: create cloud project
+        // First sync: create cloud project. Owned projects only — creating one
+        // for a shared project would silently fork it into this user's account.
         if (!syncMeta) {
+          if (projectRole !== 'owner') { set({ syncStatus: 'error' }); return }
           const cloudId = await createCloudProject(project.meta.name)
           if (!cloudId) { set({ syncStatus: 'error' }); return }
           syncMeta = { cloudId, syncVersion: 0, syncedAt: '', mapHash: null }
@@ -407,6 +410,7 @@ export const useStore = create<Store>((set, get) => {
             syncedAt: new Date().toISOString(),
             mapHash: localMapHash,
             projectHash: localProjectHash,
+            ...(syncMeta.role ? { role: syncMeta.role } : {}),
           }
           await setSyncMeta(projectId, updated)
           set({ syncStatus: 'synced' })
@@ -433,14 +437,15 @@ export const useStore = create<Store>((set, get) => {
     },
 
     saveSnapshot: async () => {
-      const { project, projectId, mapFileData, cloudUser } = get()
-      if (!project || !projectId || !cloudUser) return
+      const { project, projectId, mapFileData, cloudUser, projectRole } = get()
+      if (!project || !projectId || !cloudUser || projectRole === 'viewer') return
 
       await flushSave()
       set({ syncStatus: 'syncing' })
       try {
         let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
         if (!syncMeta) {
+          if (projectRole !== 'owner') { set({ syncStatus: 'error' }); return }
           const cloudId = await createCloudProject(project.meta.name)
           if (!cloudId) { set({ syncStatus: 'error' }); return }
           syncMeta = { cloudId, syncVersion: 0, syncedAt: '', mapHash: null }
@@ -453,7 +458,7 @@ export const useStore = create<Store>((set, get) => {
         )
 
         if (result.status === 'ok') {
-          await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, result.version, localMapHash, project))
+          await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, result.version, localMapHash, project, syncMeta.role))
           set({ syncStatus: 'synced' })
           await get().fetchVersionHistory()
         } else if (result.status === 'conflict') {
@@ -487,9 +492,9 @@ export const useStore = create<Store>((set, get) => {
       const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
       if (!remote) return
 
-      get().loadProject(remote.project, remote.mapData ?? mapFileData)
+      get().loadProject(remote.project, remote.mapData ?? mapFileData, projectId, syncMeta.role)
       // Hash the store's project (loadProject normalizes it), not remote.project.
-      await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, remote.version, remote.mapHash, get().project!))
+      await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, remote.version, remote.mapHash, get().project!, syncMeta.role))
       set({ syncStatus: 'synced' })
       await get().fetchVersionHistory()
     },
@@ -500,14 +505,15 @@ export const useStore = create<Store>((set, get) => {
 
       try {
         let ok = false
+        const role = (await getSyncMeta(projectId))?.role
         if (keep === 'remote') {
           const remote = await downloadProject(syncConflict.cloudId, null)
           if (remote) {
-            get().loadProject(remote.project, remote.mapData ?? mapFileData)
+            get().loadProject(remote.project, remote.mapData ?? mapFileData, projectId, role)
             // remote.version, not syncConflict.serverVersion: the server may have
             // advanced since the 409, and recording the stale version makes the
             // next sync 409 again with identical content.
-            await setSyncMeta(projectId, await makeSyncMeta(syncConflict.cloudId, remote.version, remote.mapHash, get().project!))
+            await setSyncMeta(projectId, await makeSyncMeta(syncConflict.cloudId, remote.version, remote.mapHash, get().project!, role))
             ok = true
           }
         } else if (keep === 'local' && project) {
@@ -520,7 +526,7 @@ export const useStore = create<Store>((set, get) => {
             localMapHash, null, syncConflict.serverVersion,
           )
           if (result.status === 'ok') {
-            await setSyncMeta(projectId, await makeSyncMeta(syncConflict.cloudId, result.version, localMapHash, project))
+            await setSyncMeta(projectId, await makeSyncMeta(syncConflict.cloudId, result.version, localMapHash, project, role))
             ok = true
           }
         }
@@ -569,8 +575,8 @@ export const useStore = create<Store>((set, get) => {
 
         const remote = await downloadProject(syncMeta.cloudId, syncMeta.mapHash)
         if (!remote) return
-        get().loadProject(remote.project, remote.mapData ?? mapFileData, projectId)
-        await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, remote.version, remote.mapHash, get().project!))
+        get().loadProject(remote.project, remote.mapData ?? mapFileData, projectId, syncMeta.role)
+        await setSyncMeta(projectId, await makeSyncMeta(syncMeta.cloudId, remote.version, remote.mapHash, get().project!, syncMeta.role))
         set({ syncStatus: 'synced' })
       } catch {
         // Silently fail — local version is still usable

@@ -96,11 +96,14 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     try {
       const [cloud, shared] = await Promise.all([fetchCloudProjects(), fetchSharedProjects()])
       setCloudVersions(Object.fromEntries(cloud.map(c => [c.id, c.version])))
-      const localCloudIds = new Set(local.map(p => p.sync?.cloudId).filter(Boolean))
+      // Local copies of shared projects (sync.role set) appear under
+      // "Shared with me" only, not in the recent list.
+      const own = local.filter(p => !p.sync?.role)
+      const localCloudIds = new Set(own.map(p => p.sync?.cloudId).filter(Boolean))
       const cloudOnly: ProjectSummary[] = cloud
         .filter(c => !localCloudIds.has(c.id))
         .map(c => ({ id: c.id, name: c.name, updatedAt: c.updatedAt, sync: { cloudId: c.id, syncVersion: c.version, syncedAt: c.updatedAt, mapHash: null } }))
-      setProjects([...local, ...cloudOnly].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+      setProjects([...own, ...cloudOnly].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
       setSharedProjects(shared)
     } catch {
       setProjects(local)
@@ -188,9 +191,28 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   async function handleOpenShared(sp: SharedProject) {
     setLoading(true); setError(null)
     try {
-      const result = await downloadProject(sp.projectId, null)
-      if (!result) throw new Error(t('welcome.downloadFailed'))
-      loadProject(result.project, result.mapData, sp.projectId, sp.role)
+      // Editor copies persist locally (with role in SyncMeta) so refresh and
+      // project switching keep the role and sync targets the owner's project.
+      const localCopy = sp.role === 'editor' ? await loadPersistedProject(sp.projectId) : null
+      const localSync = localCopy ? await getSyncMeta(sp.projectId) : null
+      const result = await downloadProject(sp.projectId, localSync?.mapHash ?? null)
+      if (result) {
+        const mapData = result.mapData ?? localCopy?.mapFileData ?? null
+        if (sp.role === 'editor') {
+          await saveProject(sp.projectId, result.project, mapData)
+          loadProject(result.project, mapData, sp.projectId, sp.role)
+          await setSyncMeta(sp.projectId, await makeSyncMeta(sp.projectId, result.version, result.mapHash, useStore.getState().project!, sp.role))
+          useStore.setState({ syncStatus: 'synced' })
+        } else {
+          // Viewers stay in-memory only — the autosave subscriber skips them.
+          loadProject(result.project, mapData, sp.projectId, sp.role)
+        }
+      } else if (localCopy) {
+        // Offline or download failed — fall back to the local copy.
+        loadProject(localCopy.project, localCopy.mapFileData, sp.projectId, sp.role)
+      } else {
+        throw new Error(t('welcome.downloadFailed'))
+      }
       onProjectLoaded()
     } catch (e) {
       setError(t('welcome.failedOpenShared', { error: e instanceof Error ? e.message : String(e) }))

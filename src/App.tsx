@@ -9,7 +9,7 @@ import { EditorScreen } from './components/EditorScreen'
 import { AboutPage } from './components/AboutPage'
 import { LoginModal } from './components/LoginModal'
 import { ConflictModal } from './components/ConflictModal'
-import { getActiveId, loadProject as loadPersistedProject } from './lib/persistence'
+import { getActiveId, getSyncMeta, loadProject as loadPersistedProject } from './lib/persistence'
 import { fetchUser } from './lib/sync'
 
 function ErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
@@ -74,7 +74,10 @@ export default function App() {
       if (!id) return
       const saved = await loadPersistedProject(id)
       if (saved?.project) {
-        loadProject(saved.project, saved.mapFileData, id)
+        // Restore the share role — defaulting to 'owner' on refresh let shared
+        // projects silently fork into the editor's own cloud account.
+        const sync = await getSyncMeta(id)
+        loadProject(saved.project, saved.mapFileData, id, sync?.role)
         setScreen('editor')
       }
     }).finally(() => setRestoring(false))
