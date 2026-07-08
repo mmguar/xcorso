@@ -11,9 +11,9 @@ import { loadMap } from '../lib/mapLoader'
 import { importIofXml } from '../lib/iofImport'
 import { listProjects, deleteProject as deletePersistedProject, loadProject as loadPersistedProject, saveProject, setSyncMeta, getSyncMeta } from '../lib/persistence'
 import type { ProjectSummary } from '../lib/persistence'
-import { deleteAccount, fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, type SharedProject } from '../lib/sync'
-import { purgeCloudCopies } from '../lib/logoutPurge'
+import { fetchCloudProjects, deleteCloudProject, downloadProject, fetchSharedProjects, makeSyncMeta, hashProject, type SharedProject } from '../lib/sync'
 import { LogoutDialog } from './LogoutDialog'
+import { DeleteAccountDialog } from './DeleteAccountDialog'
 import { SPEC_LABEL_KEYS } from '../lib/symbolSpec'
 import type { MapConfig, MapType, EventSpec } from '../types'
 
@@ -49,14 +49,12 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([])
-  const [cloudVersions, setCloudVersions] = useState<Record<string, number>>({})
 
   const activeProjectId = useStore(s => s.projectId)
   const createProject = useStore(s => s.createProject)
   const loadProject = useStore(s => s.loadProject)
   const switchProject = useStore(s => s.switchProject)
   const cloudUser = useStore(s => s.cloudUser)
-  const setCloudUser = useStore(s => s.setCloudUser)
 
   const openFileRef = useRef<HTMLInputElement>(null)
   const mapFileRef = useRef<HTMLInputElement>(null)
@@ -93,12 +91,14 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
 
   async function loadProjectList() {
     const local = await listProjects()
-    if (!cloudUser) { setProjects(local); setSharedProjects([]); return }
+    // Hide shared editor copies when logged out (session expiry leaves them
+    // behind, unlike explicit logout which purges) — they'd show as ordinary
+    // projects with no role badge and belong to someone else.
+    if (!cloudUser) { setProjects(local.filter(p => !p.sync?.role)); setSharedProjects([]); return }
 
     setSyncing(true)
     try {
       const [cloud, shared] = await Promise.all([fetchCloudProjects(), fetchSharedProjects()])
-      setCloudVersions(Object.fromEntries(cloud.map(c => [c.id, c.version])))
       // Local copies of shared projects (sync.role set) appear under
       // "Shared with me" only, not in the recent list.
       const own = local.filter(p => !p.sync?.role)
@@ -133,26 +133,10 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
     try {
       const cloudId = p.sync?.cloudId
       const isLocallyAvailable = await loadPersistedProject(p.id)
-      if (isLocallyAvailable && cloudId && cloudUser) {
-        // Check if remote is newer before loading stale local data
-        const localSync = await getSyncMeta(p.id)
-        const remoteVersion = cloudVersions[cloudId]
-        if (localSync && remoteVersion != null && remoteVersion > localSync.syncVersion) {
-          const result = await downloadProject(cloudId, localSync.mapHash)
-          if (result) {
-            const mapData = result.mapData ?? isLocallyAvailable.mapFileData
-            await saveProject(p.id, result.project, mapData)
-            loadProject(result.project, mapData, p.id)
-            // Hash the store's project (loadProject normalizes it) so the next
-            // sync's no-change check compares like with like.
-            await setSyncMeta(p.id, await makeSyncMeta(cloudId, result.version, result.mapHash, useStore.getState().project!))
-            useStore.setState({ syncStatus: 'synced' })
-            onProjectLoaded()
-            return
-          }
-        }
-        await switchProject(p.id)
-      } else if (isLocallyAvailable) {
+      if (isLocallyAvailable) {
+        // switchProject runs checkForRemoteUpdate, which pulls a newer remote
+        // only when local is clean and raises the conflict dialog when it's
+        // dirty — downloading here instead would overwrite unsynced edits.
         await switchProject(p.id)
       } else if (cloudId) {
         const result = await downloadProject(cloudId, null)
@@ -199,7 +183,18 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
       const localCopy = sp.role === 'editor' ? await loadPersistedProject(sp.projectId) : null
       const localSync = localCopy ? await getSyncMeta(sp.projectId) : null
       const result = await downloadProject(sp.projectId, localSync?.mapHash ?? null)
-      if (result) {
+      // Unsynced local edits must not be overwritten by the download.
+      const dirty = !!localCopy && !!localSync && (localSync.projectHash
+        ? await hashProject(localCopy.project) !== localSync.projectHash
+        : localCopy.project.meta.updatedAt > localSync.syncedAt) // legacy meta without hash
+      if (dirty) {
+        loadProject(localCopy!.project, localCopy!.mapFileData, sp.projectId, sp.role)
+        if (result && result.version > localSync!.syncVersion) {
+          // Remote advanced too — raise the same conflict dialog syncProject
+          // uses instead of silently picking a side.
+          useStore.setState({ syncConflict: { cloudId: sp.projectId, serverVersion: result.version, remoteProject: result.project } })
+        }
+      } else if (result) {
         const mapData = result.mapData ?? localCopy?.mapFileData ?? null
         if (sp.role === 'editor') {
           await saveProject(sp.projectId, result.project, mapData)
@@ -305,42 +300,13 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
               >
                 <LogOut size={14} />
               </button>
-              {confirmDeleteAccount ? (
-                <span className="flex items-center gap-1 ml-1">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await deleteAccount()
-                        // Account is gone server-side; remove its copies here too.
-                        const purged = await purgeCloudCopies()
-                        const { projectId } = useStore.getState()
-                        if (projectId && purged.includes(projectId)) {
-                          useStore.setState({ projectId: null, project: null, mapFileData: null, loadedMap: null, undoStack: [], redoStack: [], syncStatus: 'idle', versionHistory: [], projectRole: 'owner' })
-                        }
-                        setCloudUser(null)
-                      } catch { /* network error — keep user signed in */ }
-                      setConfirmDeleteAccount(false)
-                    }}
-                    className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600"
-                  >
-                    {t('welcome.confirmDelete')}
-                  </button>
-                  <button
-                    onClick={() => setConfirmDeleteAccount(false)}
-                    className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500"
-                  >
-                    {t('welcome.cancel')}
-                  </button>
-                </span>
-              ) : (
-                <button
-                  onClick={() => setConfirmDeleteAccount(true)}
-                  className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1"
-                  title={t('welcome.deleteAccountTitle')}
-                >
-                  {t('welcome.deleteAccount')}
-                </button>
-              )}
+              <button
+                onClick={() => setConfirmDeleteAccount(true)}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1"
+                title={t('welcome.deleteAccountTitle')}
+              >
+                {t('welcome.deleteAccount')}
+              </button>
             </div>
           ) : (
             <button
@@ -511,6 +477,7 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           onChange={e => { const f = e.target.files?.[0]; if (f) handleOpenProject(f) }}
         />
         {logoutOpen && <LogoutDialog onClose={() => setLogoutOpen(false)} onLoggedOut={() => setLogoutOpen(false)} />}
+        {confirmDeleteAccount && <DeleteAccountDialog onClose={() => setConfirmDeleteAccount(false)} />}
       </div>
     )
   }

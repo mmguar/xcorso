@@ -3,7 +3,7 @@
  * copies) are removed from this device on logout so the next browser user
  * can't browse them. Purely local projects are untouched.
  */
-import { listProjects, loadProject, deleteProject, getSyncMeta, setSyncMeta } from './persistence'
+import { listProjects, loadProject, deleteProject, getSyncMeta, setSyncMeta, clearSyncMeta } from './persistence'
 import { hashProject, hashMap, uploadProject, makeSyncMeta } from './sync'
 
 export interface CloudCopy {
@@ -46,5 +46,17 @@ export async function syncCloudCopy(id: string): Promise<boolean> {
 export async function purgeCloudCopies(): Promise<string[]> {
   const cloud = (await listProjects()).filter(p => p.sync)
   for (const p of cloud) await deleteProject(p.id)
+  return cloud.map(p => p.id)
+}
+
+/**
+ * Detach all cloud-derived copies into ordinary local projects. Used after
+ * account deletion: the cloud copies are gone, so the local ones are the only
+ * surviving work — stripping the sync meta (and share role) keeps them usable
+ * instead of destroying them like the logout purge does.
+ */
+export async function detachCloudCopies(): Promise<string[]> {
+  const cloud = (await listProjects()).filter(p => p.sync)
+  for (const p of cloud) await clearSyncMeta(p.id)
   return cloud.map(p => p.id)
 }

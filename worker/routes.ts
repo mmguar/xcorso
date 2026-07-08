@@ -394,7 +394,10 @@ export async function projectPut(request: Request, env: Env, params: Params) {
   if (!meta) return Response.json({ error: 'Not found' }, { status: 404 })
 
   // Mandatory once the project has a version — omitting If-Match must not
-  // silently overwrite someone else's push (KV/R2 have no other concurrency control).
+  // silently overwrite someone else's push. ponytail: this read-modify-write
+  // isn't atomic — two simultaneous PUTs can both read the same version, both
+  // pass, and the last putIndex wins (lost update). KV has no CAS; per-project
+  // serialization (Durable Object) if lost updates ever show up in practice.
   const ifMatch = request.headers.get('If-Match')
   if (meta.version > 0 && Number(ifMatch) !== meta.version) {
     return Response.json({ error: 'Conflict', serverVersion: meta.version }, { status: 409 })
@@ -720,15 +723,15 @@ export async function sharedWithMe(request: Request, env: Env, _params: Params) 
 
   const refs = await getSharedWithMe(env, user.sub)
 
-  // Enrich with project name/updatedAt from owner's index
-  const enriched: { projectId: string; ownerId: string; ownerEmail: string; role: ShareRole; name: string; updatedAt: string }[] = []
+  // Enrich with project name/updatedAt/version from owner's index
+  const enriched: { projectId: string; ownerId: string; ownerEmail: string; role: ShareRole; name: string; updatedAt: string; version: number }[] = []
   const ownerCache = new Map<string, ProjectMeta[]>()
   for (const ref of refs) {
     if (!ownerCache.has(ref.ownerId)) ownerCache.set(ref.ownerId, await getIndex(env, ref.ownerId))
     const ownerIndex = ownerCache.get(ref.ownerId)!
     const meta = ownerIndex.find(p => p.id === ref.projectId)
     if (meta) {
-      enriched.push({ ...ref, name: meta.name, updatedAt: meta.updatedAt })
+      enriched.push({ ...ref, name: meta.name, updatedAt: meta.updatedAt, version: meta.version })
     }
   }
 
