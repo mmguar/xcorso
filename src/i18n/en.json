@@ -342,6 +342,8 @@
   "layout.maps": "Maps",
   "layout.printScale": "Print scale",
   "layout.doesntFit": "Doesn't fit on page at this scale.",
+  "layout.fits": "fits",
+  "layout.canFit": "can fit",
   "layout.fitAt": "Fit at 1:{{scale}}",
   "layout.tilePages": "Tile across multiple pages",
   "layout.tileInfo": "({{cols}}×{{rows}} pages)",
