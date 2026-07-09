@@ -35,6 +35,7 @@ export interface EditorState {
   gapRebuild: boolean
   // Pan-to-point request (seq bumps so repeat clicks on the same control re-fire).
   centerRequest: { point: MapPoint; seq: number } | null
+  allCoursesHidden: string[]
   validationIgnoredCriteria: string[]
   validationIgnoredInstances: string[]
 }
@@ -220,6 +221,7 @@ export interface AppActions {
   setDraggingControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
   setAllCoursesView: () => void
+  toggleAllCoursesHidden: (courseId: string) => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setOverprint: (overprint: number) => void
@@ -317,6 +319,7 @@ export const defaultEditor: EditorState = {
   layoutSnapRequest: 0,
   gapRebuild: false,
   centerRequest: null,
+  allCoursesHidden: [],
   validationIgnoredCriteria: [],
   validationIgnoredInstances: [],
 }

@@ -286,6 +286,7 @@ export function MapCanvas({ loadedMap }: Props) {
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const courseViewMode = useStore(s => s.editor.courseViewMode)
   const isAllCoursesView = courseViewMode === 'all-courses'
+  const allCoursesHidden = useStore(s => s.editor.allCoursesHidden)
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const selectedAnnotationId = useStore(s => s.editor.selectedAnnotationId)
   const appearance = useStore(s => s.editor.appearance)
@@ -305,7 +306,7 @@ export function MapCanvas({ loadedMap }: Props) {
     return s.project?.courses.find(c => c.id === s.editor.layoutCourseId) ?? null
   })
 
-  const [useRaster, setUseRaster] = useState(false)
+  const [useRaster, setUseRaster] = useState(true)
   const mapOverprint = useStore(s => s.project?.layoutDefaults?.mapOverprint ?? false)
   // Overprint-simulated raster, generated lazily when the option is enabled.
   // Only meaningful for OCAD (svg) maps in raster mode; HD/vector shows as usual.
@@ -2029,6 +2030,7 @@ export function MapCanvas({ loadedMap }: Props) {
                   map={map}
                   appearance={appearance}
                   projectSpec={projectSpec}
+                  hiddenIds={allCoursesHidden}
                   _rev={projectRevision}
                 />
               ) : (
@@ -2123,6 +2125,7 @@ export function MapCanvas({ loadedMap }: Props) {
                 map={map}
                 appearance={appearance}
                 projectSpec={projectSpec}
+                hiddenIds={allCoursesHidden}
                 _rev={projectRevision}
               />
             ) : (
@@ -2340,7 +2343,7 @@ export function MapCanvas({ loadedMap }: Props) {
             <LayoutScaleInput courseId={layoutCourse.id} printScale={layoutCourse.layout.printScale} />
           )}
         </div>
-        {isAllCoursesView && <AllCoursesLegend courses={courses} />}
+        {isAllCoursesView && <AllCoursesLegend courses={courses} hiddenIds={allCoursesHidden} />}
       </div>
 
       {measureStart && !scaleDialogPoints && (

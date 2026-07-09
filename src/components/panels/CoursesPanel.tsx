@@ -566,6 +566,8 @@ export function CoursesPanel() {
   const addCourse = useStore(s => s.addCourse)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const setAllCoursesView = useStore(s => s.setAllCoursesView)
+  const toggleAllCoursesHidden = useStore(s => s.toggleAllCoursesHidden)
+  const allCoursesHidden = useStore(s => s.editor.allCoursesHidden)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showClueOpts, setShowClueOpts] = useState(false)
   const clueOptsBtnRef = useRef<HTMLButtonElement>(null)
@@ -618,21 +620,44 @@ export function CoursesPanel() {
 
         {/* All courses view */}
         {courses.length > 0 && (
-          <div
-            onClick={() => setAllCoursesView()}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer mb-1 transition-colors ${
-              isAllCourses
-                ? 'bg-orange-100'
-                : 'hover:bg-gray-50'
-            }`}
-          >
-            <div className="flex gap-0.5 shrink-0">
-              {courses.slice(0, 4).map((c, i) => (
-                <div key={c.id} className="w-2 h-2 rounded-full" style={{ background: courseOverviewColor(i) }} />
-              ))}
+          <div className="mb-1">
+            <div
+              onClick={() => setAllCoursesView()}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                isAllCourses
+                  ? 'bg-orange-100'
+                  : 'hover:bg-gray-50'
+              }`}
+            >
+              <svg className="w-3 h-3 shrink-0" viewBox="0 0 32 32">
+                {(() => {
+                  const n = Math.min(courses.length, 8)
+                  if (n === 1) return <circle cx="16" cy="16" r="16" fill={courseOverviewColor(0)} />
+                  return courses.slice(0, n).map((_, i) => {
+                    const a0 = (i / n) * 2 * Math.PI - Math.PI / 2
+                    const a1 = ((i + 1) / n) * 2 * Math.PI - Math.PI / 2
+                    const d = `M16,16 L${16 + 16 * Math.cos(a0)},${16 + 16 * Math.sin(a0)} A16,16,0,${n <= 2 ? 0 : a1 - a0 > Math.PI ? 1 : 0},1,${16 + 16 * Math.cos(a1)},${16 + 16 * Math.sin(a1)} Z`
+                    return <path key={i} d={d} fill={courseOverviewColor(i)} />
+                  })
+                })()}
+              </svg>
+              <span className="text-sm font-medium flex-1">{t('courses.allCourses')}</span>
+              <span className="text-xs text-gray-400">{t('courses.courseCount', { count: courses.length })}</span>
             </div>
-            <span className="text-sm font-medium flex-1">{t('courses.allCourses')}</span>
-            <span className="text-xs text-gray-400">{t('courses.courseCount', { count: courses.length })}</span>
+            {isAllCourses && (
+              <div className="ml-6 mt-1 flex flex-col gap-0.5">
+                {courses.map((c, i) => {
+                  const hidden = allCoursesHidden.includes(c.id)
+                  return (
+                    <label key={c.id} className="flex items-center gap-1.5 px-2 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={!hidden} onChange={() => toggleAllCoursesHidden(c.id)} className="accent-orange-600 w-3 h-3" />
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: courseOverviewColor(i) }} />
+                      <span className="truncate" style={{ opacity: hidden ? 0.4 : 1 }}>{c.name}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

@@ -382,6 +382,14 @@ export const useStore = create<Store>((set, get) => {
       })
     },
 
+    toggleAllCoursesHidden: (courseId) => {
+      set(state => {
+        const h = state.editor.allCoursesHidden
+        const next = h.includes(courseId) ? h.filter(id => id !== courseId) : [...h, courseId]
+        return { editor: { ...state.editor, allCoursesHidden: next } }
+      })
+    },
+
     setSelectedSubmap: (index) => {
       set(state => ({ editor: { ...state.editor, selectedSubmapIndex: index } }))
     },
