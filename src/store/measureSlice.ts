@@ -26,7 +26,7 @@ export function createMeasureSlice(_set: SetState, _get: GetState, h: StoreHelpe
       h.mutateProjectSilent(p => {
         const key = legKey(fromControlId, toControlId)
         const pts = p.measuredLegs?.[key]
-        if (!pts?.[index]) return
+        if (!pts?.[index]) return false
         p.measuredLegs = {
           ...p.measuredLegs,
           [key]: pts.map((pt, j) => (j === index ? position : pt)),
@@ -38,7 +38,7 @@ export function createMeasureSlice(_set: SetState, _get: GetState, h: StoreHelpe
       h.mutateProject(p => {
         const key = legKey(fromControlId, toControlId)
         const pts = p.measuredLegs?.[key]
-        if (!pts) return
+        if (!pts) return false
         const next = pts.filter((_, j) => j !== index)
         if (next.length === 0) delete p.measuredLegs![key]
         else p.measuredLegs![key] = next
@@ -47,7 +47,8 @@ export function createMeasureSlice(_set: SetState, _get: GetState, h: StoreHelpe
 
     clearMeasureLeg: (fromControlId: string, toControlId: string) => {
       h.mutateProject(p => {
-        if (p.measuredLegs) delete p.measuredLegs[legKey(fromControlId, toControlId)]
+        if (!p.measuredLegs?.[legKey(fromControlId, toControlId)]) return false
+        delete p.measuredLegs[legKey(fromControlId, toControlId)]
       }, 'Clear measured leg')
     },
   }

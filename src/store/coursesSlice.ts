@@ -11,7 +11,7 @@ function insertBeforeFinish(course: Course, controls: Control[], entries: Course
 
 export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers) {
   return {
-    addCourse: (name: string, type: CourseType = 'linear'): Course => {
+    addCourse: (name: string, type: CourseType = 'linear'): Course | null => {
       const { project } = get()
       const controls: CourseControl[] = []
       if (project) {
@@ -21,7 +21,9 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (finishes.length === 1) controls.push({ id: crypto.randomUUID(), controlId: finishes[0].id })
       }
       const course: Course = { id: crypto.randomUUID(), name, type, controls, color: IOF_PURPLE }
-      h.mutateProject(p => { p.courses.push(course) }, `Add course "${name}"`)
+      // Blocked mutation (viewer/locked) must not select a course that was
+      // never added.
+      if (!h.mutateProject(p => { p.courses.push(course) }, `Add course "${name}"`)) return null
 
       set(state => ({
         editor: {
@@ -56,7 +58,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         v.id = crypto.randomUUID()
         for (const lo of v.loopOrders) lo.loopId = loopIdMap.get(lo.loopId) ?? lo.loopId
       }
-      h.mutateProject(p => { p.courses.splice(idx + 1, 0, copy) }, `Duplicate course "${copy.name}"`)
+      if (!h.mutateProject(p => { p.courses.splice(idx + 1, 0, copy) }, `Duplicate course "${copy.name}"`)) return null
 
       set(state => ({
         editor: {
@@ -73,28 +75,46 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
 
     deleteCourse: (id: string) => {
       const name = get().project?.courses.find(c => c.id === id)?.name
-      h.mutateProject(p => {
+      if (name === undefined) return
+      const ok = h.mutateProject(p => {
         p.courses = p.courses.filter(c => c.id !== id)
         p.classes = p.classes.filter(c => c.courseId !== id)
-      }, name ? `Delete course "${name}"` : 'Delete course')
-      set(state => ({
-        editor: {
-          ...state.editor,
-          selectedCourseId: state.editor.selectedCourseId === id ? null : state.editor.selectedCourseId,
-          courseViewMode: state.editor.selectedCourseId === id ? 'all-controls' : state.editor.courseViewMode,
-        },
-      }))
+      }, `Delete course "${name}"`)
+      if (!ok) return
+      set(state => {
+        const ed = state.editor
+        const wasSelected = ed.selectedCourseId === id
+        const courseOnlyTool = ed.activeTool === 'gap' || ed.activeTool === 'bend'
+        return {
+          editor: {
+            ...ed,
+            selectedCourseId: wasSelected ? null : ed.selectedCourseId,
+            courseViewMode: wasSelected ? 'all-controls' : ed.courseViewMode,
+            selectedSubmapIndex: wasSelected ? null : ed.selectedSubmapIndex,
+            // gap/bend only exist in the course banner — don't leave them armed
+            // with no course (and no visible button) behind them.
+            activeTool: wasSelected && courseOnlyTool ? 'select' : ed.activeTool,
+            // A mode bound to the deleted course must not outlive it.
+            ...(ed.measureCourseId === id
+              ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] }
+              : {}),
+            ...(ed.layoutCourseId === id
+              ? { layoutMode: false, layoutCourseId: null, layoutSubmapIndex: 0 }
+              : {}),
+          },
+        }
+      })
     },
 
     updateCourseName: (id: string, name: string) => {
       h.mutateProject(p => {
-        const c = p.courses.find(c => c.id === id); if (c) c.name = name
+        const c = p.courses.find(c => c.id === id); if (!c) return false; c.name = name
       }, `Rename course → "${name}"`)
     },
 
     updateCourseColor: (id: string, color: string) => {
       h.mutateProject(p => {
-        const c = p.courses.find(c => c.id === id); if (c) c.color = color
+        const c = p.courses.find(c => c.id === id); if (!c) return false; c.color = color
       }, 'Change course color')
     },
 
@@ -115,7 +135,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (existing?.controlId === controlId) return
         h.mutateProject(p => {
           const c = p.courses.find(c => c.id === courseId)
-          if (!c) return
+          if (!c) return false
           c.controls = c.controls.filter(cc => getType(cc.controlId) !== 'start')
           c.controls.unshift({ id: crypto.randomUUID(), controlId })
         }, label)
@@ -127,7 +147,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         if (existing?.controlId === controlId) return
         h.mutateProject(p => {
           const c = p.courses.find(c => c.id === courseId)
-          if (!c) return
+          if (!c) return false
           c.controls = c.controls.filter(cc => getType(cc.controlId) !== 'finish')
           c.controls.push({ id: crypto.randomUUID(), controlId })
         }, label)
@@ -141,7 +161,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
 
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
-        if (!c) return
+        if (!c) return false
         insertBeforeFinish(c, p.controls, [{ id: crypto.randomUUID(), controlId }])
       }, label)
     },
@@ -159,7 +179,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       if (regularControls.length === 0) return
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
-        if (!c) return
+        if (!c) return false
         insertBeforeFinish(c, p.controls, regularControls.map(ctrl => ({ id: crypto.randomUUID(), controlId: ctrl.id })))
       }, `Add all controls to ${course.name}`)
     },
@@ -189,7 +209,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       const regulars = resolved.filter(c => c.type === 'control')
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
-        if (!c) return
+        if (!c) return false
         const typeOf = (id: string) => p.controls.find(ct => ct.id === id)?.type
         // Same placement rules as addControlToCourse: one start at the front,
         // one finish at the end, regular controls before the finish.
@@ -212,10 +232,12 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       const course = proj?.courses.find(c => c.id === courseId)
       const cc = course?.controls.find(cc => cc.id === courseControlId)
       const ctrl = cc ? proj?.controls.find(c => c.id === cc.controlId) : undefined
-      const lbl = ctrl && course ? `Remove ${defaultControlLabel(ctrl)} from ${course.name}` : 'Remove control from course'
+      if (!course || !cc) return
+      const lbl = ctrl ? `Remove ${defaultControlLabel(ctrl)} from ${course.name}` : 'Remove control from course'
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
-        if (c) c.controls = c.controls.filter(cc => cc.id !== courseControlId)
+        if (!c) return false
+        c.controls = c.controls.filter(cc => cc.id !== courseControlId)
       }, lbl)
     },
 
@@ -223,37 +245,41 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       const cName = get().project?.courses.find(c => c.id === courseId)?.name ?? ''
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === courseId)
-        if (c) c.controls = controls
+        if (!c) return false
+        c.controls = controls
       }, `Reorder controls ${cName}`)
     },
 
     updateScorePoints: (courseId: string, courseControlId: string, points: number) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.scorePoints = points
+        if (!cc) return false
+        cc.scorePoints = points
       }, 'Update score points')
     },
 
     updateCourseClimb: (id: string, climb: number | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (c) c.climb = climb
+        if (!c) return false
+        c.climb = climb
       }, 'Update climb')
     },
 
     setManualCourseLength: (id: string, metres: number | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (c) c.manualLength = metres
+        if (!c) return false
+        c.manualLength = metres
       }, 'Set course length')
     },
 
     updateCourseFinishType: (id: string, finishType: FinishType) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (!c) return
+        if (!c) return false
         c.finishType = finishType
         const finishCc = c.controls.length >= 2 ? c.controls[c.controls.length - 1] : undefined
         const prevCc = c.controls.length >= 2 ? c.controls[c.controls.length - 2] : undefined
@@ -280,14 +306,16 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     updateCourseShowPoints: (id: string, showPoints: boolean) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (c) c.showPoints = showPoints
+        if (!c) return false
+        c.showPoints = showPoints
       }, 'Toggle show points')
     },
 
     updateCourseTextDescriptions: (id: string, textDescriptions: boolean) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (c) c.textDescriptions = textDescriptions
+        if (!c) return false
+        c.textDescriptions = textDescriptions
       }, 'Toggle text descriptions')
     },
 
@@ -327,7 +355,8 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     updateCourseSpec: (id: string, spec: EventSpec | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
-        if (c) c.spec = spec
+        if (!c) return false
+        c.spec = spec
       }, 'Update course spec')
     },
 
@@ -344,21 +373,23 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     updateClassName: (id: string, name: string) => {
       h.mutateProject(p => {
         const c = p.classes.find(c => c.id === id)
-        if (c) c.name = name
+        if (!c) return false
+        c.name = name
       }, `Rename class → "${name}"`)
     },
 
     updateClassCourse: (id: string, courseId: string) => {
       h.mutateProject(p => {
         const c = p.classes.find(c => c.id === id)
-        if (c) c.courseId = courseId
+        if (!c) return false
+        c.courseId = courseId
       }, 'Change class course')
     },
 
     toggleCourseLoop: (courseId: string, forkControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         if (!course.loops) course.loops = []
         const existing = course.loops.findIndex(l => l.forkControlId === forkControlId)
         if (existing >= 0) {
@@ -372,7 +403,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           }
         } else {
           const forkCount = course.controls.filter(cc => cc.controlId === forkControlId).length
-          if (forkCount < 3) return
+          if (forkCount < 3) return false
           const branchCount = forkCount - 1
           const names = Array.from({ length: branchCount }, (_, i) => String.fromCharCode(65 + i))
           const loop = { id: crypto.randomUUID(), forkControlId, branchNames: names }
@@ -385,7 +416,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     togglePhiLoop: (courseId: string, forkControlId: string, forkControlId2: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         if (!course.loops) course.loops = []
         const existing = course.loops.findIndex(l =>
           l.forkControlId2 && (
@@ -408,7 +439,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           for (let i = 0; i < course.controls.length; i++) {
             if (forkIds.has(course.controls[i].controlId)) forkIndices.push(i)
           }
-          if (forkIndices.length < 3) return
+          if (forkIndices.length < 3) return false
           const branchCount = forkIndices.length - 1
           const names = Array.from({ length: branchCount }, (_, i) => String.fromCharCode(65 + i))
           const loop = { id: crypto.randomUUID(), forkControlId, forkControlId2, branchNames: names }
@@ -421,7 +452,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     removeCourseLoop: (courseId: string, loopId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.loops) return
+        if (!course?.loops) return false
         course.loops = course.loops.filter(l => l.id !== loopId)
         if (course.loops.length === 0) course.loops = undefined
         if (course.variations) {
@@ -435,7 +466,7 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     setRelayLegs: (courseId: string, legs: number | undefined) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         course.relayLegs = legs
         if (!legs && course.variations) {
           for (const v of course.variations) v.relayLeg = undefined
@@ -446,36 +477,39 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     setVariationRelayLeg: (courseId: string, variationId: string, leg: number | undefined) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.variations) return
+        if (!course?.variations) return false
         const v = course.variations.find(v => v.id === variationId)
-        if (v) v.relayLeg = leg
+        if (!v) return false
+        v.relayLeg = leg
       }, 'Assign variation to relay leg')
     },
 
     setExchangeMode: (courseId: string, courseControlId: string, mode: 'exchange' | 'flip') => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.exchangeMode = mode
+        if (!cc) return false
+        cc.exchangeMode = mode
       }, `Set exchange mode: ${mode}`)
     },
 
     toggleExchangeControl: (courseId: string, courseControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.exchangeMode = cc.exchangeMode ? undefined : 'exchange'
+        if (!cc) return false
+        cc.exchangeMode = cc.exchangeMode ? undefined : 'exchange'
       }, 'Toggle exchange')
     },
 
     toggleMarkedRoute: (courseId: string, courseControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc) return
+        if (!cc) return false
         if (cc.markedRoute) {
           cc.markedRoute = undefined
         } else {
@@ -498,9 +532,9 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     cycleMarkedRouteMode: (courseId: string, courseControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc || !cc.markedRoute) return
+        if (!cc || !cc.markedRoute) return false
         if (cc.markedRoute === 'full') {
           cc.markedRoute = 'partial'
           // Auto-create divider point at midpoint of leg
@@ -530,10 +564,10 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
     moveMarkedRouteEnd: (courseId: string, courseControlId: string, position: MapPoint) => {
       h.mutateProjectSilent(p => {
         const ci = p.courses.findIndex(c => c.id === courseId)
-        if (ci === -1) return
+        if (ci === -1) return false
         const course = p.courses[ci]
         const cci = course.controls.findIndex(cc => cc.id === courseControlId)
-        if (cci === -1) return
+        if (cci === -1) return false
         const cc = course.controls[cci]
         const newCc = { ...cc, markedRouteEnd: position }
         const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))

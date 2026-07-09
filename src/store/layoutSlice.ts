@@ -189,6 +189,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           courseViewMode: 'single',
           selectedControlId: null,
           selectedOverlayId: null,
+          selectedAnnotationId: null,
           activeTool: 'select',
           pendingAnnotationPoints: [],
         },
@@ -221,7 +222,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     updateCourseLayout: (courseId: string, updates: Partial<SubmapLayout & Pick<CourseLayout, 'included' | 'descMode'>>, submapIndex = 0) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         ensureSubmapLayouts(course, p.map, controlsById(p.controls))
         // Course-level fields live on the CourseLayout regardless of submap.
         const { included, descMode, ...submapUpdates } = updates
@@ -250,9 +251,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         const target = submapLayoutView(course.layout, submapIndex)
-        if (!target) return
+        if (!target) return false
         Object.assign(target, updates)
       })
     },
@@ -336,9 +337,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     setLayoutMapCenter: (courseId: string, center: MapPoint, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         const layout = submapLayoutView(course.layout, submapIndex)
-        if (!layout) return
+        if (!layout) return false
         const dx = center.x - layout.mapCenter.x
         const dy = center.y - layout.mapCenter.y
         layout.mapCenter = center
@@ -357,9 +358,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         const layout = submapLayoutView(course.layout, submapIndex)
-        if (!layout) return
+        if (!layout) return false
         if (element === 'clueSheet') {
           Object.assign(layout.clueSheet, pos)
         } else if (element.startsWith('clueSheetPart:')) {
@@ -393,11 +394,11 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     addClueSheetBreak: (courseId: string, controlIndex: number, submapIndex = 0) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         const layout = submapLayoutView(course.layout, submapIndex)
-        if (!layout) return
+        if (!layout) return false
         const breaks = layout.clueSheetBreaks ?? []
-        if (breaks.includes(controlIndex)) return
+        if (breaks.includes(controlIndex)) return false
         const newBreaks = [...breaks, controlIndex].sort((a, b) => a - b)
         const insertPos = newBreaks.indexOf(controlIndex)
         const parts = layout.clueSheetParts ?? []
@@ -415,9 +416,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex = 0) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         const layout = submapLayoutView(course.layout, submapIndex)
-        if (!layout?.clueSheetBreaks) return
+        if (!layout?.clueSheetBreaks) return false
         const breaks = [...layout.clueSheetBreaks]
         breaks.splice(breakIndex, 1)
         const parts = [...(layout.clueSheetParts ?? [])]
@@ -430,9 +431,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
     setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return
+        if (!course?.layout) return false
         const layout = submapLayoutView(course.layout, submapIndex)
-        if (!layout) return
+        if (!layout) return false
         // New object reference so the memoized OverlaysLayer re-renders.
         layout.overlayPositions = { ...layout.overlayPositions, [overlayId]: position }
       })

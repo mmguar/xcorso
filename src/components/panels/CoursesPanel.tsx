@@ -586,13 +586,13 @@ export function CoursesPanel() {
     <div className="flex flex-col h-full">
       <div className="flex gap-2 p-2 border-b border-gray-100">
         <button
-          onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
+          onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); if (c) { setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) } }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors"
         >
           <Plus size={13} /> {t('courses.linearCourse')}
         </button>
         <button
-          onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) }}
+          onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); if (c) { setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) } }}
           className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-500 text-white rounded-lg px-3 py-1.5 hover:bg-orange-600 transition-colors"
         >
           <Plus size={13} /> {t('courses.scoreO')}

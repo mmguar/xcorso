@@ -27,9 +27,9 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
       const key = bendArrayKey(segment)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc) return
+        if (!cc) return false
         if (!cc[key]) cc[key] = []
         if (index !== undefined) {
           cc[key]!.splice(index, 0, point)
@@ -45,12 +45,12 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
       const key = bendArrayKey(segment)
       h.mutateProjectSilent(p => {
         const ci = p.courses.findIndex(c => c.id === courseId)
-        if (ci === -1) return
+        if (ci === -1) return false
         const course = p.courses[ci]
         const cci = course.controls.findIndex(cc => cc.id === courseControlId)
-        if (cci === -1) return
+        if (cci === -1) return false
         const cc = course.controls[cci]
-        if (!cc[key]?.[index]) return
+        if (!cc[key]?.[index]) return false
         const bends = cc[key]!.map((pt, j) => (j === index ? position : pt))
         const newCc = { ...cc, [key]: bends }
         const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
@@ -62,9 +62,9 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
       const key = bendArrayKey(segment)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc?.[key]) return
+        if (!cc?.[key]) return false
         cc[key]!.splice(index, 1)
         if (cc[key]!.length === 0) cc[key] = undefined
       }, `Remove bend ${legName(courseId, courseControlId)}`)
@@ -74,9 +74,9 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
       const ln = legName(courseId, courseControlId)
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc) return
+        if (!cc || (!cc.legBendPoints && !cc.legNavBendPoints)) return false
         cc.legBendPoints = undefined
         cc.legNavBendPoints = undefined
       }, `Clear bends ${ln}`)
@@ -87,10 +87,10 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     moveMapIssue: (courseId: string, courseControlId: string, t: number) => {
       h.mutateProjectSilent(p => {
         const ci = p.courses.findIndex(c => c.id === courseId)
-        if (ci === -1) return
+        if (ci === -1) return false
         const course = p.courses[ci]
         const cci = course.controls.findIndex(cc => cc.id === courseControlId)
-        if (cci === -1) return
+        if (cci === -1) return false
         const cc = course.controls[cci]
         const newCc = { ...cc, mapIssueT: t }
         const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))
@@ -101,18 +101,20 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     removeMapIssue: (courseId: string, courseControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.mapIssueT = undefined
+        if (!cc || cc.mapIssueT === undefined) return false
+        cc.mapIssueT = undefined
       }, 'Remove map issue point')
     },
 
     addMapIssue: (courseId: string, courseControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)
-        if (!course) return
+        if (!course) return false
         const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (cc) cc.mapIssueT = 0.5
+        if (!cc) return false
+        cc.mapIssueT = 0.5
       }, 'Add map issue point')
     },
 
@@ -121,10 +123,10 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     moveCourseLabel: (courseId: string, courseControlId: string, offset: MapPoint) => {
       h.mutateProjectSilent(p => {
         const ci = p.courses.findIndex(c => c.id === courseId)
-        if (ci === -1) return
+        if (ci === -1) return false
         const course = p.courses[ci]
         const cci = course.controls.findIndex(cc => cc.id === courseControlId)
-        if (cci === -1) return
+        if (cci === -1) return false
         const cc = course.controls[cci]
         const newCc = { ...cc, labelOffset: offset }
         const newControls = course.controls.map((c, j) => (j === cci ? newCc : c))

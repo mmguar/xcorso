@@ -325,6 +325,15 @@ export function MapCanvas({ loadedMap }: Props) {
   const [measureStart, setMeasureStart] = useState<MapPoint | null>(null)
   const measureStartRef = useRef<MapPoint | null>(null)
   const [scaleDialogPoints, setScaleDialogPoints] = useState<{ p1: MapPoint; p2: MapPoint } | null>(null)
+  // A half-finished calibration must not survive a tool switch — the stale
+  // first point would silently pair with the next measure-scale click.
+  useEffect(() => {
+    if (activeTool !== 'measure-scale' && measureStartRef.current) {
+      measureStartRef.current = null
+      setMeasureStart(null)
+      setScaleDialogPoints(null)
+    }
+  }, [activeTool])
   // After dropping a control that is shared across courses, offer to split it
   // off into a new control for the selected course (see the drag-commit path).
   const [splitPrompt, setSplitPrompt] = useState<
@@ -1693,6 +1702,7 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'place-image': {
           const pi = state.editor.pendingImage
           if (pi) {
+            // addImageOverlay clears pendingImage itself when the add succeeds.
             state.addImageOverlay(mapPt, pi.dataUrl, pi.filename, pi.naturalWidth, pi.naturalHeight)
             state.setActiveTool('select')
           }
@@ -2411,7 +2421,7 @@ export function MapCanvas({ loadedMap }: Props) {
               className="flex-1 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-left"
               onClick={() => {
                 const nc = useStore.getState().splitControl(splitPrompt.controlId, splitPrompt.courseId, splitPrompt.newPos, splitPrompt.origPos)
-                useStore.getState().setSelectedControl(nc.id)
+                if (nc) useStore.getState().setSelectedControl(nc.id)
                 setSplitPrompt(null)
               }}
             >
