@@ -734,7 +734,7 @@ export function MapCanvas({ loadedMap }: Props) {
             longPressFired = true
             handleBendRightClick(sx, sy, vpRef.current, proj, cid)
           }, 500)
-        } else if (cid && proj) {
+        } else if (cid && proj && !proj.locked) {
           const hit = findControlAt(sx, sy, vpRef.current, proj, cid, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
           if (hit) {
             longPressTimer = setTimeout(() => {
@@ -880,6 +880,8 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool } = state.editor
       const proj = state.project
       if (!proj) return
+      // ponytail: locked projects allow pan/zoom only — no drag initiation
+      if (proj.locked) return
 
       // Measure mode: grab a route handle if hit; otherwise fall through to pan.
       if (state.editor.measureMode) {

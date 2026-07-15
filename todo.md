@@ -4,5 +4,5 @@ feat
 security
 
 bugs
-- [ ] why can I drag things in locked mode and then nothing happens? I just shouldn't be allowed to drag them
-- [ ] does the crossing leg validation consider submaps?
+- [x] why can I drag things in locked mode and then nothing happens? I just shouldn't be allowed to drag them
+- [x] does the crossing leg validation consider submaps?

@@ -1,5 +1,5 @@
 import type { Project, Control, Course, MapConfig, MapPoint } from '../types'
-import { controlsById } from './courseUtils'
+import { controlsById, computeSubmaps } from './courseUtils'
 import { distance } from './geometry'
 import { mapUnitsToMetres } from './distance'
 
@@ -271,16 +271,22 @@ export function validateProject(project: Project): ValidationResult {
     criteria.push({ id: 'dog-leg', severity: 'warning', issues })
   }
 
-  // 12. Leg crossing (within same course)
+  // 12. Leg crossing (within same submap — legs across different submaps are on
+  //     separate physical maps so crossings there are not a problem)
   {
     const issues: ValidationIssue[] = []
     for (const c of courses) {
       if (c.type !== 'linear') continue
-      const legs = courseLegs.get(c.id)!
-      for (let i = 0; i < legs.length; i++) {
-        for (let j = i + 2; j < legs.length; j++) {
-          if (segmentsIntersect(legs[i].from, legs[i].to, legs[j].from, legs[j].to))
-            issues.push({ key: `leg-cross:${c.id}:${i}:${j}`, courseId: c.id, legIndex: i, legIndex2: j })
+      const allLegs = courseLegs.get(c.id)!
+      const submaps = computeSubmaps(c)
+      for (const sm of submaps) {
+        const startIdx = c.controls.indexOf(sm.controls[0])
+        const endIdx = startIdx + sm.controls.length - 2 // last leg index within submap
+        for (let i = startIdx; i <= endIdx; i++) {
+          for (let j = i + 2; j <= endIdx; j++) {
+            if (segmentsIntersect(allLegs[i].from, allLegs[i].to, allLegs[j].from, allLegs[j].to))
+              issues.push({ key: `leg-cross:${c.id}:${i}:${j}`, courseId: c.id, legIndex: i, legIndex2: j })
+          }
         }
       }
     }
