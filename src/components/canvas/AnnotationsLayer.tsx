@@ -22,7 +22,7 @@ import {
 interface Props {
   annotations: Annotation[]
   pendingPoints: MapPoint[]
-  pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow' | null
+  pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'oob_boundary' | 'north_arrow' | null
   cursorPoint: MapPoint | null
   map: MapConfig
   spec: EventSpec
@@ -98,13 +98,15 @@ function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec }
 // ── 709 Out-of-bounds area ───────────────────────────────────────────────────
 // Crosshatched with 45° diagonal lines, with a boundary line.
 
-function OutOfBoundsArea({ points, upm, scale, color, patternId, spec }: {
-  points: MapPoint[]; upm: number; scale: number; color: string; patternId: string; spec: EventSpec
+function OutOfBoundsArea({ points, upm, scale, color, patternId, spec, boundaryMarking }: {
+  points: MapPoint[]; upm: number; scale: number; color: string; patternId: string; spec: EventSpec; boundaryMarking: 'none' | 'continuous' | 'intermittent'
 }) {
   if (points.length < 3) return null
   const d = dims(upm, scale, spec)
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
   const sp = d.hatchSpace
+  const boundarySw = 0.25 * upm
+  const dashArray = boundaryMarking === 'intermittent' ? `${3 * upm} ${0.5 * upm}` : undefined
 
   return (
     <g>
@@ -118,8 +120,26 @@ function OutOfBoundsArea({ points, upm, scale, color, patternId, spec }: {
         </pattern>
       </defs>
       <path d={pathD} fill={`url(#${patternId})`}
-        stroke={color} strokeWidth={0} strokeLinejoin="round" />
+        stroke={boundaryMarking !== 'none' ? color : 'none'}
+        strokeWidth={boundaryMarking !== 'none' ? boundarySw : 0}
+        strokeDasharray={dashArray}
+        strokeLinejoin="round" />
     </g>
+  )
+}
+
+// ── OOB Boundary ────────────────────────────────────────────────────────────
+// A simple polyline with a 0.7 mm stroke (at base scale), drawn as overprint ink.
+
+function OobBoundary({ points, upm, scale, color, spec }: {
+  points: MapPoint[]; upm: number; scale: number; color: string; spec: EventSpec
+}) {
+  if (points.length < 2) return null
+  const d = dims(upm, scale, spec)
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+  return (
+    <path d={pathD} fill="none" stroke={color} strokeWidth={d.boundaryW}
+      strokeLinecap="round" strokeLinejoin="round" />
   )
 }
 
@@ -200,8 +220,11 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
       if (ann.type === 'out_of_bounds') {
         return (
           <OutOfBoundsArea key={ann.id} points={ann.points} upm={upm} scale={scale} color={color}
-            patternId={`${baseId}-oob-${ann.id}`} spec={spec} />
+            patternId={`${baseId}-oob-${ann.id}`} spec={spec} boundaryMarking={ann.boundaryMarking ?? 'none'} />
         )
+      }
+      if (ann.type === 'oob_boundary') {
+        return <OobBoundary key={ann.id} points={ann.points} upm={upm} scale={scale} color={color} spec={spec} />
       }
       return null
     }
@@ -241,6 +264,11 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
           <ForbiddenRoute points={pendingPoints} upm={upm} scale={scale} color={color} spec={spec} />
         </g>
       )}
+      {pendingPoints.length >= 2 && pendingType === 'oob_boundary' && (
+        <g opacity={0.5}>
+          <OobBoundary points={pendingPoints} upm={upm} scale={scale} color={color} spec={spec} />
+        </g>
+      )}
       {pendingPoints.length > 0 && pendingType === 'crossing_point' && (
         <g opacity={0.5}>
           <CrossingPoint center={pendingPoints[0]} upm={upm} scale={scale}
@@ -252,7 +280,7 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
         return pts.length >= 3 ? (
           <g opacity={0.5}>
             <OutOfBoundsArea points={pts} upm={upm} scale={scale} color={color}
-              patternId={`${baseId}-oob-pending`} spec={spec} />
+              patternId={`${baseId}-oob-pending`} spec={spec} boundaryMarking="none" />
           </g>
         ) : null
       })()}

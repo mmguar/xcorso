@@ -787,7 +787,7 @@ function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, elongation
 
 // ── Out-of-bounds area ──────────────────────────────────────────────────────
 
-function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
+function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec, boundaryMarking: 'none' | 'continuous' | 'intermittent') {
   if (points.length < 3) return
   const d = annotationDimsMm(mapScale, spec)
 
@@ -844,6 +844,21 @@ function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: 
   if (hatchStarted) doc.stroke()
 
   internal.write('Q')
+
+  // Boundary outline — drawn after restoring the clip so the stroke isn't clipped
+  if (boundaryMarking !== 'none') {
+    doc.setLineWidth(0.25 * MM_TO_PT)
+    if (boundaryMarking === 'intermittent') {
+      doc.setLineDashPattern([3 * MM_TO_PT, 0.5 * MM_TO_PT], 0)
+    }
+    doc.moveTo(points[0].x, points[0].y)
+    for (let i = 1; i < points.length; i++) {
+      doc.lineTo(points[i].x, points[i].y)
+    }
+    doc.lineTo(points[0].x, points[0].y)
+    doc.stroke()
+    if (boundaryMarking === 'intermittent') doc.setLineDashPattern([], 0)
+  }
 }
 
 // ── North arrow ────────────────────────────────────────────────────────────
@@ -894,6 +909,20 @@ function drawNorthArrow(
   doc.text('N', textPos.x, textPos.y, { align: 'center', angle: -rotation })
 }
 
+// OOB boundary — a simple polyline with 0.7 mm stroke (at base scale).
+function drawOobBoundary(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
+  if (points.length < 2) return
+  const d = annotationDimsMm(mapScale, spec)
+  doc.setLineCap(1)
+  doc.setLineJoin(1)
+  doc.setLineWidth(d.boundaryW * MM_TO_PT)
+  doc.moveTo(points[0].x, points[0].y)
+  for (let i = 1; i < points.length; i++) {
+    doc.lineTo(points[i].x, points[i].y)
+  }
+  doc.stroke()
+}
+
 // Purple ISOM symbols (709/710/711) — the overprint-able annotation ink.
 function drawAnnotationInk(
   doc: jsPDF,
@@ -908,7 +937,9 @@ function drawAnnotationInk(
     } else if (ann.type === 'crossing_point' && ann.points[0]) {
       drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, spec)
     } else if (ann.type === 'out_of_bounds') {
-      drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, spec)
+      drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, spec, ann.boundaryMarking ?? 'none')
+    } else if (ann.type === 'oob_boundary') {
+      drawOobBoundary(doc, ann.points.map(p => toPage(p)), mapScale, spec)
     }
   }
 }
