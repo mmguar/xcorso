@@ -202,10 +202,15 @@ export function validateProject(project: Project): ValidationResult {
       list.push(ctrl)
       byCodeType.set(k, list)
     }
-    for (const [, ctrls] of byCodeType) {
+    for (const ctrls of byCodeType.values()) {
       if (ctrls.length > 1) {
-        const [a, b] = ctrls.map(c => c.id).sort()
-        issues.push({ key: `dup-code:${a}:${b}`, controlId: ctrls[0].id, controlId2: ctrls[1].id })
+        // Report every pair so all duplicates are visible, not just the first two.
+        for (let i = 0; i < ctrls.length; i++) {
+          for (let j = i + 1; j < ctrls.length; j++) {
+            const [a, b] = [ctrls[i].id, ctrls[j].id].sort()
+            issues.push({ key: `dup-code:${a}:${b}`, controlId: a, controlId2: b })
+          }
+        }
       }
     }
     criteria.push({ id: 'duplicate-codes', severity: 'error', issues })

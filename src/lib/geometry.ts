@@ -29,20 +29,20 @@ export function walkPath<T extends Point>(points: T[], spacing: number): { x: nu
   const step = totalLen / count
 
   let dist = step / 2
+  let segIdx = 0
+  let cumLen = 0
   while (dist < totalLen) {
-    let cumLen = 0
-    for (let i = 0; i < segs.length; i++) {
-      if (cumLen + segs[i].len >= dist) {
-        const t = (dist - cumLen) / segs[i].len
-        marks.push({
-          x: points[i].x + t * (points[i + 1].x - points[i].x),
-          y: points[i].y + t * (points[i + 1].y - points[i].y),
-          angle: segs[i].angle,
-        })
-        break
-      }
-      cumLen += segs[i].len
+    while (segIdx < segs.length && cumLen + segs[segIdx].len < dist) {
+      cumLen += segs[segIdx].len
+      segIdx++
     }
+    if (segIdx >= segs.length) break
+    const t = (dist - cumLen) / segs[segIdx].len
+    marks.push({
+      x: points[segIdx].x + t * (points[segIdx + 1].x - points[segIdx].x),
+      y: points[segIdx].y + t * (points[segIdx + 1].y - points[segIdx].y),
+      angle: segs[segIdx].angle,
+    })
     dist += step
   }
   return marks
