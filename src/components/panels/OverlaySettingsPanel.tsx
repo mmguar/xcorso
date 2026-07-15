@@ -139,6 +139,7 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
   const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
 
+  const beginEdit = useStore(s => s.beginEdit)
   const [text, setText] = useState(tl.text)
   const [fontSize, setFontSize] = useState(String(tl.fontSizeMm))
 
@@ -206,10 +207,13 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <span className="w-16 shrink-0">{t('overlay.color')}</span>
+        {/* Native pickers fire change per drag tick — snapshot once on open,
+            then update silently, like the bgAlpha sliders. */}
         <input
           type="color"
           value={tl.color}
-          onChange={e => updateTextLabel(tl.id, { color: e.target.value })}
+          onPointerDown={() => beginEdit('Update text label')}
+          onChange={e => updateTextLabel(tl.id, { color: e.target.value }, true)}
           className="w-8 h-6 border rounded cursor-pointer"
         />
         <span className="text-[10px] text-gray-400 font-mono">{tl.color}</span>
@@ -388,6 +392,7 @@ function NorthArrowSettings({ ann }: { ann: Annotation }) {
   const updateAnnotation = useStore(s => s.updateAnnotation)
   const deleteAnnotation = useStore(s => s.deleteAnnotation)
   const setSelectedAnnotation = useStore(s => s.setSelectedAnnotation)
+  const beginEdit = useStore(s => s.beginEdit)
 
   const color = ann.color ?? '#38bdf8'
   const textColor = ann.textColor ?? '#ffffff'
@@ -430,7 +435,8 @@ function NorthArrowSettings({ ann }: { ann: Annotation }) {
         <input
           type="color"
           value={color}
-          onChange={e => updateAnnotation(ann.id, { color: e.target.value })}
+          onPointerDown={() => beginEdit('Update annotation')}
+          onChange={e => updateAnnotation(ann.id, { color: e.target.value }, true)}
           className="w-8 h-6 border rounded cursor-pointer"
         />
         <span className="text-[10px] text-gray-400 font-mono">{color}</span>
@@ -441,7 +447,8 @@ function NorthArrowSettings({ ann }: { ann: Annotation }) {
         <input
           type="color"
           value={textColor}
-          onChange={e => updateAnnotation(ann.id, { textColor: e.target.value })}
+          onPointerDown={() => beginEdit('Update annotation')}
+          onChange={e => updateAnnotation(ann.id, { textColor: e.target.value }, true)}
           className="w-8 h-6 border rounded cursor-pointer"
         />
         <span className="text-[10px] text-gray-400 font-mono">{textColor}</span>

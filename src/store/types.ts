@@ -9,6 +9,10 @@ import type { CloudUser, VersionEntry, ShareRole } from '../lib/sync'
 
 export type CourseViewMode = 'single' | 'all-controls' | 'all-courses'
 
+export type LayoutDragPreview =
+  | { type: 'element'; key: string; x: number; y: number }           // clue sheet (part) at absolute mm position
+  | { type: 'border'; x: number; y: number; width: number; height: number }  // border rect in mm
+
 export interface EditorState {
   activeTool: ActiveTool
   selectedControlId: string | null
@@ -32,9 +36,14 @@ export interface EditorState {
   layoutCourseId: string | null
   layoutSubmapIndex: number
   layoutSnapRequest: number
+  // Transient position while dragging a clue sheet or map border in layout
+  // mode — rendered by PageOverlay only, committed to the project on pointerup
+  // so per-frame drags don't re-render every canvas layer.
+  layoutDragPreview: LayoutDragPreview | null
   gapRebuild: boolean
   // Pan-to-point request (seq bumps so repeat clicks on the same control re-fire).
   centerRequest: { point: MapPoint; seq: number } | null
+  allCoursesHidden: string[]
   validationIgnoredCriteria: string[]
   validationIgnoredInstances: string[]
 }
@@ -84,10 +93,10 @@ export interface AppActions {
   setMapGeoref: (georef: MapGeoref) => void
   replaceMapFile: (filename: string, type: MapType, mapData: ArrayBuffer) => void
 
-  addControl: (type: ControlType, position: MapPoint, code?: number) => Control
+  addControl: (type: ControlType, position: MapPoint, code?: number) => Control | null
   beginMoveControl: (label?: string) => void
   moveControl: (id: string, position: MapPoint) => void
-  splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint) => Control
+  splitControl: (controlId: string, courseId: string, newPos: MapPoint, originPos: MapPoint) => Control | null
   beginMoveControlLabel: (label?: string) => void
   moveControlLabel: (id: string, offset: MapPoint) => void
   deleteControl: (id: string) => void
@@ -98,7 +107,7 @@ export interface AppActions {
   updateSkipCodes: (codes: number[]) => void
   reassignControlIds: () => void
 
-  addCourse: (name: string, type?: CourseType) => Course
+  addCourse: (name: string, type?: CourseType) => Course | null
   duplicateCourse: (id: string) => Course | null
   deleteCourse: (id: string) => void
   updateCourseName: (id: string, name: string) => void
@@ -182,7 +191,7 @@ export interface AppActions {
   cancelAnnotation: () => void
   movePendingAnnotationPoint: (index: number, position: MapPoint) => void
   deleteAnnotation: (id: string) => void
-  updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>) => void
+  updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id'>>, silent?: boolean) => void
   beginMoveAnnotation: (label?: string) => void
   moveAnnotation: (id: string, position: MapPoint) => void
   beginMoveAnnotationVertex: () => void
@@ -220,6 +229,7 @@ export interface AppActions {
   setDraggingControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
   setAllCoursesView: () => void
+  toggleAllCoursesHidden: (courseId: string) => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setOverprint: (overprint: number) => void
@@ -242,6 +252,9 @@ export interface AppActions {
   removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex?: number) => void
   requestLayoutSnap: () => void
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
+  setLayoutDragPreview: (preview: LayoutDragPreview | null) => void
+  resetLayoutCenter: (courseId: string, submapIndex?: number) => void
+  setAllControlsFlags: (flags: { multicolor?: boolean; linkId?: boolean }) => void
 
   toggleLocked: () => void
   toggleIgnoreCriterion: (criterionId: string) => void
@@ -260,13 +273,23 @@ export interface AppActions {
   undo: () => void
   redo: () => void
   jumpToHistory: (index: number) => void
+
+  /** Push one undo snapshot before a burst of silent updates (sliders, color pickers). */
+  beginEdit: (label: string) => void
 }
 
 export type Store = AppState & AppActions
 
 export interface StoreHelpers {
-  mutateProject: (fn: (p: Project) => void, label?: string) => void
-  mutateProjectSilent: (fn: (p: Project) => void) => void
+  /**
+   * Returns true when the mutation was applied. False means it was blocked
+   * (viewer role / locked project) or the callback signalled a no-op by
+   * returning false — in both cases no undo entry, updatedAt bump, or
+   * revision change happens. Callbacks must signal `false` on their
+   * target-missing guard paths so stale ids can't dirty the project.
+   */
+  mutateProject: (fn: (p: Project) => void | false, label?: string) => boolean
+  mutateProjectSilent: (fn: (p: Project) => void | false) => boolean
   pushUndoSnapshot: (label?: string) => void
 }
 
@@ -305,8 +328,10 @@ export const defaultEditor: EditorState = {
   layoutCourseId: null,
   layoutSubmapIndex: 0,
   layoutSnapRequest: 0,
+  layoutDragPreview: null,
   gapRebuild: false,
   centerRequest: null,
+  allCoursesHidden: [],
   validationIgnoredCriteria: [],
   validationIgnoredInstances: [],
 }

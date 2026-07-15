@@ -56,6 +56,11 @@ export function SidePanel() {
   }, [layoutMode])
 
   function switchMode(tabKey: Tab) {
+    // A destructive/placement tool must not stay silently armed across a
+    // panel change.
+    if (tabKey !== tab && useStore.getState().editor.activeTool !== 'select') {
+      useStore.getState().setActiveTool('select')
+    }
     if (tabKey === 'controls') {
       if (layoutMode) exitLayoutMode()
       if (selectedCourseId) setSelectedCourse(null)
@@ -221,13 +226,13 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
             {showNewMenu && (
               <div className="absolute right-full bottom-0 mr-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-28 z-50">
                 <button
-                  onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                  onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); if (c) setSelectedCourse(c.id); setShowNewMenu(false) }}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
                 >
                   {t('panel.linear')}
                 </button>
                 <button
-                  onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                  onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); if (c) setSelectedCourse(c.id); setShowNewMenu(false) }}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
                 >
                   {t('panel.scoreO')}
@@ -315,13 +320,13 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
           {showNewMenu && (
             <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-28 z-50">
               <button
-                onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                onClick={() => { const c = addCourse(`Course ${courses.length + 1}`, 'linear'); if (c) setSelectedCourse(c.id); setShowNewMenu(false) }}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
               >
                 {t('panel.linear')}
               </button>
               <button
-                onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); setSelectedCourse(c.id); setShowNewMenu(false) }}
+                onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); if (c) setSelectedCourse(c.id); setShowNewMenu(false) }}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 transition-colors"
               >
                 {t('panel.scoreO')}

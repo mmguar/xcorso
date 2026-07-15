@@ -53,7 +53,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data:",
   "font-src 'self'",
-  "connect-src 'self' https://cloudflareinsights.com https://*.sentry.io",
+  "connect-src 'self' https://cloudflareinsights.com https://static.cloudflareinsights.com https://*.sentry.io",
   "frame-src https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "object-src 'none'",

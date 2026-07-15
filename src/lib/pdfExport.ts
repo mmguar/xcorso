@@ -104,6 +104,11 @@ export interface CourseFitInfo {
   courseId: string
   courseName: string
   fits: boolean
+  /** Whether the course lies inside the printable window at the layout's
+   * current mapCenter (undefined when no mapCenter was supplied). `fits`
+   * without this means "can fit" — the size is right but the map is
+   * positioned so parts of the course fall off the page. */
+  fitsAtCenter?: boolean
   widthMm: number
   heightMm: number
   printableW: number
@@ -343,9 +348,15 @@ function cleanupSvgIframe() {
 
 // ── Bounding box ────────────────────────────────────────────────────────────
 
-const BOUNDS_PAD = 15
+// Pad control-centre bounds by the largest symbol's circumradius plus a code-label
+// allowance, scaled like the symbols themselves (baseScale/printScale).
+const LABEL_PAD_MM = 4
+function boundsPad(spec: EventSpec, printScale: number): number {
+  const dims = getSymbolDims(spec)
+  return (controlSymbolRadiusMm('start', dims) + LABEL_PAD_MM) * specScaleFactor(spec, printScale)
+}
 
-function computeBounds(positions: Pos[]): Bounds | null {
+function computeBounds(positions: Pos[], pad: number): Bounds | null {
   if (positions.length === 0) return null
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const p of positions) {
@@ -354,7 +365,7 @@ function computeBounds(positions: Pos[]): Bounds | null {
     if (p.x > maxX) maxX = p.x
     if (p.y > maxY) maxY = p.y
   }
-  minX -= BOUNDS_PAD; minY -= BOUNDS_PAD; maxX += BOUNDS_PAD; maxY += BOUNDS_PAD
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad
   const width = maxX - minX
   const height = maxY - minY
   return { minX, minY, maxX, maxY, width, height, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 }
@@ -365,6 +376,7 @@ function courseBoundsMm(
   controls: Control[],
   map: MapConfig,
   printScale: number,
+  projectSpec?: EventSpec,
 ): Bounds | null {
   const controlMap = controlsById(controls)
   const positions = course.controls
@@ -383,15 +395,19 @@ function courseBoundsMm(
       }
     }
   }
-  return computeBounds(positions)
+  return computeBounds(positions, boundsPad(resolveSpec(projectSpec, course.spec), printScale))
 }
 
 function allControlsBoundsMm(
   controls: Control[],
   map: MapConfig,
   printScale: number,
+  projectSpec?: EventSpec,
 ): Bounds | null {
-  return computeBounds(controls.map(c => mapToMm(c.position, map, printScale)))
+  return computeBounds(
+    controls.map(c => mapToMm(c.position, map, printScale)),
+    boundsPad(resolveSpec(projectSpec), printScale),
+  )
 }
 
 // ponytail: greedy graph coloring by proximity — not optimal 4-color but good enough
@@ -472,12 +488,13 @@ export function suggestFitScaleForCourseObj(
   pageSize: string,
   orientation: 'portrait' | 'landscape',
   border?: MapBorder,
+  projectSpec?: EventSpec,
 ): number | null {
   const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
   const { w: printableW, h: printableH } = printableSize(pw, ph, border)
   const sorted = [...COMMON_SCALES].sort((a, b) => a - b)
   for (const scale of sorted) {
-    const bounds = courseBoundsMm(course, controls, map, scale)
+    const bounds = courseBoundsMm(course, controls, map, scale, projectSpec)
     if (!bounds) return scale
     if (bounds.width <= printableW && bounds.height <= printableH) return scale
   }
@@ -492,14 +509,28 @@ export function checkFitForCourseObj(
   orientation: 'portrait' | 'landscape',
   printScale: number,
   border?: MapBorder,
+  mapCenter?: MapPoint,
+  projectSpec?: EventSpec,
 ): CourseFitInfo {
   const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
   const { w: printableW, h: printableH } = printableSize(pw, ph, border)
-  const bounds = courseBoundsMm(course, controls, map, printScale)
+  const bounds = courseBoundsMm(course, controls, map, printScale, projectSpec)
+  // Printable window at the current centering: export places mapCenter at the
+  // page center, the border rect (or page margins) crops from there.
+  let fitsAtCenter: boolean | undefined
+  if (mapCenter && bounds) {
+    const c = mapToMm(mapCenter, map, printScale)
+    const winX = c.x - pw / 2 + (border ? border.x : MARGIN)
+    const winY = c.y - ph / 2 + (border ? border.y : MARGIN)
+    fitsAtCenter =
+      bounds.minX >= winX && bounds.maxX <= winX + printableW &&
+      bounds.minY >= winY && bounds.maxY <= winY + printableH
+  }
   return {
     courseId: course.id,
     courseName: course.name,
     fits: !bounds || (bounds.width <= printableW && bounds.height <= printableH),
+    fitsAtCenter,
     widthMm: bounds?.width ?? 0,
     heightMm: bounds?.height ?? 0,
     printableW,
@@ -515,10 +546,11 @@ export function checkTilingForCourseObj(
   orientation: 'portrait' | 'landscape',
   printScale: number,
   border?: MapBorder,
+  projectSpec?: EventSpec,
 ): CourseTileInfo {
   const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
   const { w: printableW, h: printableH } = printableSize(pw, ph, border)
-  const bounds = courseBoundsMm(course, controls, map, printScale)
+  const bounds = courseBoundsMm(course, controls, map, printScale, projectSpec)
   if (!bounds) return { courseId: course.id, courseName: course.name, cols: 1, rows: 1, totalPages: 1 }
   const cols = tileCount(bounds.width, printableW)
   const rows = tileCount(bounds.height, printableH)
@@ -1251,7 +1283,7 @@ export async function exportCoursePdf(
   // All controls page (no legs, just control symbols with codes)
   if (options.allControls && project.controls.length > 0) {
     const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
-    const bounds = allControlsBoundsMm(project.controls, project.map, acScale)
+    const bounds = allControlsBoundsMm(project.controls, project.map, acScale, project.spec)
     if (bounds) {
       const useTiling = options.tiling && (bounds.width > printableW || bounds.height > printableH)
       const cols = useTiling ? tileCount(bounds.width, printableW) : 1
@@ -1398,7 +1430,7 @@ export async function exportCoursePdf(
       }
 
       // Each submap centers on its own controls (or its stored mapCenter).
-      const bounds = courseBoundsMm(pageCourse, project.controls, project.map, courseScale)
+      const bounds = courseBoundsMm(pageCourse, project.controls, project.map, courseScale, project.spec)
       if (!bounds && !sLayout) continue
 
       const useTiling = (sLayout?.tiling || (options.tiling && !layout)) && bounds && (bounds.width > cPrintableW || bounds.height > cPrintableH)

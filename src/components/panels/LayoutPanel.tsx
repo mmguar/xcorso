@@ -6,7 +6,7 @@ import {
   PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
   checkFitForCourseObj, checkTilingForCourseObj, suggestFitScaleForCourseObj,
 } from '../../lib/pdfExport'
-import { defaultControlLabel, controlsById, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
+import { defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
 import { setDescTranslator } from '../../lib/pdfDescriptionSheet'
 import { getLayoutDefaults } from '../../store/layoutSlice'
@@ -119,17 +119,10 @@ function OverrideTag() {
 
 function GeneralSection() {
   const t = useT()
-  const project = useStore(s => s.project!)
+  useStore(s => s.project!) // re-render on project changes; defaults read below
   const loadedMap = useStore(s => s.loadedMap)
   const updateLayoutDefaults = useStore(s => s.updateLayoutDefaults)
-  const defaults = project.layoutDefaults ?? {
-    pageSize: 'a4' as PageSizeKey,
-    orientation: 'portrait' as const,
-    printScale: project.map.scale,
-    mapOpacity: 1,
-    mapRendering: 'raster' as const,
-    rasterDpi: 300,
-  }
+  const defaults = getLayoutDefaults(useStore.getState)
   const [open, setOpen] = useState(true)
   const isSvgMap = loadedMap?.type === 'svg'
 
@@ -367,23 +360,14 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
   const course = project.courses.find(c => c.id === courseId)!
   const controls = project.controls
   const layout = course.layout
-  const defaults = project.layoutDefaults ?? {
-    pageSize: 'a4' as PageSizeKey,
-    orientation: 'portrait' as const,
-    printScale: project.map.scale,
-    mapOpacity: 1,
-    mapRendering: 'raster' as const,
-    rasterDpi: 300,
-  }
+  const defaults = getLayoutDefaults(useStore.getState)
 
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
   const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const exitLayoutMode = useStore(s => s.exitLayoutMode)
   const setLayoutSubmap = useStore(s => s.setLayoutSubmap)
-  const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
-  const requestLayoutSnap = useStore(s => s.requestLayoutSnap)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
 
@@ -424,22 +408,22 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
   const effectiveBorder = sub?.mapBorder
 
   const fitInfo = useMemo(() =>
-    checkFitForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder),
-    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder],
+    checkFitForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, sub?.mapCenter, project.spec),
+    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, sub?.mapCenter, project.spec],
   )
 
   const tileInfo = useMemo(() =>
     fitInfo && !fitInfo.fits
-      ? checkTilingForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder)
+      ? checkTilingForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, project.spec)
       : null,
-    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, fitInfo],
+    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectivePrintScale, effectiveBorder, fitInfo, project.spec],
   )
 
   const suggestedScale = useMemo(() =>
     fitInfo && !fitInfo.fits
-      ? suggestFitScaleForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder)
+      ? suggestFitScaleForCourseObj(submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder, project.spec)
       : null,
-    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder, fitInfo],
+    [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder, fitInfo, project.spec],
   )
 
   function toggleIncluded() {
@@ -450,7 +434,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
     if (!layout) {
       useStore.getState().ensureAllCourseLayouts()
     }
-    updateCourseLayout(courseId, { included: layout ? !included : true })
+    // `included` reflects the displayed checkbox state whether or not a layout
+    // exists yet, so a toggle always writes its inverse.
+    updateCourseLayout(courseId, { included: !included })
   }
 
   function handleClick() {
@@ -459,8 +445,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
       return
     }
     if (isActive) {
+      // Leave layout mode but keep the course selected — matches the
+      // courses-tab exit path; deselection stays an explicit user action.
       exitLayoutMode()
-      setSelectedCourse(null)
     } else {
       enterLayoutMode(courseId)
     }
@@ -495,7 +482,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
             {course.name}
           </span>
         </button>
-        {included && layout && (
+        {/* Quick descMode select for collapsed cards — the expanded card shows
+            the same setting as a button row, so hide it there. */}
+        {included && layout && !isActive && (
           <select
             value={descMode}
             onClick={e => e.stopPropagation()}
@@ -511,9 +500,12 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
         )}
         {included && fitInfo && (
           <span className={`text-[10px] shrink-0 tabular-nums ${
-            fitInfo.fits ? 'text-green-600' : 'text-amber-600'
+            fitInfo.fits && fitInfo.fitsAtCenter !== false ? 'text-green-600' : 'text-amber-600'
           }`}>
-            {fitInfo.fits ? 'fits' : `${Math.round(fitInfo.widthMm)}×${Math.round(fitInfo.heightMm)}mm`}
+            {fitInfo.fits
+              // "can fit": right size, but the current map position crops it.
+              ? (fitInfo.fitsAtCenter !== false ? t('layout.fits') : t('layout.canFit'))
+              : `${Math.round(fitInfo.widthMm)}×${Math.round(fitInfo.heightMm)}mm`}
           </span>
         )}
       </div>
@@ -859,28 +851,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
             )
           })()}
 
-          {/* Reset to (sub)map center */}
+          {/* Reset to (sub)map center — border-aware, see resetLayoutCenter */}
           <button
-            onClick={() => {
-              const proj = useStore.getState().project
-              if (!proj) return
-              const controlMap = controlsById(proj.controls)
-              const positions = submapCourse.controls
-                .map(cc => controlMap.get(cc.controlId))
-                .filter(Boolean)
-                .map(c => c!.position)
-              if (positions.length > 0) {
-                const xs = positions.map(p => p.x)
-                const ys = positions.map(p => p.y)
-                updateCourseLayout(courseId, {
-                  mapCenter: {
-                    x: (Math.min(...xs) + Math.max(...xs)) / 2,
-                    y: (Math.min(...ys) + Math.max(...ys)) / 2,
-                  },
-                }, activeSubmap)
-                requestLayoutSnap()
-              }
-            }}
+            onClick={() => useStore.getState().resetLayoutCenter(courseId, activeSubmap)}
             className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
           >
             {hasSubmaps ? t('layout.resetMapCenter') : t('layout.resetCourseCenter')}
@@ -904,6 +877,7 @@ export function LayoutPanel() {
   const [allControls, setAllControls] = useState(true)
   const allControlsMulticolor = useStore(s => s.project!.allControlsMulticolor ?? false)
   const allControlsLinkId = useStore(s => s.project!.allControlsLinkId ?? false)
+  const setAllControlsFlags = useStore(s => s.setAllControlsFlags)
   const [viewerExclusions, setViewerExclusions] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -1005,11 +979,11 @@ export function LayoutPanel() {
           {allControls && (
             <div className="flex items-center gap-3 px-3 py-1.5 border-t border-gray-100 bg-gray-50">
               <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={allControlsMulticolor} onChange={e => useStore.setState(s => ({ project: s.project ? { ...s.project, allControlsMulticolor: e.target.checked || undefined } : s.project }))} className="accent-orange-600" />
+                <input type="checkbox" checked={allControlsMulticolor} onChange={e => setAllControlsFlags({ multicolor: e.target.checked })} className="accent-orange-600" />
                 {t('layout.multicolor')}
               </label>
               <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={allControlsLinkId} onChange={e => useStore.setState(s => ({ project: s.project ? { ...s.project, allControlsLinkId: e.target.checked || undefined } : s.project }))} className="accent-orange-600" />
+                <input type="checkbox" checked={allControlsLinkId} onChange={e => setAllControlsFlags({ linkId: e.target.checked })} className="accent-orange-600" />
                 {t('layout.linkId')}
               </label>
             </div>
