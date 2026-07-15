@@ -88,7 +88,9 @@ function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClos
 
 export function ControlsPanel() {
   const t = useT()
-  const project = useStore(s => s.project!)
+  const controls = useStore(s => s.project!.controls)
+  const courses = useStore(s => s.project!.courses)
+  const skipCodes = useStore(s => s.project!.skipCodes ?? [])
   const locked = useStore(s => !!s.project?.locked)
   const selectedControlId = useStore(s => s.editor.selectedControlId)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
@@ -100,26 +102,24 @@ export function ControlsPanel() {
   const requestCenterOnControl = useStore(s => s.requestCenterOnControl)
 
   const [showPoints, setShowPoints] = useState(() =>
-    project.controls.some(c => c.points != null)
+    controls.some(c => c.points != null)
   )
   const [showAppearance, setShowAppearance] = useState(false)
   const appearanceBtnRef = useRef<HTMLButtonElement>(null)
 
   const updateSkipCodes = useStore(s => s.updateSkipCodes)
   const reassignControlIds = useStore(s => s.reassignControlIds)
-  const skipCodes = project.skipCodes ?? []
   const skipCodesKey = skipCodes.join(',')
   const [skipCodesText, setSkipCodesText] = useState(() => skipCodes.join(', '))
 
   useEffect(() => { setSkipCodesText(skipCodes.join(', ')) }, [skipCodesKey]) // eslint-disable-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
 
-  const controls = project.controls
   const selectedCourse = selectedCourseId
-    ? project.courses.find(c => c.id === selectedCourseId) ?? null
+    ? courses.find(c => c.id === selectedCourseId) ?? null
     : null
 
   const courseUsageCount = new Map<string, number>()
-  for (const course of project.courses) {
+  for (const course of courses) {
     const seen = new Set<string>()
     for (const cc of course.controls) {
       if (!seen.has(cc.controlId)) {

@@ -14,8 +14,8 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     const course = p.courses.find(c => c.id === courseId)
     if (!course) return ''
     const idx = course.controls.findIndex(cc => cc.id === courseControlId)
-    const from = idx >= 0 ? p.controls.find(c => c.id === course.controls[idx].controlId) : undefined
-    const to = idx >= 0 && idx + 1 < course.controls.length ? p.controls.find(c => c.id === course.controls[idx + 1].controlId) : undefined
+    const from = idx > 0 ? p.controls.find(c => c.id === course.controls[idx - 1].controlId) : undefined
+    const to = idx >= 0 ? p.controls.find(c => c.id === course.controls[idx].controlId) : undefined
     return from && to ? `${defaultControlLabel(from)}-${defaultControlLabel(to)}` : '?'
   }
 
@@ -27,15 +27,6 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
         if (!c.gaps) c.gaps = []
         c.gaps.push(gap)
       }, `Add gap ${ctrlName(controlId)}`)
-    },
-
-    removeControlGap: (controlId: string, index: number) => {
-      h.mutateProject(p => {
-        const c = p.controls.find(c => c.id === controlId)
-        if (!c || !c.gaps) return false
-        c.gaps.splice(index, 1)
-        if (c.gaps.length === 0) c.gaps = undefined
-      }, `Remove gap ${ctrlName(controlId)}`)
     },
 
     // Rebuild: make the arc at `angle` visible again by dropping any gap covering it.
@@ -72,17 +63,6 @@ export function createGapsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
         if (!cc.legGaps) cc.legGaps = []
         cc.legGaps.push(gap)
       }, `Add leg gap ${legName(courseId, courseControlId)}`)
-    },
-
-    removeLegGap: (courseId: string, courseControlId: string, index: number) => {
-      h.mutateProject(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course) return false
-        const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc || !cc.legGaps) return false
-        cc.legGaps.splice(index, 1)
-        if (cc.legGaps.length === 0) cc.legGaps = undefined
-      }, `Remove leg gap ${legName(courseId, courseControlId)}`)
     },
 
     // Rebuild: make the leg visible at `t` again by dropping any gap covering it.

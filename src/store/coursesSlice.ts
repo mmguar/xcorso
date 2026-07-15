@@ -250,16 +250,6 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       }, `Reorder controls ${cName}`)
     },
 
-    updateScorePoints: (courseId: string, courseControlId: string, points: number) => {
-      h.mutateProject(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course) return false
-        const cc = course.controls.find(cc => cc.id === courseControlId)
-        if (!cc) return false
-        cc.scorePoints = points
-      }, 'Update score points')
-    },
-
     updateCourseClimb: (id: string, climb: number | undefined) => {
       h.mutateProject(p => {
         const c = p.courses.find(c => c.id === id)
@@ -284,9 +274,8 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
         const finishCc = c.controls.length >= 2 ? c.controls[c.controls.length - 1] : undefined
         const prevCc = c.controls.length >= 2 ? c.controls[c.controls.length - 2] : undefined
         if (!finishCc || !prevCc) return
-        const controls = get().project!.controls
-        const finishCtrl = controls.find(ctrl => ctrl.id === finishCc.controlId)
-        const prevCtrl = controls.find(ctrl => ctrl.id === prevCc.controlId)
+        const finishCtrl = p.controls.find(ctrl => ctrl.id === finishCc.controlId)
+        const prevCtrl = p.controls.find(ctrl => ctrl.id === prevCc.controlId)
         if (!finishCtrl || !prevCtrl) return
         if (finishType === 'funnel') {
           if (!finishCc.markedRouteEnd) {
@@ -360,9 +349,9 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       }, 'Update course spec')
     },
 
-    addClass: (name: string, courseId: string): RaceClass => {
+    addClass: (name: string, courseId: string): RaceClass | null => {
       const rc: RaceClass = { id: crypto.randomUUID(), name, courseId }
-      h.mutateProject(p => { p.classes.push(rc) }, `Add class "${name}"`)
+      if (!h.mutateProject(p => { p.classes.push(rc) }, `Add class "${name}"`)) return null
       return rc
     },
 
@@ -447,20 +436,6 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
           course.variations = generateAllPermutations(course)
         }
       }, 'Toggle phi loop')
-    },
-
-    removeCourseLoop: (courseId: string, loopId: string) => {
-      h.mutateProject(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course?.loops) return false
-        course.loops = course.loops.filter(l => l.id !== loopId)
-        if (course.loops.length === 0) course.loops = undefined
-        if (course.variations) {
-          course.variations = course.variations
-            .map(v => ({ ...v, loopOrders: v.loopOrders.filter(lo => lo.loopId !== loopId) }))
-          if (course.variations.every(v => v.loopOrders.length === 0)) course.variations = undefined
-        }
-      }, 'Remove loop')
     },
 
     setRelayLegs: (courseId: string, legs: number | undefined) => {

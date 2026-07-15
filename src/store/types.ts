@@ -117,7 +117,6 @@ export interface AppActions {
   addControlsToCourseByCode: (courseId: string, codes: (number | string)[]) => void
   removeControlFromCourse: (courseId: string, courseControlId: string) => void
   reorderCourseControls: (courseId: string, controls: CourseControl[]) => void
-  updateScorePoints: (courseId: string, courseControlId: string, points: number) => void
   updateCourseClimb: (id: string, climb: number | undefined) => void
   setManualCourseLength: (id: string, metres: number | undefined) => void
   updateCourseFinishType: (id: string, finishType: FinishType) => void
@@ -153,22 +152,19 @@ export interface AppActions {
 
   toggleCourseLoop: (courseId: string, forkControlId: string) => void
   togglePhiLoop: (courseId: string, forkControlId: string, forkControlId2: string) => void
-  removeCourseLoop: (courseId: string, loopId: string) => void
   setRelayLegs: (courseId: string, legs: number | undefined) => void
   setVariationRelayLeg: (courseId: string, variationId: string, leg: number | undefined) => void
   setSelectedVariation: (id: string | null) => void
 
-  addClass: (name: string, courseId: string) => RaceClass
+  addClass: (name: string, courseId: string) => RaceClass | null
   deleteClass: (id: string) => void
   updateClassName: (id: string, name: string) => void
   updateClassCourse: (id: string, courseId: string) => void
 
   addControlGap: (controlId: string, gap: CircleGap) => void
-  removeControlGap: (controlId: string, index: number) => void
   removeControlGapAtAngle: (controlId: string, angle: number) => void
   clearControlGaps: (controlId: string) => void
   addLegGap: (courseId: string, courseControlId: string, gap: LegGap) => void
-  removeLegGap: (courseId: string, courseControlId: string, index: number) => void
   removeLegGapAtT: (courseId: string, courseControlId: string, t: number) => void
   clearLegGaps: (courseId: string, courseControlId: string) => void
 

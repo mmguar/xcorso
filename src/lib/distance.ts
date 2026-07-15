@@ -125,8 +125,9 @@ export function resolveCourseLength(course: Course, distances: CourseDistances):
 }
 
 export function formatDistance(metres: number): string {
-  if (metres < 1000) return `${Math.round(metres / 10) * 10} m`
-  return `${(Math.round(metres / 10) * 10 / 1000).toFixed(1)} km`
+  const rounded = Math.round(metres / 10) * 10
+  if (rounded < 1000) return `${rounded} m`
+  return `${(rounded / 1000).toFixed(1)} km`
 }
 
 /** Scale-bar tick label: exact metres (no rounding to 10 m), km past 1000 m.
