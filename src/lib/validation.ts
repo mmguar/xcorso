@@ -55,12 +55,10 @@ function pointToSegmentDistSq(p: MapPoint, a: MapPoint, b: MapPoint): number {
 
 // ── Thresholds (metres) ──────────────────────────────────────────────────────
 
-const CLOSE_CONTROL_M = 30
-const SHORT_LEG_M = 50
-const LONG_LEG_ISOM_M = 3000
-const LONG_LEG_SPRINT_M = 800
-const CONTROL_ON_LEG_M = 30
-const PARALLEL_LEG_M = 30
+const THRESHOLDS = {
+  'isom-2017': { closeControl: 30, shortLeg: 50, longLeg: 3000, controlOnLeg: 30, parallelLeg: 30 },
+  'issprm-2019': { closeControl: 15, shortLeg: 25, longLeg: 800, controlOnLeg: 15, parallelLeg: 15 },
+} as const
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,6 +100,7 @@ export function validateProject(project: Project): ValidationResult {
   const controlMap = controlsById(controls)
   const canMeasure = map.type === 'ocad' || !!map.scaleMeasurement
   const spec = project.spec ?? 'isom-2017'
+  const th = THRESHOLDS[spec] ?? THRESHOLDS['isom-2017']
   const criteria: ValidationCriterion[] = []
 
   const courseLegs = new Map<string, ResolvedLeg[]>()
@@ -219,7 +218,7 @@ export function validateProject(project: Project): ValidationResult {
       for (let i = 0; i < controls.length; i++) {
         for (let j = i + 1; j < controls.length; j++) {
           const d = mapUnitsToMetres(distance(controls[i].position, controls[j].position), map)
-          if (d > 0 && d < CLOSE_CONTROL_M) {
+          if (d > 0 && d < th.closeControl) {
             const [a, b] = [controls[i].id, controls[j].id].sort()
             issues.push({ key: `close:${a}:${b}`, controlId: controls[i].id, controlId2: controls[j].id, distanceM: d })
           }
@@ -287,7 +286,7 @@ export function validateProject(project: Project): ValidationResult {
   {
     const issues: ValidationIssue[] = []
     if (canMeasure) {
-      const thU = metresToMapUnits(CONTROL_ON_LEG_M, map)
+      const thU = metresToMapUnits(th.controlOnLeg, map)
       const thSq = thU * thU
       if (thU > 0) {
         for (const ctrl of controls) {
@@ -336,7 +335,7 @@ export function validateProject(project: Project): ValidationResult {
       for (const c of courses) {
         if (c.type !== 'linear') continue
         for (const leg of courseLegs.get(c.id)!) {
-          if (leg.distM > 0 && leg.distM < SHORT_LEG_M)
+          if (leg.distM > 0 && leg.distM < th.shortLeg)
             issues.push({ key: `short:${c.id}:${leg.index}`, courseId: c.id, controlId: leg.fromControlId, controlId2: leg.toControlId, distanceM: leg.distM })
         }
       }
@@ -348,11 +347,10 @@ export function validateProject(project: Project): ValidationResult {
   {
     const issues: ValidationIssue[] = []
     if (canMeasure) {
-      const th = spec === 'issprm-2019' ? LONG_LEG_SPRINT_M : LONG_LEG_ISOM_M
       for (const c of courses) {
         if (c.type !== 'linear') continue
         for (const leg of courseLegs.get(c.id)!) {
-          if (leg.distM > th)
+          if (leg.distM > th.longLeg)
             issues.push({ key: `long:${c.id}:${leg.index}`, courseId: c.id, controlId: leg.fromControlId, controlId2: leg.toControlId, distanceM: leg.distM })
         }
       }
@@ -364,7 +362,7 @@ export function validateProject(project: Project): ValidationResult {
   {
     const issues: ValidationIssue[] = []
     if (canMeasure) {
-      const thU = metresToMapUnits(PARALLEL_LEG_M, map)
+      const thU = metresToMapUnits(th.parallelLeg, map)
       const thSq = thU * thU
       if (thU > 0) {
         for (let ci = 0; ci < courses.length; ci++) {

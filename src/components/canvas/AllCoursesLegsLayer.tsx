@@ -14,6 +14,7 @@ interface Props {
   map: MapConfig
   appearance: AppearanceSettings
   projectSpec?: EventSpec
+  hiddenIds?: string[]
   _rev?: number
 }
 
@@ -23,14 +24,15 @@ export const AllCoursesLegsLayer = memo(function AllCoursesLegsLayer({
   map,
   appearance,
   projectSpec,
+  hiddenIds,
   _rev,
 }: Props) {
-  const linearCourses = useMemo(
-    () => courses
+  const linearCourses = useMemo(() => {
+    const h = hiddenIds?.length ? new Set(hiddenIds) : null
+    return courses
       .map((course, index) => ({ course, index }))
-      .filter(({ course }) => course.type === 'linear' && course.controls.length >= 2),
-    [courses],
-  )
+      .filter(({ course }) => course.type === 'linear' && course.controls.length >= 2 && (!h || !h.has(course.id)))
+  }, [courses, hiddenIds])
 
   if (linearCourses.length === 0) return null
 

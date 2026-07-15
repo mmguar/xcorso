@@ -2,7 +2,9 @@
   "name": "xcorso",
   "private": true,
   "version": "1.0.0",
-  "engines": { "node": "22" },
+  "engines": {
+    "node": "22"
+  },
   "type": "module",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
@@ -23,7 +25,7 @@
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.11.0",
-    "ocad2geojson": "2.1.22",
+    "ocad2geojson": "2.1.23",
     "pdfjs-dist": "^5.6.205",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
@@ -52,10 +54,5 @@
     "typescript-eslint": "^8.58.2",
     "vite": "^8.0.10",
     "vitest": "^4.1.9"
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "ocad2geojson@2.1.22": "patches/ocad2geojson@2.1.22.patch"
-    }
   }
 }

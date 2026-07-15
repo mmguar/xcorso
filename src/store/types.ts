@@ -9,6 +9,10 @@ import type { CloudUser, VersionEntry, ShareRole } from '../lib/sync'
 
 export type CourseViewMode = 'single' | 'all-controls' | 'all-courses'
 
+export type LayoutDragPreview =
+  | { type: 'element'; key: string; x: number; y: number }           // clue sheet (part) at absolute mm position
+  | { type: 'border'; x: number; y: number; width: number; height: number }  // border rect in mm
+
 export interface EditorState {
   activeTool: ActiveTool
   selectedControlId: string | null
@@ -32,9 +36,14 @@ export interface EditorState {
   layoutCourseId: string | null
   layoutSubmapIndex: number
   layoutSnapRequest: number
+  // Transient position while dragging a clue sheet or map border in layout
+  // mode — rendered by PageOverlay only, committed to the project on pointerup
+  // so per-frame drags don't re-render every canvas layer.
+  layoutDragPreview: LayoutDragPreview | null
   gapRebuild: boolean
   // Pan-to-point request (seq bumps so repeat clicks on the same control re-fire).
   centerRequest: { point: MapPoint; seq: number } | null
+  allCoursesHidden: string[]
   validationIgnoredCriteria: string[]
   validationIgnoredInstances: string[]
 }
@@ -220,6 +229,7 @@ export interface AppActions {
   setDraggingControl: (id: string | null) => void
   setSelectedCourse: (id: string | null) => void
   setAllCoursesView: () => void
+  toggleAllCoursesHidden: (courseId: string) => void
   setSelectedOverlay: (id: string | null) => void
   setMapSaturation: (saturation: number) => void
   setOverprint: (overprint: number) => void
@@ -242,6 +252,9 @@ export interface AppActions {
   removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex?: number) => void
   requestLayoutSnap: () => void
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
+  setLayoutDragPreview: (preview: LayoutDragPreview | null) => void
+  resetLayoutCenter: (courseId: string, submapIndex?: number) => void
+  setAllControlsFlags: (flags: { multicolor?: boolean; linkId?: boolean }) => void
 
   toggleLocked: () => void
   toggleIgnoreCriterion: (criterionId: string) => void
@@ -315,8 +328,10 @@ export const defaultEditor: EditorState = {
   layoutCourseId: null,
   layoutSubmapIndex: 0,
   layoutSnapRequest: 0,
+  layoutDragPreview: null,
   gapRebuild: false,
   centerRequest: null,
+  allCoursesHidden: [],
   validationIgnoredCriteria: [],
   validationIgnoredInstances: [],
 }

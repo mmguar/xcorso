@@ -26,14 +26,20 @@ const MAX_UNDO = 100
 // coordination (BroadcastChannel) only if users actually hit this.
 let releaseTabLock: (() => void) | null = null
 let heldLockId: string | null = null
+let pendingLockId: string | null = null
 
 function acquireTabLock(id: string) {
   if (!('locks' in navigator)) return
-  if (heldLockId === id) return
+  // pendingLockId guards the async gap before the grant callback runs —
+  // without it, a double call (dev StrictMode) races itself and flags a
+  // conflict with its own tab.
+  if (heldLockId === id || pendingLockId === id) return
   releaseTabLock?.()
   releaseTabLock = null
   heldLockId = null
+  pendingLockId = id
   navigator.locks.request(`xcorso-project-${id}`, { ifAvailable: true }, lock => {
+    if (pendingLockId === id) pendingLockId = null
     if (!lock) {
       useStore.setState({ tabConflict: true })
       return
@@ -379,6 +385,14 @@ export const useStore = create<Store>((set, get) => {
             pendingAnnotationPoints: [],
           },
         }
+      })
+    },
+
+    toggleAllCoursesHidden: (courseId) => {
+      set(state => {
+        const h = state.editor.allCoursesHidden
+        const next = h.includes(courseId) ? h.filter(id => id !== courseId) : [...h, courseId]
+        return { editor: { ...state.editor, allCoursesHidden: next } }
       })
     },
 

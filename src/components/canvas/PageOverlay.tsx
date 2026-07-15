@@ -1,4 +1,5 @@
 import type { SubmapLayout, MapConfig, Viewport, Course, Control } from '../../types'
+import { useStore } from '../../store'
 import { PAGE_SIZES, MARGIN, mmToMap } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 
@@ -11,13 +12,19 @@ interface Props {
   course: Course
   controls: Control[]
   cellSize?: number
+  trailingFlip?: boolean
 }
 
 function mapToScreen(mapPt: { x: number; y: number }, vp: Viewport) {
   return { x: mapPt.x * vp.scale + vp.x, y: mapPt.y * vp.scale + vp.y }
 }
 
-export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls, cellSize }: Props) {
+export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls, cellSize, trailingFlip }: Props) {
+  // Transient drag position (clue sheet / border) — written per-frame by the
+  // MapCanvas drag handlers and committed to the project on pointerup, so only
+  // this component re-renders while dragging.
+  const dragPreview = useStore(s => s.editor.layoutDragPreview)
+
   const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
   const pageW = layout.orientation === 'landscape' ? base.h : base.w
   const pageH = layout.orientation === 'landscape' ? base.w : base.h
@@ -41,8 +48,9 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
 
   const mmToPx = rw / pageW
 
-  function elementScreenPos(el: { x: number; y: number }) {
-    return { x: rx + el.x * mmToPx, y: ry + el.y * mmToPx }
+  function elementScreenPos(el: { x: number; y: number }, key: string) {
+    const p = dragPreview?.type === 'element' && dragPreview.key === key ? dragPreview : el
+    return { x: rx + p.x * mmToPx, y: ry + p.y * mmToPx }
   }
 
   const marginPx = MARGIN * mmToPx
@@ -51,7 +59,9 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
   const printableW = rw - 2 * marginPx
   const printableH = rh - 2 * marginPx
 
-  const border = layout.mapBorder
+  const border = layout.mapBorder && dragPreview?.type === 'border'
+    ? { ...layout.mapBorder, x: dragPreview.x, y: dragPreview.y, width: dragPreview.width, height: dragPreview.height }
+    : layout.mapBorder
 
   // Border rect in screen pixels (uses stored rect or falls back to printable area)
   const bx = border ? rx + border.x * mmToPx : printableX
@@ -61,17 +71,22 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
 
   const HANDLE_R = 6
 
+  // Masks overshoot the canvas by far: MapCanvas.syncTransform scales this
+  // overlay transiently during layout-mode zoom, and the overhang keeps the
+  // mask edges outside the (overflow-hidden) canvas while it does.
+  const M = 8 * Math.max(canvasW, canvasH)
+
   return (
     <svg
       width={canvasW}
       height={canvasH}
-      style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+      style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
     >
       {/* Dark mask — four rects around the page */}
-      <rect x={0} y={0} width={canvasW} height={ry} fill="black" opacity={0.35} />
-      <rect x={0} y={ry} width={rx} height={rh} fill="black" opacity={0.35} />
-      <rect x={rx + rw} y={ry} width={canvasW - rx - rw} height={rh} fill="black" opacity={0.35} />
-      <rect x={0} y={ry + rh} width={canvasW} height={canvasH - ry - rh} fill="black" opacity={0.35} />
+      <rect x={-M} y={-M} width={2 * M} height={M + ry} fill="black" opacity={0.35} />
+      <rect x={-M} y={ry} width={M + rx} height={rh} fill="black" opacity={0.35} />
+      <rect x={rx + rw} y={ry} width={M - rx - rw} height={rh} fill="black" opacity={0.35} />
+      <rect x={-M} y={ry + rh} width={2 * M} height={M - ry - rh} fill="black" opacity={0.35} />
 
       {/* Page border */}
       <rect
@@ -95,12 +110,6 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
             x={bx} y={by} width={bw} height={bh}
             fill="none" stroke={border.color} strokeWidth={Math.max(1, border.strokeWidth * mmToPx)}
           />
-          {/* Drag handle — bottom-right corner */}
-          <circle
-            cx={bx + bw} cy={by + bh} r={HANDLE_R}
-            fill="white" stroke={border.color} strokeWidth={2}
-            style={{ cursor: 'nwse-resize' }}
-          />
         </>
       ) : (
         <rect
@@ -113,11 +122,12 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
       {layout.clueSheet.visible && (() => {
         const breaks = layout.clueSheetBreaks
         if (breaks && breaks.length > 0) {
-          const sizes = descriptionSheetPartSizes(course, controls, breaks, false, cellSize)
+          const sizes = descriptionSheetPartSizes(course, controls, breaks, trailingFlip, cellSize)
           const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
           return sizes.map((size, i) => {
             const elPos = positions[i] ?? layout.clueSheet
-            const pos = elementScreenPos(elPos)
+            const key = i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`
+            const pos = elementScreenPos(elPos, key)
             const w = size.width * mmToPx
             const h = size.height * mmToPx
             return (
@@ -138,8 +148,8 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
             )
           })
         }
-        const pos = elementScreenPos(layout.clueSheet)
-        const sheet = descriptionSheetSize(course, controls, false, cellSize)
+        const pos = elementScreenPos(layout.clueSheet, 'clueSheet')
+        const sheet = descriptionSheetSize(course, controls, trailingFlip, cellSize)
         const w = sheet.width * mmToPx
         const h = sheet.height * mmToPx
         return (
@@ -160,6 +170,15 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
         )
       })()}
 
+      {/* Border resize handle — rendered last so it sits above the clue sheet,
+          matching the hit-test priority in MapCanvas (handle is tested first). */}
+      {border && (
+        <circle
+          cx={bx + bw} cy={by + bh} r={HANDLE_R}
+          fill="white" stroke={border.color} strokeWidth={2}
+          style={{ cursor: 'nwse-resize' }}
+        />
+      )}
     </svg>
   )
 }
