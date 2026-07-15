@@ -34,6 +34,7 @@ interface GridProps {
   course: Course
   onRemove?: (courseControlId: string) => void
   onReorder?: (reordered: CourseControl[]) => void
+  locked?: boolean
 }
 
 interface RowData {
@@ -48,7 +49,7 @@ interface RowData {
   isPhiLoop?: boolean
 }
 
-export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder }: GridProps) {
+export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ course, onRemove, onReorder, locked }: GridProps) {
   useRenderTracker('ControlDescriptionGrid')
   const t = useT()
   const controls = useStore(s => s.project!.controls)
@@ -210,7 +211,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                 </td>
                 {showExtraCol && (
                   <td className="pl-1.5 align-middle whitespace-nowrap">
-                    {hasSubmaps && (
+                    {hasSubmaps && !locked && (
                       <button
                         onClick={() => selectSubmap(null)}
                         className={`text-[10px] font-medium px-1 py-0.5 rounded transition-colors ${
@@ -264,26 +265,27 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                     {tapedDist != null && tapedMode && (
                       <TapedRouteRow distText={tapedDist} mode={tapedMode}
                         onSetMode={(m) => { if (m !== tapedMode) cycleMarkedRouteMode(course.id, row.cc.id) }}
-                        showExtraCol={showExtraCol} />
+                        showExtraCol={showExtraCol} locked={locked} />
                     )}
                     <SortableDescRow
                       row={row}
                       courseId={course.id}
                       showExtraCol={showExtraCol}
-                      picker={picker}
-                      setPicker={setPicker}
+                      picker={locked ? null : picker}
+                      setPicker={locked ? () => {} : setPicker}
                       onRemove={onRemove}
-                      onToggleLoop={toggleCourseLoop}
-                      onTogglePhiLoop={togglePhiLoop}
-                      onToggleExchange={(ccId) => toggleExchangeControl(course.id, ccId)}
-                      onToggleMarkedRoute={(ccId) => toggleMarkedRoute(course.id, ccId)}
+                      onToggleLoop={locked ? undefined : toggleCourseLoop}
+                      onTogglePhiLoop={locked ? undefined : togglePhiLoop}
+                      onToggleExchange={locked ? undefined : (ccId) => toggleExchangeControl(course.id, ccId)}
+                      onToggleMarkedRoute={locked ? undefined : (ccId) => toggleMarkedRoute(course.id, ccId)}
                       textDescriptions={course.textDescriptions}
-                      submapButton={startButton}
+                      submapButton={locked ? undefined : startButton}
+                      locked={locked}
                       exchangeSeparator={submapEndIdx != null ? {
                         submapEndIdx,
                         nextSubmapLabel: submaps[submapEndIdx + 1]?.label ?? '',
                         exchangeMode: row.cc.exchangeMode ?? 'exchange',
-                        onModeChange: (mode) => setExchangeMode(course.id, row.cc.id, mode),
+                        onModeChange: locked ? () => {} : (mode) => setExchangeMode(course.id, row.cc.id, mode),
                         onSelectSubmap: selectSubmap,
                         selectedSubmapIndex: shownSubmapIndex,
                         seqLabel: String(row.seq),
@@ -299,6 +301,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       showExtraCol={showExtraCol}
                       onRemove={onRemove}
                       onSetFinishType={(ft) => updateCourseFinishType(course.id, ft)}
+                      locked={locked}
                     />
                   )}
                 </>
@@ -343,6 +346,7 @@ function SortableDescRow({
   textDescriptions,
   submapButton,
   exchangeSeparator,
+  locked,
 }: {
   row: RowData
   courseId: string
@@ -357,6 +361,7 @@ function SortableDescRow({
   textDescriptions?: boolean
   submapButton?: SubmapButtonProps
   exchangeSeparator?: ExchangeSeparatorProps
+  locked?: boolean
 }) {
   const t = useT()
   const { cc, ctrl, seq, legDist, forkEligible, isLoop, phiEligible, phiPartnerId, isPhiLoop } = row
@@ -388,12 +393,11 @@ function SortableDescRow({
     <>
       <tr ref={setNodeRef} style={style} className="group">
         <td
-          className={`${BORDER} text-center font-bold relative cursor-grab active:cursor-grabbing`}
+          className={`${BORDER} text-center font-bold relative ${locked ? '' : 'cursor-grab active:cursor-grabbing'}`}
           style={{ width: CELL, height: CELL, touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' } as React.CSSProperties}
-          {...attributes}
-          {...listeners}
+          {...(locked ? {} : { ...attributes, ...listeners })}
         >
-          <GripVertical size={14} strokeWidth={2.5} className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 group-hover:text-gray-400" />
+          {!locked && <GripVertical size={14} strokeWidth={2.5} className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 group-hover:text-gray-400" />}
           {seqLabel}
           {onRemove && (
             <button
@@ -423,9 +427,9 @@ function SortableDescRow({
           return (
             <td
               key={col.id}
-              className={`${BORDER} text-center cursor-pointer hover:bg-orange-50 ${isActive ? 'bg-orange-100' : ''}`}
+              className={`${BORDER} text-center ${locked ? '' : 'cursor-pointer hover:bg-orange-50'} ${isActive ? 'bg-orange-100' : ''}`}
               style={{ width: CELL, height: CELL, padding: 0 }}
-              onClick={() => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
+              onClick={locked ? undefined : () => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
             >
               {value && (textDescriptions && sym
                 ? <span className="text-[8px] leading-tight px-0.5">{t('iof.' + sym.code)}</span>
@@ -450,7 +454,7 @@ function SortableDescRow({
                 {submapButton.label}
               </button>
             ) : legDist != null ? formatDistance(legDist) : ''}
-            {ctrl.type !== 'finish' && onToggleMarkedRoute && (
+            {!locked && ctrl.type !== 'finish' && onToggleMarkedRoute && (
               <button
                 onClick={() => onToggleMarkedRoute(cc.id)}
                 title={cc.markedRoute ? t('controlDesc.removeMarkedRoute') : t('controlDesc.setMarkedRoute')}
@@ -466,7 +470,7 @@ function SortableDescRow({
                 </svg>
               </button>
             )}
-            {ctrl.type === 'control' && onToggleExchange && (
+            {!locked && ctrl.type === 'control' && onToggleExchange && (
               <button
                 onClick={() => onToggleExchange(cc.id)}
                 title={cc.exchangeMode ? t('controlDesc.removeExchange') : t('controlDesc.setExchange')}
@@ -507,7 +511,7 @@ function SortableDescRow({
           </td>
         </tr>
       )}
-      {forkEligible && (
+      {!locked && forkEligible && (
         <tr>
           <td colSpan={colCount} className="py-0.5 px-1">
             <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer select-none">
@@ -522,7 +526,7 @@ function SortableDescRow({
           </td>
         </tr>
       )}
-      {phiEligible && phiPartnerId && (
+      {!locked && phiEligible && phiPartnerId && (
         <tr>
           <td colSpan={colCount} className="py-0.5 px-1">
             <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer select-none">
@@ -543,6 +547,7 @@ function SortableDescRow({
             exchangeMode={exchangeSeparator.exchangeMode}
             onModeChange={exchangeSeparator.onModeChange}
             showExtraCol={showExtraCol}
+            locked={locked}
           />
           <RestartRow
             ctrl={ctrl}
@@ -563,10 +568,12 @@ function ExchangeRow({
   exchangeMode,
   onModeChange,
   showExtraCol,
+  locked,
 }: {
   exchangeMode: 'exchange' | 'flip'
   onModeChange: (mode: 'exchange' | 'flip') => void
   showExtraCol: boolean
+  locked?: boolean
 }) {
   const t = useT()
   return (
@@ -591,14 +598,14 @@ function ExchangeRow({
           ) : (
             <ExchangeRowSvg />
           )}
-          <select
+          {!locked && <select
             value={exchangeMode}
             onChange={e => onModeChange(e.target.value as 'exchange' | 'flip')}
             className="text-[10px] border border-gray-300 rounded px-1 py-0.5 bg-white opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <option value="exchange">{t('controlDesc.exchange')}</option>
             <option value="flip">{t('controlDesc.flip')}</option>
-          </select>
+          </select>}
         </div>
       </td>
       {showExtraCol && <td />}
@@ -844,12 +851,14 @@ function FinishDescRow({
   showExtraCol,
   onRemove,
   onSetFinishType,
+  locked,
 }: {
   row: RowData
   finishType: FinishType
   showExtraCol: boolean
   onRemove?: (ccId: string) => void
   onSetFinishType: (ft: FinishType) => void
+  locked?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const { cc, legDist } = row
@@ -873,11 +882,11 @@ function FinishDescRow({
     <tr className="group">
       <td
         colSpan={8}
-        className={`${BORDER} relative cursor-pointer hover:bg-orange-50`}
+        className={`${BORDER} relative ${locked ? '' : 'cursor-pointer hover:bg-orange-50'}`}
         style={{ height: CELL, padding: 0 }}
-        tabIndex={0}
-        onClick={() => setOpen(v => !v)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        tabIndex={locked ? undefined : 0}
+        onClick={locked ? undefined : () => setOpen(v => !v)}
+        onBlur={locked ? undefined : () => setTimeout(() => setOpen(false), 150)}
       >
         <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
           <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
@@ -942,8 +951,8 @@ function TapedRouteSvg({ mode, w }: { mode: 'full' | 'partial'; w: number }) {
   )
 }
 
-function TapedRouteRow({ distText, mode, onSetMode, showExtraCol }: {
-  distText: string; mode: 'full' | 'partial'; onSetMode: (mode: 'full' | 'partial') => void; showExtraCol: boolean
+function TapedRouteRow({ distText, mode, onSetMode, showExtraCol, locked }: {
+  distText: string; mode: 'full' | 'partial'; onSetMode: (mode: 'full' | 'partial') => void; showExtraCol: boolean; locked?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const W = 256
@@ -984,8 +993,8 @@ function TapedRouteRow({ distText, mode, onSetMode, showExtraCol }: {
 
   return (
     <tr>
-      <td colSpan={8} className={`${BORDER} cursor-pointer hover:bg-orange-50 relative`} style={{ height: CELL, padding: 0 }}
-        tabIndex={0} onClick={() => setOpen(v => !v)} onBlur={() => setTimeout(() => setOpen(false), 150)}>
+      <td colSpan={8} className={`${BORDER} ${locked ? '' : 'cursor-pointer hover:bg-orange-50'} relative`} style={{ height: CELL, padding: 0 }}
+        tabIndex={locked ? undefined : 0} onClick={locked ? undefined : () => setOpen(v => !v)} onBlur={locked ? undefined : () => setTimeout(() => setOpen(false), 150)}>
         <svg viewBox={`0 0 ${W} 32`} width="100%" height={CELL} preserveAspectRatio="xMidYMid meet">
           <circle cx={circleX} cy={CY} r={circleR} fill="none" stroke="black" strokeWidth={sw} />
           {Array.from({ length: leftDashes }, (_, i) => {

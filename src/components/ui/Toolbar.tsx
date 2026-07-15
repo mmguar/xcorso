@@ -42,6 +42,7 @@ const overlayTools: ToolEntry[] = [
 const annotationToolSet = new Set<ActiveTool>(annotationTools.map(t => t.tool))
 const overlayToolSet = new Set<ActiveTool>(overlayTools.map(t => t.tool))
 const allTools = [...tools, ...annotationTools, ...overlayTools]
+const lockedAllowedTools = new Set<ActiveTool>(['select'])
 
 const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'select': s => <MousePointer2 size={s} />,
@@ -153,8 +154,13 @@ export function Toolbar() {
   const undo = useStore(s => s.undo)
   const redo = useStore(s => s.redo)
   const jumpToHistory = useStore(s => s.jumpToHistory)
+  const locked = useStore(s => !!s.project?.locked)
   const canUndo = useStore(s => s.undoStack.length > 0)
   const canRedo = useStore(s => s.redoStack.length > 0)
+
+  useEffect(() => {
+    if (locked && !lockedAllowedTools.has(activeTool)) setActiveTool('select')
+  }, [locked, activeTool, setActiveTool])
 
   const selectedCourse = useStore(s =>
     s.project?.courses.find(c => c.id === s.editor.selectedCourseId) ?? null
@@ -201,12 +207,14 @@ export function Toolbar() {
       const ed = useStore.getState().editor
       if (ed.layoutMode || ed.measureMode) return
       if (selectedCourseId) {
+        if (locked) return
         if (e.key.toLowerCase() === 'g') setActiveTool(activeTool === 'gap' ? 'select' : 'gap')
         else if (e.key.toLowerCase() === 'b') setActiveTool(activeTool === 'bend' ? 'select' : 'bend')
         return
       }
       const t = allTools.find(t => t.shortcut?.toLowerCase() === e.key.toLowerCase())
       if (t) {
+        if (locked && !lockedAllowedTools.has(t.tool)) return
         // place-image needs an image first — go through the file picker like
         // the toolbar button does, instead of arming a tool that does nothing.
         if (t.tool === 'place-image') {
@@ -219,7 +227,7 @@ export function Toolbar() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, exitLayoutMode, activeTool])
+  }, [undo, redo, setActiveTool, selectedCourseId, setSelectedCourse, exitLayoutMode, activeTool, locked])
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const historyRef = useRef<HTMLDivElement>(null)
@@ -351,7 +359,9 @@ export function Toolbar() {
           className="w-3 h-3 rounded-full shrink-0"
           style={{ background: selectedCourse?.color ?? IOF_PURPLE }}
         />
-        {activeTool === 'gap' && gapRebuild ? (
+        {locked ? (
+          <span className="text-xs md:text-sm text-gray-400">{t('header.viewOnly')}</span>
+        ) : activeTool === 'gap' && gapRebuild ? (
           <span className="text-xs md:text-sm text-green-700">
             {t('toolbar.gapRebuildClick')}
           </span>
@@ -370,6 +380,7 @@ export function Toolbar() {
             <span className="md:hidden">{t('toolbar.courseAddMobile')}</span>
           </span>
         )}
+        {!locked && <>
         <button
           onClick={() => setActiveTool(activeTool === 'gap' ? 'select' : 'gap')}
           title={t('toolbar.gapTool')}
@@ -398,6 +409,7 @@ export function Toolbar() {
         >
           {toolIcons['bend'](16)}
         </button>
+        </>}
         <div className="w-px h-5 md:h-6 bg-gray-200 mx-0.5 md:mx-1" />
         {undoRedo}
       </div>
@@ -421,7 +433,7 @@ export function Toolbar() {
   rounded-2xl px-1.5 py-1 md:px-2 md:py-1.5
   z-20
 ">
-          {tools.map(({ tool, label, shortcut }) => (
+          {(locked ? tools.filter(t => lockedAllowedTools.has(t.tool)) : tools).map(({ tool, label, shortcut }) => (
         <button
           key={tool}
           onClick={() => setActiveTool(tool)}
@@ -437,6 +449,7 @@ export function Toolbar() {
         </button>
       ))}
 
+      {!locked && <>
       {/* Annotations submenu */}
       <div className="relative" ref={annMenuRef}>
         <button
@@ -527,6 +540,7 @@ export function Toolbar() {
           if (file) handleImageFile(file)
         }}
       />
+      </>}
 
       {activeTool === 'gap' && (
         <>
