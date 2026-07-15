@@ -65,7 +65,7 @@ export function createAnnotationsSlice(set: SetState, get: GetState, h: StoreHel
         if (!p.annotations.some(a => a.id === id)) return false
         p.annotations = p.annotations.map(a => {
           if (a.id !== id) return a
-          if (a.type === 'out_of_bounds' || a.type === 'forbidden_route') {
+          if (a.type === 'out_of_bounds' || a.type === 'forbidden_route' || a.type === 'oob_boundary') {
             const dx = position.x - a.points[0].x
             const dy = position.y - a.points[0].y
             return { ...a, points: a.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) }

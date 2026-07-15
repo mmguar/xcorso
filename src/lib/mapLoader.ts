@@ -73,7 +73,7 @@ function extractTopOverprintColors(colors: unknown): string[] {
   return out
 }
 
-export async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
+async function loadOcadMap(data: ArrayBuffer): Promise<LoadedMap> {
   const { readOcad, ocadToSvg } = await import('ocad2geojson')
 
   let ocadFile, svgEl: SVGElement
@@ -149,8 +149,10 @@ function cleanupSvg(svgEl: SVGElement) {
 
 const MAX_RASTER_DIM = 8192
 let previousRasterUrl: string | null = null
+let rasterLoadId = 0
 
 async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<string | undefined> {
+  const myLoadId = ++rasterLoadId
   if (previousRasterUrl) {
     URL.revokeObjectURL(previousRasterUrl)
     previousRasterUrl = null
@@ -182,7 +184,11 @@ async function rasterizeSvg(svgEl: SVGElement, bounds: MapBounds): Promise<strin
         canvas.toBlob(blob => {
           if (!blob) { resolve(undefined); return }
           const blobUrl = URL.createObjectURL(blob)
-          previousRasterUrl = blobUrl
+          if (myLoadId === rasterLoadId) {
+            previousRasterUrl = blobUrl
+          } else {
+            URL.revokeObjectURL(blobUrl)
+          }
           resolve(blobUrl)
         }, 'image/png')
       }
@@ -244,8 +250,10 @@ export async function rasterizeSvgOverprint(svgEl: SVGElement, bounds: MapBounds
 }
 
 let previousBitmapUrl: string | null = null
+let bitmapLoadId = 0
 
-export async function loadBitmapMap(data: ArrayBuffer, filename: string): Promise<LoadedMap> {
+async function loadBitmapMap(data: ArrayBuffer, filename: string): Promise<LoadedMap> {
+  const myLoadId = ++bitmapLoadId
   if (previousBitmapUrl) {
     URL.revokeObjectURL(previousBitmapUrl)
     previousBitmapUrl = null
@@ -253,7 +261,6 @@ export async function loadBitmapMap(data: ArrayBuffer, filename: string): Promis
 
   const blob = new Blob([data], { type: mimeTypeFromFilename(filename) })
   const url = URL.createObjectURL(blob)
-  previousBitmapUrl = url
 
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -263,11 +270,15 @@ export async function loadBitmapMap(data: ArrayBuffer, filename: string): Promis
         maxX: img.naturalWidth, maxY: img.naturalHeight,
         width: img.naturalWidth, height: img.naturalHeight,
       }
+      if (myLoadId === bitmapLoadId) {
+        previousBitmapUrl = url
+      } else {
+        URL.revokeObjectURL(url)
+      }
       resolve({ type: 'image', content: url, bounds })
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
-      previousBitmapUrl = null
       reject(new Error('Failed to load image'))
     }
     img.src = url
@@ -275,8 +286,10 @@ export async function loadBitmapMap(data: ArrayBuffer, filename: string): Promis
 }
 
 let previousPdfUrl: string | null = null
+let pdfLoadId = 0
 
-export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
+async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
+  const myLoadId = ++pdfLoadId
   if (previousPdfUrl) { URL.revokeObjectURL(previousPdfUrl); previousPdfUrl = null }
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   // Worker must be set up — point to the bundled worker
@@ -314,7 +327,11 @@ export async function loadPdfMap(data: ArrayBuffer): Promise<LoadedMap> {
     }, 'image/png')
   })
 
-  previousPdfUrl = url
+  if (myLoadId === pdfLoadId) {
+    previousPdfUrl = url
+  } else {
+    URL.revokeObjectURL(url)
+  }
   return { type: 'image', content: url, bounds, renderScale: scale }
 }
 

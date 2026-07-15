@@ -159,7 +159,7 @@ export interface RaceClass {
 
 // ─── Annotations ────────────────────────────────────────────────────────────
 
-export type AnnotationType = 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'north_arrow'
+export type AnnotationType = 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'oob_boundary' | 'north_arrow'
 
 export interface Annotation {
   id: string
@@ -170,6 +170,7 @@ export interface Annotation {
   elongation?: number        // extra half-height in mm, for crossing_point (default 0)
   color?: string             // fill color (north_arrow)
   textColor?: string         // text color (north_arrow, default white)
+  boundaryMarking?: 'none' | 'continuous' | 'intermittent' // out-of-bounds: boundary outline style
 }
 
 // ─── Course Layout ─────────────────────────────────────────────────────────
@@ -334,6 +335,7 @@ export type ActiveTool =
   | 'forbidden-route'
   | 'crossing-point'
   | 'out-of-bounds'
+  | 'out-of-bounds-boundary'
   | 'measure-scale'
   | 'delete'
   | 'gap'

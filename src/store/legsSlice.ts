@@ -15,8 +15,8 @@ export function createLegsSlice(_set: SetState, get: GetState, h: StoreHelpers) 
     const course = p.courses.find(c => c.id === courseId)
     if (!course) return ''
     const idx = course.controls.findIndex(cc => cc.id === courseControlId)
-    const from = idx >= 0 ? p.controls.find(c => c.id === course.controls[idx].controlId) : undefined
-    const to = idx >= 0 && idx + 1 < course.controls.length ? p.controls.find(c => c.id === course.controls[idx + 1].controlId) : undefined
+    const from = idx > 0 ? p.controls.find(c => c.id === course.controls[idx - 1].controlId) : undefined
+    const to = idx >= 0 ? p.controls.find(c => c.id === course.controls[idx].controlId) : undefined
     const leg = from && to ? `${defaultControlLabel(from)}-${defaultControlLabel(to)}` : '?'
     return `${leg} ${course.name}`
   }
