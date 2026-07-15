@@ -132,7 +132,7 @@ function ClueSheetPopover({ open, onClose, anchorRef }: { open: boolean; onClose
   )
 }
 
-function CourseEditor({ course }: { course: Course }) {
+function CourseEditor({ course, locked }: { course: Course; locked: boolean }) {
   const t = useT()
   useRenderTracker('CourseEditor')
   // Narrow selectors: subscribing to the whole project would re-render this
@@ -169,6 +169,7 @@ function CourseEditor({ course }: { course: Course }) {
 
   return (
     <div className="border border-orange-200 rounded-xl rounded-t-none border-t-0 overflow-hidden mb-2">
+      {!locked && <>
       {/* Course metadata toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
         <span className="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border">
@@ -262,50 +263,54 @@ function CourseEditor({ course }: { course: Course }) {
           {t('courses.addAll')}
         </button>
       </div>
+      </>}
 
       {/* Control description grid */}
       <div className="px-2 py-1.5">
         <ControlDescriptionGrid
           course={course}
-          onRemove={handleRemove}
-          onReorder={handleReorder}
+          onRemove={locked ? undefined : handleRemove}
+          onReorder={locked ? undefined : handleReorder}
+          locked={locked}
         />
       </div>
 
-      {/* Variations */}
-      <VariationsSection course={course} />
+      {!locked && <VariationsSection course={course} />}
 
-      {/* Length: computed/measured total + manual override + measure mode */}
+      {/* Length / climb (read-only when locked) */}
       {computedTotal > 0 && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
           <span className="text-xs text-gray-500">{t('courses.length')}</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={course.manualLength ?? ''}
-            placeholder={String(Math.round(computedTotal))}
-            title={course.manualLength != null ? t('courses.manualOverride') : t('courses.computedLength')}
-            onChange={e => {
-              const v = e.target.value === '' ? undefined : parseInt(e.target.value)
-              setManualCourseLength(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
-            }}
-            className={`w-16 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 ${course.manualLength != null ? 'border-orange-400 text-orange-700 font-medium' : ''}`}
-          />
-          <span className="text-gray-400 text-xs">m</span>
-          <span className="text-[10px] text-gray-400">({formatDistance(resolvedTotal)})</span>
-          <div className="flex-1" />
-          <button
-            onClick={() => enterMeasureMode(course.id)}
-            className="text-[11px] font-medium text-orange-600 hover:text-orange-800 transition-colors"
-            title={t('courses.measureTitle')}
-          >
-            {t('courses.measure')}
-          </button>
+          {locked ? (
+            <span className="text-xs text-gray-700">{formatDistance(resolvedTotal)}</span>
+          ) : (<>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={course.manualLength ?? ''}
+              placeholder={String(Math.round(computedTotal))}
+              title={course.manualLength != null ? t('courses.manualOverride') : t('courses.computedLength')}
+              onChange={e => {
+                const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+                setManualCourseLength(course.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
+              }}
+              className={`w-16 text-xs border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 ${course.manualLength != null ? 'border-orange-400 text-orange-700 font-medium' : ''}`}
+            />
+            <span className="text-gray-400 text-xs">m</span>
+            <span className="text-[10px] text-gray-400">({formatDistance(resolvedTotal)})</span>
+            <div className="flex-1" />
+            <button
+              onClick={() => enterMeasureMode(course.id)}
+              className="text-[11px] font-medium text-orange-600 hover:text-orange-800 transition-colors"
+              title={t('courses.measureTitle')}
+            >
+              {t('courses.measure')}
+            </button>
+          </>)}
         </div>
       )}
 
-      {/* Climb & finish type */}
-      {(distances.total > 0 || course.controls.some(cc => controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
+      {!locked && (distances.total > 0 || course.controls.some(cc => controls.find(c => c.id === cc.controlId)?.type === 'finish')) && (
         <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
           {distances.total > 0 && (
             <label className="flex items-center gap-1 text-xs text-gray-500">
@@ -324,6 +329,12 @@ function CourseEditor({ course }: { course: Course }) {
               <span className="text-gray-400">m</span>
             </label>
           )}
+        </div>
+      )}
+      {locked && course.climb != null && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
+          <span className="text-xs text-gray-500">{t('courses.climb')}</span>
+          <span className="text-xs text-gray-700">{course.climb}m</span>
         </div>
       )}
     </div>
@@ -481,10 +492,11 @@ function ClassesSection() {
   )
 }
 
-function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSelect }: {
+function CourseRow({ course, isSelected, isExpanded, locked, onToggleExpand, onToggleSelect }: {
   course: Course
   isSelected: boolean
   isExpanded: boolean
+  locked: boolean
   onToggleExpand: () => void
   onToggleSelect: () => void
 }) {
@@ -509,7 +521,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
         >
           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        {isExpanded ? (
+        {isExpanded && !locked ? (
           <input
             type="color"
             value={course.color}
@@ -525,7 +537,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
           onClick={onToggleSelect}
           className="flex items-center gap-2 flex-1 cursor-pointer min-w-0"
         >
-          {editingName ? (
+          {editingName && !locked ? (
             <input
               autoFocus
               className="flex-1 text-sm font-semibold bg-white border rounded px-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
@@ -535,6 +547,10 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
               onBlur={() => { updateCourseName(course.id, nameVal); setEditingName(false) }}
               onKeyDown={e => { if (e.key === 'Enter') { updateCourseName(course.id, nameVal); setEditingName(false) } }}
             />
+          ) : locked ? (
+            <span className="text-sm font-medium flex-1 truncate">
+              {course.name}
+            </span>
           ) : (
             <span
               className="edit-icon-group text-sm font-medium flex-1 truncate flex items-center gap-1"
@@ -551,7 +567,7 @@ function CourseRow({ course, isSelected, isExpanded, onToggleExpand, onToggleSel
           <span className="text-xs text-gray-400 shrink-0">{t('courses.ctrls', { count: Math.max(0, course.controls.length-2) })}</span>
         </div>
       </div>
-      {isExpanded && <CourseEditor course={course} />}
+      {isExpanded && <CourseEditor course={course} locked={locked} />}
     </div>
   )
 }
@@ -568,6 +584,7 @@ export function CoursesPanel() {
   const setAllCoursesView = useStore(s => s.setAllCoursesView)
   const toggleAllCoursesHidden = useStore(s => s.toggleAllCoursesHidden)
   const allCoursesHidden = useStore(s => s.editor.allCoursesHidden)
+  const locked = useStore(s => !!s.project?.locked)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showClueOpts, setShowClueOpts] = useState(false)
   const clueOptsBtnRef = useRef<HTMLButtonElement>(null)
@@ -589,13 +606,15 @@ export function CoursesPanel() {
       <div className="flex gap-2 p-2 border-b border-gray-100">
         <button
           onClick={() => { const c = addCourse(`Course ${courses.length + 1}`); if (c) { setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) } }}
-          className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors"
+          disabled={locked}
+          className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-600 text-white rounded-lg px-3 py-1.5 hover:bg-orange-700 transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <Plus size={13} /> {t('courses.linearCourse')}
         </button>
         <button
           onClick={() => { const c = addCourse(`Score ${courses.length + 1}`, 'score'); if (c) { setExpanded(p => new Set([...p, c.id])); setSelectedCourse(c.id) } }}
-          className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-500 text-white rounded-lg px-3 py-1.5 hover:bg-orange-600 transition-colors"
+          disabled={locked}
+          className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-orange-500 text-white rounded-lg px-3 py-1.5 hover:bg-orange-600 transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <Plus size={13} /> {t('courses.scoreO')}
         </button>
@@ -672,6 +691,7 @@ export function CoursesPanel() {
               course={course}
               isSelected={course.id === selectedCourseId}
               isExpanded={expanded.has(course.id)}
+              locked={locked}
               onToggleExpand={() => {
                 const wasExpanded = expanded.has(course.id)
                 setExpanded(prev => {
@@ -694,10 +714,10 @@ export function CoursesPanel() {
           ))
         )}
 
-        <ClassesSection />
+        {!locked && <ClassesSection />}
       </div>
 
-      <div className="relative p-2 border-t border-gray-100">
+      {!locked && <div className="relative p-2 border-t border-gray-100">
         <button
           ref={clueOptsBtnRef}
           onClick={() => setShowClueOpts(v => !v)}
@@ -711,7 +731,7 @@ export function CoursesPanel() {
           {t('courses.clueSheetOptions')}
         </button>
         <ClueSheetPopover open={showClueOpts} onClose={() => setShowClueOpts(false)} anchorRef={clueOptsBtnRef} />
-      </div>
+      </div>}
     </div>
   )
 }

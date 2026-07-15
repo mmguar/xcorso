@@ -89,6 +89,7 @@ function AppearancePopover({ open, onClose, anchorRef }: { open: boolean; onClos
 export function ControlsPanel() {
   const t = useT()
   const project = useStore(s => s.project!)
+  const locked = useStore(s => !!s.project?.locked)
   const selectedControlId = useStore(s => s.editor.selectedControlId)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedControl = useStore(s => s.setSelectedControl)
@@ -197,7 +198,7 @@ export function ControlsPanel() {
                     ×{count}
                   </span>
                 )}
-                <div className="ml-auto flex items-center gap-1">
+                {!locked && <div className="ml-auto flex items-center gap-1">
                   <button
                     onClick={e => { e.stopPropagation(); addControlToCourse(selectedCourse.id, control.id) }}
                     className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-orange-600 hover:bg-orange-100 transition-colors"
@@ -222,7 +223,7 @@ export function ControlsPanel() {
                       <Minus size={14} />
                     </button>
                   )}
-                </div>
+                </div>}
               </div>
             )
           })}
@@ -241,7 +242,7 @@ export function ControlsPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 flex flex-col gap-1 p-2 overflow-y-auto">
-        <div className="px-3 py-2 flex flex-col gap-1.5 border-b border-gray-100 mb-1">
+        {!locked && <div className="px-3 py-2 flex flex-col gap-1.5 border-b border-gray-100 mb-1">
           <label className="text-xs text-gray-500">
             {t('controls.skipCodes')}
             <input
@@ -260,8 +261,8 @@ export function ControlsPanel() {
           >
             {t('controls.reassignIds')}
           </button>
-        </div>
-        <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
+        </div>}
+        {!locked && <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 select-none cursor-pointer">
           <input
             type="checkbox"
             checked={showPoints}
@@ -269,7 +270,7 @@ export function ControlsPanel() {
             className="rounded border-gray-300 text-orange-600 focus:ring-orange-400"
           />
           {t('controls.points')}
-        </label>
+        </label>}
         {controls.map(control => (
           <div
             key={control.id}
@@ -293,7 +294,11 @@ export function ControlsPanel() {
               {control.type}
             </span>
 
-            {control.type === 'control' ? (
+            {locked ? (
+              <span className="text-sm font-mono font-semibold text-gray-700 ml-1">
+                {control.type === 'control' ? control.code : (control.label ?? defaultControlLabel(control))}
+              </span>
+            ) : control.type === 'control' ? (
               <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
             ) : (
               <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />
@@ -305,7 +310,7 @@ export function ControlsPanel() {
               </span>
             )}
 
-            {showPoints && (
+            {showPoints && !locked && (
               <input
                 type="number"
                 value={control.points ?? ''}
@@ -318,13 +323,16 @@ export function ControlsPanel() {
                 className="w-14 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
               />
             )}
+            {locked && control.points != null && (
+              <span className="text-xs font-mono text-gray-400 ml-auto">{control.points}pts</span>
+            )}
 
-            <button
+            {!locked && <button
               onClick={e => { e.stopPropagation(); deleteControl(control.id) }}
               className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
             >
               <Trash2 size={14} />
-            </button>
+            </button>}
           </div>
         ))}
       </div>

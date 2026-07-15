@@ -498,7 +498,7 @@ export function AnnotationSettingsPanel() {
   const selectedAnnotationId = useStore(s => s.editor.selectedAnnotationId)
   const project = useStore(s => s.project)
 
-  if (!selectedAnnotationId || !project) return null
+  if (!selectedAnnotationId || !project || project.locked) return null
 
   const ann = project.annotations.find(a => a.id === selectedAnnotationId)
   if (!ann || (ann.type !== 'north_arrow' && ann.type !== 'out_of_bounds')) return null
@@ -515,7 +515,7 @@ export function OverlaySettingsPanel() {
   const selectedOverlayId = useStore(s => s.editor.selectedOverlayId)
   const project = useStore(s => s.project)
 
-  if (!selectedOverlayId || !project) return null
+  if (!selectedOverlayId || !project || project.locked) return null
 
   const sb = project.scaleBars.find(s => s.id === selectedOverlayId)
   const tl = project.textLabels.find(t => t.id === selectedOverlayId)

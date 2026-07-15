@@ -327,7 +327,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
         )}
 
         {/* Sync + Versions (grouped) */}
-        {!isViewer && cloudUser && canSync && cloudUser.termsVersion !== TERMS_VERSION && (
+        {projectRole !== 'viewer' && cloudUser && canSync && cloudUser.termsVersion !== TERMS_VERSION && (
           <button
             onClick={async () => {
               if (await acceptTerms(TERMS_VERSION)) setCloudUser({ ...cloudUser, termsVersion: TERMS_VERSION })
@@ -339,7 +339,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
             <span className="hidden sm:inline">{t('header.acceptTerms')}</span>
           </button>
         )}
-        {!isViewer && cloudUser && canSync && cloudUser.termsVersion === TERMS_VERSION && (
+        {projectRole !== 'viewer' && cloudUser && canSync && cloudUser.termsVersion === TERMS_VERSION && (
           <div className="flex items-center border border-gray-200 rounded-lg">
             <button
               onClick={() => syncProject()}
@@ -364,19 +364,15 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
               </button>
               {historyOpen && (
                 <div className="absolute top-full right-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-80 overflow-y-auto">
-                  {!isViewer && (
-                    <>
-                      <button
-                        onClick={async () => { await saveSnapshot(); }}
-                        disabled={syncStatus === 'syncing'}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-40"
-                      >
-                        <Save size={14} />
-                        {t('header.saveSnapshot')}
-                      </button>
-                      <div className="border-t border-gray-100 my-1" />
-                    </>
-                  )}
+                  <button
+                    onClick={async () => { await saveSnapshot(); }}
+                    disabled={syncStatus === 'syncing'}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-40"
+                  >
+                    <Save size={14} />
+                    {t('header.saveSnapshot')}
+                  </button>
+                  <div className="border-t border-gray-100 my-1" />
                   {versionHistory.length === 0 ? (
                     <div className="px-3 py-3 text-xs text-gray-400 text-center">{t('header.noSnapshots')}</div>
                   ) : (
@@ -395,7 +391,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
                               <div className="text-[10px] text-gray-400">{new Date(v.timestamp).toLocaleString()}</div>
                             </div>
                           </div>
-                          {!isViewer && (
+                          {!locked && (
                             <button
                               onClick={async () => { setHistoryOpen(false); await restoreVersionAction(v.version) }}
                               className="text-[11px] font-medium text-orange-600 hover:text-orange-800 px-2 py-1 rounded hover:bg-orange-50 transition-colors"
@@ -412,7 +408,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
             </div>
           </div>
         )}
-        {!isViewer && !cloudUser && canSync && (
+        {projectRole !== 'viewer' && !cloudUser && canSync && (
           <button
             onClick={onLogin}
             className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-2 py-1.5 transition-colors"

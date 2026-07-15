@@ -174,6 +174,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const addCourse = useStore(s => s.addCourse)
+  const locked = useStore(s => !!s.project?.locked)
   const [showNewMenu, setShowNewMenu] = useState(false)
 
   return (
@@ -215,8 +216,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
               )
             })}
           </div>
-          {/* Create new course button with dropdown */}
-          <div className="relative shrink-0 pb-2">
+          {!locked && <div className="relative shrink-0 pb-2">
             <button
               onClick={() => setShowNewMenu(m => !m)}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
@@ -239,7 +239,7 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
                 </button>
               </div>
             )}
-          </div>
+          </div>}
         </>
       )}
     </div>
@@ -254,6 +254,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const addCourse = useStore(s => s.addCourse)
+  const locked = useStore(s => !!s.project?.locked)
 
   return (
     <div data-mobile-panel className={`
@@ -309,8 +310,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
           </>
         )}
 
-        {/* Create new course button */}
-        <div className="relative">
+        {!locked && <div className="relative">
           <button
             onClick={() => setShowNewMenu(m => !m)}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all shrink-0 opacity-70 hover:opacity-100"
@@ -333,7 +333,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
               </button>
             </div>
           )}
-        </div>
+        </div>}
 
         {expanded && (
           <button
