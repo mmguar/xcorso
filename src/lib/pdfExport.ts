@@ -435,11 +435,12 @@ export function assignControlColors(controls: Control[]): Map<string, number> {
     if (bestIdx >= 0) cur = bestIdx
   }
 
+  const byId = new Map(controls.map(c => [c.id, c]))
   const result = new Map<string, number>()
   for (const idx of idxByDist) {
     const neighbors: { dist: number; color: number }[] = []
     for (const [otherId, otherColor] of result) {
-      const other = controls.find(c => c.id === otherId)!
+      const other = byId.get(otherId)!
       const dx = controls[idx].position.x - other.position.x
       const dy = controls[idx].position.y - other.position.y
       neighbors.push({ dist: dx * dx + dy * dy, color: otherColor })
