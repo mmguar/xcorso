@@ -48,7 +48,7 @@ export function timeClone<T>(label: string, obj: T): T {
 
 // ── Console report ─────────────────────────────────────────────────────────
 
-export function perfReport() {
+function perfReport() {
   console.group('[perf] Render report')
 
   console.log('--- Component render counts ---')

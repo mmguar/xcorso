@@ -734,7 +734,7 @@ export function MapCanvas({ loadedMap }: Props) {
             longPressFired = true
             handleBendRightClick(sx, sy, vpRef.current, proj, cid)
           }, 500)
-        } else if (cid && proj) {
+        } else if (cid && proj && !proj.locked) {
           const hit = findControlAt(sx, sy, vpRef.current, proj, cid, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
           if (hit) {
             longPressTimer = setTimeout(() => {
@@ -880,6 +880,8 @@ export function MapCanvas({ loadedMap }: Props) {
       const { activeTool } = state.editor
       const proj = state.project
       if (!proj) return
+      // ponytail: locked projects allow pan/zoom only — no drag initiation
+      if (proj.locked) return
 
       // Measure mode: grab a route handle if hit; otherwise fall through to pan.
       if (state.editor.measureMode) {
@@ -1041,6 +1043,7 @@ export function MapCanvas({ loadedMap }: Props) {
           const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
           if (annHit && annHit.points[0]) {
             const draggable = annHit.type === 'crossing_point' || annHit.type === 'north_arrow'
+              || annHit.type === 'forbidden_route' || annHit.type === 'oob_boundary'
               || (annHit.type === 'out_of_bounds' && annHit.id === state.editor.selectedAnnotationId)
             if (draggable) {
               const mapPt2 = screenToMap(sx, sy, vpRef.current)
@@ -1760,7 +1763,7 @@ export function MapCanvas({ loadedMap }: Props) {
           return
         }
         const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
-        if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow' || annHit.type === 'out_of_bounds')) {
+        if (annHit && (annHit.type === 'crossing_point' || annHit.type === 'north_arrow' || annHit.type === 'out_of_bounds' || annHit.type === 'forbidden_route' || annHit.type === 'oob_boundary')) {
           state.setSelectedAnnotation(annHit.id)
           state.setSelectedControl(null)
           state.setSelectedOverlay(null)
@@ -1780,6 +1783,7 @@ export function MapCanvas({ loadedMap }: Props) {
         case 'place-control': state.addControl('control', mapPt); break
         case 'forbidden-route': state.addAnnotationPoint(mapPt); break
         case 'out-of-bounds': state.addAnnotationPoint(mapPt); break
+        case 'out-of-bounds-boundary': state.addAnnotationPoint(mapPt); break
         case 'crossing-point':
           state.addAnnotationPoint(mapPt)
           state.commitAnnotation('crossing_point')
@@ -1874,6 +1878,8 @@ export function MapCanvas({ loadedMap }: Props) {
         useStore.getState().commitAnnotation('forbidden_route')
       } else if (activeTool === 'out-of-bounds' && pendingAnnotationPoints.length >= 3) {
         useStore.getState().commitAnnotation('out_of_bounds')
+      } else if (activeTool === 'out-of-bounds-boundary' && pendingAnnotationPoints.length >= 2) {
+        useStore.getState().commitAnnotation('oob_boundary')
       }
     }
 
@@ -1985,6 +1991,7 @@ export function MapCanvas({ loadedMap }: Props) {
     if (activeTool === 'forbidden-route')    return 'forbidden_route'
     if (activeTool === 'crossing-point')     return 'crossing_point'
     if (activeTool === 'out-of-bounds')      return 'out_of_bounds'
+    if (activeTool === 'out-of-bounds-boundary') return 'oob_boundary'
     if (activeTool === 'place-north-arrow')  return 'north_arrow'
     return null
   }

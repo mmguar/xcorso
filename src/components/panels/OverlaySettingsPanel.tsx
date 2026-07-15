@@ -372,17 +372,39 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
 function OobSettings({ ann }: { ann: Annotation }) {
   const t = useT()
   const deleteAnnotation = useStore(s => s.deleteAnnotation)
+  const updateAnnotation = useStore(s => s.updateAnnotation)
+  const beginEdit = useStore(s => s.beginEdit)
+  const marking = ann.boundaryMarking ?? 'none'
 
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-xs font-semibold text-gray-700">{t('overlay.outOfBounds')}</span>
-      <button
-        onClick={() => deleteAnnotation(ann.id)}
-        className="text-gray-400 hover:text-red-500 transition-colors"
-        title={t('overlay.delete')}
-      >
-        <Trash2 size={13} />
-      </button>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-700">{t('overlay.outOfBounds')}</span>
+        <button
+          onClick={() => deleteAnnotation(ann.id)}
+          className="text-gray-400 hover:text-red-500 transition-colors"
+          title={t('overlay.delete')}
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        <span className="w-16 shrink-0">{t('overlay.boundaryMarking')}</span>
+        <select
+          value={marking}
+          onPointerDown={() => marking === 'none' && beginEdit('Change boundary marking')}
+          onChange={e => {
+            const val = e.target.value as 'none' | 'continuous' | 'intermittent'
+            if (marking === 'none' && val !== 'none') beginEdit('Change boundary marking')
+            updateAnnotation(ann.id, { boundaryMarking: val }, true)
+          }}
+          className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+        >
+          <option value="none">{t('overlay.boundaryNone')}</option>
+          <option value="continuous">{t('overlay.boundaryContinuous')}</option>
+          <option value="intermittent">{t('overlay.boundaryIntermittent')}</option>
+        </select>
+      </label>
     </div>
   )
 }

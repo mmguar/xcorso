@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   MousePointer2, Triangle, Target, X, ChevronsRightLeft, Ruler, Undo2, Redo2, Circle, Ban, Trash2, CircleDashed, Waypoints,
-  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers, Eraser, History,
+  RulerDimensionLine, Type, ImagePlus, Navigation, Signpost, ChevronUp, Layers, Eraser, History, Spline,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT } from '../../i18n'
@@ -30,6 +30,7 @@ const annotationTools: ToolEntry[] = [
   { tool: 'forbidden-route', label: 'toolbar.forbiddenRouteHint', shortcut: 'B' },
   { tool: 'crossing-point', label: 'editor.tool.crossingPoint', shortcut: 'P' },
   { tool: 'out-of-bounds', label: 'toolbar.outOfBoundsHint', shortcut: 'O' },
+  { tool: 'out-of-bounds-boundary', label: 'toolbar.oobBoundaryHint' },
 ]
 
 const overlayTools: ToolEntry[] = [
@@ -52,6 +53,7 @@ const toolIcons: Record<ActiveTool, (size: number) => React.ReactNode> = {
   'forbidden-route': s => <X size={s} />,
   'crossing-point': s => <ChevronsRightLeft size={s} />,
   'out-of-bounds': s => <Ban size={s} />,
+  'out-of-bounds-boundary': s => <Spline size={s} />,
   'place-north-arrow': s => <Navigation size={s} />,
   'gap': s => <CircleDashed size={s} />,
   'bend': s => <Waypoints size={s} />,
@@ -195,6 +197,7 @@ export function Toolbar() {
       }
       if (e.key === 'Escape') {
         const st = useStore.getState()
+        if (st.editor.activeTool !== 'select') { setActiveTool('select'); return }
         if (st.editor.layoutMode) { exitLayoutMode(); return }
         if (st.editor.measureMode) { st.exitMeasureMode(); return }
         if (st.editor.pendingAnnotationPoints.length > 0) { st.cancelAnnotation(); return }

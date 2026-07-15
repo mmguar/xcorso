@@ -12,7 +12,7 @@
 
 import type { Project, Course, Control, ControlType, MapConfig } from '../types'
 import { computeCourseDistances, resolveCourseLength } from './distance'
-import { resolveVariation } from './courseUtils'
+import { defaultControlLabel, resolveVariation } from './courseUtils'
 import { ocadToLatLng } from './utm'
 
 function xmlEscape(s: string): string {
@@ -33,12 +33,7 @@ function iofControlType(type: ControlType): string {
   }
 }
 
-function controlCode(c: Control): string {
-  if (c.label) return c.label
-  if (c.type === 'start') return `S${c.code}`
-  if (c.type === 'finish') return `F${c.code}`
-  return String(c.code)
-}
+const controlCode = defaultControlLabel
 
 function toIofCoords(svgX: number, svgY: number, map: MapConfig): { x: number; y: number } {
   const oy = map.originY ?? 0
@@ -298,7 +293,10 @@ export function exportIofXmlV2(project: Project): string {
     }
   }
 
-  const coursesXml = exportCourses.map(({ course }, courseIdx) => {
+  // Per-parent-course variation counter: CourseVariationId must be unique
+  // within a course family, not globally across all expanded export courses.
+  const familyVarIdx = new Map<string, number>()
+  const coursesXml = exportCourses.map(({ course, family }) => {
     const resolvedControls = course.controls
       .map(cc => controlMap.get(cc.controlId))
       .filter((c): c is Control => c !== undefined)
@@ -333,8 +331,12 @@ export function exportIofXmlV2(project: Project): string {
       ].join('\n')
     }).filter(Boolean).join('\n')
 
+    const varKey = family ?? course.name
+    const varId = (familyVarIdx.get(varKey) ?? 0) + 1
+    familyVarIdx.set(varKey, varId)
+
     const varChildren: string[] = [
-      `      <CourseVariationId>${courseIdx + 1}</CourseVariationId>`,
+      `      <CourseVariationId>${varId}</CourseVariationId>`,
       `      <Name>${xmlEscape(course.name)}</Name>`,
       `      <CourseLength>${Math.round(totalLength)}</CourseLength>`,
     ]

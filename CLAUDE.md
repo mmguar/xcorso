@@ -27,7 +27,7 @@ xcorso is a web-based orienteering course planner — a helper tool alongside Co
 
 **ISOM 2017-2 symbol sizing** is duplicated across canvas layer files. Control circle radius: 300 OCAD units / 12 px. Stroke width: 60 OCAD units / 2.5 px. These constants must stay consistent between `ControlsLayer.tsx`, `LegsLayer.tsx`, and `AnnotationsLayer.tsx`.
 
-**Export lives in `src/lib/`.** `iofExport.ts` builds IOF XML v3 via string concatenation (the `tag()` helper escapes attribute values automatically — do not pre-escape values passed to it). `projectFile.ts` handles `.oco` ZIP archives via JSZip.
+**Export lives in `src/lib/`.** `iofExport.ts` builds IOF XML v3 via string concatenation (the `xmlEscape()` helper escapes attribute values automatically — do not pre-escape values passed to it). `projectFile.ts` handles `.oco` ZIP archives via JSZip.
 
 ## Key constraints
 

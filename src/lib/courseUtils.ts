@@ -6,7 +6,7 @@ import { distance } from './geometry'
 export const IOF_PURPLE = '#AA499B'
 
 /** Distinct leg colors for the all-courses overview (controls stay IOF purple). */
-export const ALL_COURSES_OVERVIEW_PALETTE = [
+const ALL_COURSES_OVERVIEW_PALETTE = [
   '#2563eb', // blue
   '#dc2626', // red
   '#16a34a', // green
