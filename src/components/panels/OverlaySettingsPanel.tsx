@@ -234,7 +234,6 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
   const updateImageOverlay = useStore(s => s.updateImageOverlay)
   const deleteImageOverlay = useStore(s => s.deleteImageOverlay)
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
-  const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
   const replaceInputRef = useRef<HTMLInputElement>(null)
 
   const [width, setWidth] = useState(String(Math.round(img.widthMm * 10) / 10))
@@ -339,22 +338,6 @@ function ImageOverlaySettings({ img }: { img: ImageOverlay }) {
         />
       </label>
 
-      <label className="flex items-center gap-2 text-xs text-gray-600">
-        <span className="w-16 shrink-0">{t('overlay.background')}</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={img.bgAlpha}
-          onPointerDown={beginMoveOverlay}
-          onChange={e => updateImageOverlay(img.id, { bgAlpha: parseFloat(e.target.value) }, true)}
-          className="flex-1 min-w-0 h-1 accent-orange-600"
-        />
-        <span className="text-[10px] text-gray-400 w-8 text-right">
-          {Math.round(img.bgAlpha * 100)}%
-        </span>
-      </label>
     </div>
   )
 }
