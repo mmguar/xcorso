@@ -3,8 +3,9 @@ import { Trash2, MapPin, Plus, Minus, Palette } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT } from '../../i18n'
 import { defaultControlLabel } from '../../lib/courseUtils'
+import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
 import { AppearancePanel } from './AppearancePanel'
-import type { Control } from '../../types'
+import type { Control, EventSpec } from '../../types'
 
 const EMPTY_CODES: number[] = []
 
@@ -149,8 +150,25 @@ export function ControlsPanel() {
     }
   }
 
+  const updateProjectSpec = useStore(s => s.updateProjectSpec)
+  const projectSpec = useStore(s => s.project?.spec ?? 'isom-2017') as EventSpec
+
   const appearanceButton = (
-    <div className="relative p-2 border-t border-gray-100">
+    <div className="relative p-2 border-t border-gray-100 flex flex-col gap-1">
+      {!locked && (
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <label className="text-xs text-gray-500 shrink-0">{t('header.eventSpec')}</label>
+          <select
+            value={projectSpec}
+            onChange={e => updateProjectSpec(e.target.value as EventSpec)}
+            className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-orange-400"
+          >
+            {(Object.entries(SPEC_LABEL_KEYS) as [EventSpec, string][]).map(([key, tKey]) => (
+              <option key={key} value={key}>{t(tKey)}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <button
         ref={appearanceBtnRef}
         onClick={() => setShowAppearance(v => !v)}

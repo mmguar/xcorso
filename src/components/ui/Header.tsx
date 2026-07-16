@@ -8,10 +8,9 @@ import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
 import { addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
 import { LogoutDialog } from '../LogoutDialog'
-import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
 import { validateProject, countActiveIssues } from '../../lib/validation'
 import { ValidationDialog } from './ValidationDialog'
-import type { EventSpec, MapType } from '../../types'
+import type { MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
@@ -23,7 +22,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   const projectId = useStore(s => s.projectId)
   const mapFileData = useStore(s => s.mapFileData)
   const updateProjectName = useStore(s => s.updateProjectName)
-  const updateProjectSpec = useStore(s => s.updateProjectSpec)
+
   const switchProject = useStore(s => s.switchProject)
   const cloudUser = useStore(s => s.cloudUser)
   const syncStatus = useStore(s => s.syncStatus)
@@ -317,18 +316,6 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
         )}
       </div>
 
-      {!isViewer && (
-        <select
-          value={project.spec ?? 'isom-2017'}
-          onChange={e => updateProjectSpec(e.target.value as EventSpec)}
-          className="text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 shrink-0 hidden sm:block"
-          title={t('header.eventSpec')}
-        >
-          {(Object.entries(SPEC_LABEL_KEYS) as [EventSpec, string][]).map(([key, tKey]) => (
-            <option key={key} value={key}>{t(tKey)}</option>
-          ))}
-        </select>
-      )}
 
       {projectRole === 'viewer' && (
         <span className="flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 rounded-full px-2 py-0.5 shrink-0">
