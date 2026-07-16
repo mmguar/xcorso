@@ -490,7 +490,7 @@ function ClassesSection() {
                 }}
                 placeholder="#"
                 title={t('courses.competitors')}
-                className="w-12 text-xs border border-gray-200 rounded px-1.5 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
+                className="w-12 text-xs border border-gray-200 rounded px-1.5 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
               <button
                 onClick={() => deleteClass(rc.id)}
