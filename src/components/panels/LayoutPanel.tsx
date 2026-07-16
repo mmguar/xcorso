@@ -5,6 +5,7 @@ import { useStore } from '../../store'
 import {
   PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
   checkFitForCourseObj, checkTilingForCourseObj, suggestFitScaleForCourseObj,
+  checkFitForAllControls,
 } from '../../lib/pdfExport'
 import { defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
@@ -373,7 +374,9 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
   const isActive = courseId === layoutCourseId
   const included = includedOverride ?? (layout?.included !== false)
-  const descMode = layout?.descMode ?? 'none'
+  // Legacy projects (pre-descMode) flagged the sheet via clueSheet.visible; the
+  // export honors that, so the panel must display the same effective mode.
+  const descMode = layout?.descMode ?? (layout?.clueSheet.visible ? 'on-map' : 'none')
 
   // Per-submap layout scoping. The expanded controls edit the submap selected in
   // layout mode (submap 0 when the course has no exchanges/flips).
@@ -425,6 +428,22 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
       : null,
     [submapCourse, project.controls, project.map, effectivePageSize, effectiveOrientation, effectiveBorder, fitInfo, project.spec],
   )
+
+  // Export silently skips an on-map clue sheet whose origin is off the page —
+  // mirror that check here and warn instead of letting it vanish.
+  const sheetOffPage = (() => {
+    if (!sub || (descMode !== 'on-map' && descMode !== 'both')) return false
+    const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
+    const pw = effectiveOrientation === 'landscape' ? base.h : base.w
+    const ph = effectiveOrientation === 'landscape' ? base.w : base.h
+    const off = (p: { x: number; y: number }) => p.x < 0 || p.x > pw || p.y < 0 || p.y > ph
+    const breaks = sub.clueSheetBreaks
+    if (breaks && breaks.length > 0) {
+      const positions = [sub.clueSheet, ...(sub.clueSheetParts ?? [])]
+      return Array.from({ length: breaks.length + 1 }, (_, pi) => positions[pi] ?? { x: MARGIN, y: MARGIN }).some(off)
+    }
+    return off(sub.clueSheet ?? { x: MARGIN, y: MARGIN })
+  })()
 
   function toggleIncluded() {
     if (onToggleIncluded) {
@@ -509,6 +528,13 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
           </span>
         )}
       </div>
+
+      {/* Off-page clue sheet warning */}
+      {included && sheetOffPage && (
+        <div className="px-3 pb-1.5 -mt-1">
+          <span className="text-[10px] text-amber-600">{t('layout.clueSheetOffPage')}</span>
+        </div>
+      )}
 
       {/* Summary line (collapsed, non-active) */}
       {included && layout && !isActive && (isPageSizeOverride || isOrientationOverride || isScaleOverride) && (
@@ -877,8 +903,17 @@ export function LayoutPanel() {
   const [allControls, setAllControls] = useState(true)
   const allControlsMulticolor = useStore(s => s.project!.allControlsMulticolor ?? false)
   const allControlsLinkId = useStore(s => s.project!.allControlsLinkId ?? false)
+  const allControlsTiling = useStore(s => s.project!.allControlsTiling ?? false)
   const setAllControlsFlags = useStore(s => s.setAllControlsFlags)
   const [viewerExclusions, setViewerExclusions] = useState<Set<string>>(new Set())
+
+  const acDefaults = getLayoutDefaults(useStore.getState)
+  const acFit = useMemo(() =>
+    project.controls.length > 0
+      ? checkFitForAllControls(project.controls, project.map, acDefaults.pageSize, acDefaults.orientation, acDefaults.printScale, project.spec)
+      : null,
+    [project.controls, project.map, acDefaults.pageSize, acDefaults.orientation, acDefaults.printScale, project.spec],
+  )
 
   useEffect(() => {
     if (courses.length > 0) ensureAllCourseLayouts()
@@ -920,7 +955,9 @@ export function LayoutPanel() {
         allControls,
         allControlsMulticolor: allControls && allControlsMulticolor,
         allControlsLinkId: allControls && allControlsLinkId,
+        tiling: allControls && (currentProject.allControlsTiling ?? false),
         descModes,
+        appearance: useStore.getState().editor.appearance,
         mapOpacity: defaults.mapOpacity,
         mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
         rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
@@ -975,6 +1012,11 @@ export function LayoutPanel() {
             />
             <div className="w-3 h-3 rounded-full shrink-0 bg-orange-600" />
             <span className="text-sm font-medium text-gray-800 flex-1">{t('layout.allControls')}</span>
+            {allControls && acFit && (
+              <span className={`text-[10px] shrink-0 tabular-nums ${acFit.fits ? 'text-green-600' : 'text-amber-600'}`}>
+                {acFit.fits ? t('layout.fits') : `${Math.round(acFit.widthMm)}×${Math.round(acFit.heightMm)}mm`}
+              </span>
+            )}
           </div>
           {allControls && (
             <div className="flex items-center gap-3 px-3 py-1.5 border-t border-gray-100 bg-gray-50">
@@ -985,6 +1027,24 @@ export function LayoutPanel() {
               <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
                 <input type="checkbox" checked={allControlsLinkId} onChange={e => setAllControlsFlags({ linkId: e.target.checked })} className="accent-orange-600" />
                 {t('layout.linkId')}
+              </label>
+            </div>
+          )}
+          {allControls && acFit && !acFit.fits && (
+            <div className="px-3 py-1.5 border-t border-gray-100 bg-amber-50">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allControlsTiling}
+                  onChange={e => setAllControlsFlags({ tiling: e.target.checked })}
+                  className="accent-orange-600"
+                />
+                <span className="text-[11px] text-amber-700">
+                  {t('layout.tilePages')}
+                  {acFit.totalPages > 1 && (
+                    <span className="text-amber-500"> {t('layout.tileInfo', { cols: acFit.cols, rows: acFit.rows })}</span>
+                  )}
+                </span>
               </label>
             </div>
           )}

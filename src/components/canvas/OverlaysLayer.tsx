@@ -2,6 +2,7 @@ import { memo } from 'react'
 import type { ScaleBar, TextLabel, ImageOverlay, MapConfig, MapPoint } from '../../types'
 import { unitsPerMm } from '../../lib/courseUtils'
 import { formatScaleBarDistance, scaleBarLayoutMm } from '../../lib/distance'
+import { measureTextWidth } from '../../lib/textMeasure'
 
 interface Props {
   scaleBars: ScaleBar[]
@@ -16,8 +17,9 @@ interface Props {
 function ScaleBarSvg({ sb, map, selected, printScaleOverride }: { sb: ScaleBar; map: MapConfig; selected: boolean; printScaleOverride?: number }) {
   const baseUpm = unitsPerMm(map)
   const upm = printScaleOverride ? baseUpm * printScaleOverride / map.scale : baseUpm
-  /** Bar graphic is drawn for this denominator; falls back to map scale for older projects. */
-  const scaleDen = printScaleOverride ?? sb.scale ?? map.scale
+  /** Bar is always drawn for the effective print scale — printed distances must
+   * match the page. (sb.scale is legacy data and no longer read.) */
+  const scaleDen = printScaleOverride ?? map.scale
   const scaleStr = `1:${Math.round(scaleDen)}`
 
   const lay = scaleBarLayoutMm(sb, scaleDen)
@@ -115,7 +117,7 @@ function TextLabelSvg({ tl, map, selected, printScaleOverride }: { tl: TextLabel
 
   const lines = tl.text.split('\n')
   const lineHeight = fontSize * 1.25
-  const maxLineW = Math.max(...lines.map(l => l.length)) * fontSize * 0.48
+  const maxLineW = Math.max(...lines.map(l => measureTextWidth(l, fontSize)))
   const blockH = lineHeight * lines.length
   const pad = 0.15 * fontSize
   const bgX = tl.position.x - pad
@@ -158,8 +160,9 @@ function TextLabelSvg({ tl, map, selected, printScaleOverride }: { tl: TextLabel
   )
 }
 
-function ImageOverlaySvg({ img, map, selected }: { img: ImageOverlay; map: MapConfig; selected: boolean }) {
-  const upm = unitsPerMm(map)
+function ImageOverlaySvg({ img, map, selected, printScaleOverride }: { img: ImageOverlay; map: MapConfig; selected: boolean; printScaleOverride?: number }) {
+  const baseUpm = unitsPerMm(map)
+  const upm = printScaleOverride ? baseUpm * printScaleOverride / map.scale : baseUpm
   const strokeW = 0.2 * upm
   const w = img.widthMm * upm
   const h = img.heightMm * upm
@@ -236,6 +239,7 @@ export const OverlaysLayer = memo(function OverlaysLayer({ scaleBars, textLabels
             img={effectiveImg}
             map={map}
             selected={img.id === selectedOverlayId}
+            printScaleOverride={printScaleOverride}
           />
         )
       })}

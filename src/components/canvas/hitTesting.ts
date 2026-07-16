@@ -4,6 +4,7 @@ import { legKey, scaleBarLayoutMm } from '../../lib/distance'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
 import { northArrowHeight, northArrowGeometry, crossingPointTotalHH, rotateAround } from '../../lib/symbolGeometry'
 import { interpolatePolyline, flattenSmooth } from '../../lib/geometry'
+import { measureTextWidth } from '../../lib/textMeasure'
 
 const HIT_PX = 20
 
@@ -552,14 +553,17 @@ export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp:
   return null
 }
 
-export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>): { id: string; kind: 'scalebar' | 'text' | 'image' } | null {
+export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, project: Project, posOverrides?: Record<string, MapPoint>, printScale?: number): { id: string; kind: 'scalebar' | 'text' | 'image' } | null {
   const mapPt = screenToMap(screenX, screenY, vp)
-  const upm = unitsPerMm(project.map)
+  const baseUpm = unitsPerMm(project.map)
+  // Overlays render at the effective print scale (see OverlaysLayer) — the hit
+  // boxes must use the same sizing or clicks miss when it differs from map scale.
+  const upm = printScale ? baseUpm * printScale / project.map.scale : baseUpm
   const hitSlop = pxToMap(HIT_PX, vp)
 
   for (const sb of project.scaleBars) {
     const pos = posOverrides?.[sb.id] ?? sb.position
-    const lay = scaleBarLayoutMm(sb, sb.scale ?? project.map.scale)
+    const lay = scaleBarLayoutMm(sb, printScale ?? project.map.scale)
     const boxW = lay.boxW * upm
     const boxH = lay.boxH * upm
     if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + boxW + hitSlop &&
@@ -572,7 +576,7 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
     const pos = posOverrides?.[tl.id] ?? tl.position
     const fontSize = tl.fontSizeMm * upm
     const lines = tl.text.split('\n')
-    const w = Math.max(...lines.map(l => l.length)) * fontSize * 0.48
+    const w = Math.max(...lines.map(l => measureTextWidth(l, fontSize)))
     const h = fontSize * 1.25 * lines.length
     if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
         mapPt.y >= pos.y - fontSize - hitSlop && mapPt.y <= pos.y - fontSize + h + hitSlop) {
@@ -618,8 +622,7 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
   const labelSpec = resolveSpec(project.spec, course?.spec)
   const labelDims = getSymbolDims(labelSpec)
   const sf = symbolScaleFactor(labelSpec, project.map.scale)
-  const cr = labelDims.controlR * upm * controlScale * sf
-  const fontSize = mapToPx(cr * 1.1, vp)
+  const fontSize = mapToPx(labelDims.labelH * upm * controlScale * sf, vp)
 
   // In a course, one label per distinct control (the first course-control).
   // In the all-controls layout (no course), every control gets a label whose

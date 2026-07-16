@@ -160,6 +160,7 @@ export interface AppActions {
   deleteClass: (id: string) => void
   updateClassName: (id: string, name: string) => void
   updateClassCourse: (id: string, courseId: string) => void
+  updateClassCompetitors: (id: string, count: number | undefined) => void
 
   addControlGap: (controlId: string, gap: CircleGap) => void
   removeControlGapAtAngle: (controlId: string, angle: number) => void
@@ -250,7 +251,7 @@ export interface AppActions {
   setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex?: number) => void
   setLayoutDragPreview: (preview: LayoutDragPreview | null) => void
   resetLayoutCenter: (courseId: string, submapIndex?: number) => void
-  setAllControlsFlags: (flags: { multicolor?: boolean; linkId?: boolean }) => void
+  setAllControlsFlags: (flags: { multicolor?: boolean; linkId?: boolean; tiling?: boolean }) => void
 
   toggleLocked: () => void
   toggleIgnoreCriterion: (criterionId: string) => void

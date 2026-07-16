@@ -1,6 +1,6 @@
-import type { SubmapLayout, MapConfig, Viewport, Course, Control } from '../../types'
+import type { SubmapLayout, MapConfig, Viewport, Course, Control, EventSpec } from '../../types'
 import { useStore } from '../../store'
-import { PAGE_SIZES, MARGIN, mmToMap } from '../../lib/pdfExport'
+import { PAGE_SIZES, MARGIN, mmToMap, courseBoundsMm, printableSize, tileCount, TILE_OVERLAP } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 
 interface Props {
@@ -9,17 +9,25 @@ interface Props {
   viewport: Viewport
   canvasW: number
   canvasH: number
+  /** Full submap control slice — used for tiling bounds. */
   course: Course
   controls: Control[]
   cellSize?: number
   trailingFlip?: boolean
+  /** Course sliced the way the clue sheet prints (hidden restart row). Defaults to `course`. */
+  clueSheetCourse?: Course
+  /** Break indices matching `clueSheetCourse` (shifted when the restart row is
+   *  hidden). Falls back to layout.clueSheetBreaks. */
+  clueSheetBreaks?: number[]
+  projectSpec?: EventSpec
 }
 
 function mapToScreen(mapPt: { x: number; y: number }, vp: Viewport) {
   return { x: mapPt.x * vp.scale + vp.x, y: mapPt.y * vp.scale + vp.y }
 }
 
-export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls, cellSize, trailingFlip }: Props) {
+export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, controls, cellSize, trailingFlip, clueSheetCourse, clueSheetBreaks, projectSpec }: Props) {
+  const sheetCourse = clueSheetCourse ?? course
   // Transient drag position (clue sheet / border) — written per-frame by the
   // MapCanvas drag handlers and committed to the project on pointerup, so only
   // this component re-renders while dragging.
@@ -76,6 +84,45 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
   // mask edges outside the (overflow-hidden) canvas while it does.
   const M = 8 * Math.max(canvasW, canvasH)
 
+  // ── Tiling preview ─────────────────────────────────────────────────────────
+  // With tiling active the export ignores mapCenter and lays pages on a
+  // bounds-based grid — show that grid instead of the single (misleading) page.
+  if (layout.tiling) {
+    const printable = printableSize(pageW, pageH, layout.mapBorder)
+    const bounds = courseBoundsMm(course, controls, map, layout.printScale, projectSpec)
+    if (bounds && (bounds.width > printable.w || bounds.height > printable.h)) {
+      const cols = tileCount(bounds.width, printable.w)
+      const rows = tileCount(bounds.height, printable.h)
+      // mapToMm is linear (no offset), so a plain factor converts mm → map units.
+      const mmToMapF = mmToMap({ x: 1, y: 0 }, map, layout.printScale).x
+      const tiles: React.ReactNode[] = []
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cMmX = bounds.minX + c * (printable.w - TILE_OVERLAP) + printable.w / 2
+          const cMmY = bounds.minY + r * (printable.h - TILE_OVERLAP) + printable.h / 2
+          const stl = mapToScreen({ x: (cMmX - pageW / 2) * mmToMapF, y: (cMmY - pageH / 2) * mmToMapF }, viewport)
+          const sbr = mapToScreen({ x: (cMmX + pageW / 2) * mmToMapF, y: (cMmY + pageH / 2) * mmToMapF }, viewport)
+          tiles.push(
+            <g key={`${r}-${c}`}>
+              <rect x={stl.x} y={stl.y} width={sbr.x - stl.x} height={sbr.y - stl.y}
+                fill="none" stroke="#ea580c" strokeWidth={1.5} strokeDasharray="6 3" />
+              <text x={stl.x + 8} y={stl.y + 16} fontSize={11} fill="#ea580c" opacity={0.8}
+                style={{ userSelect: 'none' }}>
+                {r * cols + c + 1}/{rows * cols}
+              </text>
+            </g>
+          )
+        }
+      }
+      return (
+        <svg width={canvasW} height={canvasH}
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}>
+          {tiles}
+        </svg>
+      )
+    }
+  }
+
   return (
     <svg
       width={canvasW}
@@ -120,9 +167,9 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
 
       {/* Clue sheet indicators */}
       {layout.clueSheet.visible && (() => {
-        const breaks = layout.clueSheetBreaks
+        const breaks = clueSheetBreaks ?? layout.clueSheetBreaks
         if (breaks && breaks.length > 0) {
-          const sizes = descriptionSheetPartSizes(course, controls, breaks, trailingFlip, cellSize)
+          const sizes = descriptionSheetPartSizes(sheetCourse, controls, breaks, trailingFlip, cellSize)
           const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
           return sizes.map((size, i) => {
             const elPos = positions[i] ?? layout.clueSheet
@@ -149,7 +196,7 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
           })
         }
         const pos = elementScreenPos(layout.clueSheet, 'clueSheet')
-        const sheet = descriptionSheetSize(course, controls, trailingFlip, cellSize)
+        const sheet = descriptionSheetSize(sheetCourse, controls, trailingFlip, cellSize)
         const w = sheet.width * mmToPx
         const h = sheet.height * mmToPx
         return (

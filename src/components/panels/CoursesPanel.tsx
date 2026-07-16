@@ -427,6 +427,7 @@ function ClassesSection() {
   const deleteClass = useStore(s => s.deleteClass)
   const updateClassName = useStore(s => s.updateClassName)
   const updateClassCourse = useStore(s => s.updateClassCourse)
+  const updateClassCompetitors = useStore(s => s.updateClassCompetitors)
   const [showClasses, setShowClasses] = useState(classes.length > 0)
 
   if (courses.length === 0) return null
@@ -478,6 +479,19 @@ function ClassesSection() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={rc.competitors ?? ''}
+                onChange={e => {
+                  const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+                  updateClassCompetitors(rc.id, v != null && !isNaN(v) && v >= 0 ? v : undefined)
+                }}
+                placeholder="#"
+                title={t('courses.competitors')}
+                className="w-12 text-xs border border-gray-200 rounded px-1.5 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
               <button
                 onClick={() => deleteClass(rc.id)}
                 className="text-gray-300 hover:text-red-500 transition-colors shrink-0"
