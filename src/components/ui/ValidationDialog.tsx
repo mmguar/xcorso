@@ -157,7 +157,7 @@ export function ValidationDialog({ onClose, onExportIof, onSaveProject, onReplac
           <button onClick={() => { onSaveProject(); onClose() }} className={`${btnCls} text-gray-700 hover:bg-gray-100 border border-gray-200`}>
             <Save size={14} />{t('header.saveOco')}
           </button>
-          <button onClick={() => onExportIof('3.0')} className={`${btnCls} text-white bg-orange-600 hover:bg-orange-700`}>
+          <button onClick={() => onExportIof('3.0')} className={`${btnCls} text-gray-700 hover:bg-gray-100 border border-gray-200`}>
             <FileDown size={14} />{t('header.exportIofV3')}
           </button>
           <button onClick={() => onExportIof('2.0')} className={`${btnCls} text-gray-700 hover:bg-gray-100 border border-gray-200`}>

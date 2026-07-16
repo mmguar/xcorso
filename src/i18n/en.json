@@ -631,5 +631,12 @@
   "validation.shortLegs": "Short legs",
   "validation.longLegs": "Long legs",
   "validation.parallelLegs": "Parallel legs",
-  "validation.missingMapIssue": "Missing map issue point"
+  "validation.missingMapIssue": "Missing map issue point",
+
+  "measure.hintDesktop": "Click a leg to add a point · drag to shape · right-click to remove",
+  "measure.hintTouch": "Tap a leg to add a point · drag to shape · long-press to remove",
+  "measure.done": "Done",
+  "measure.legs": "Legs",
+  "measure.hideAll": "Hide all",
+  "measure.showAll": "Show all"
 }

@@ -237,6 +237,18 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       }))
     },
 
+    collapseLayoutCourse: () => {
+      set(state => ({
+        editor: {
+          ...state.editor,
+          layoutCourseId: null,
+          layoutSubmapIndex: 0,
+          selectedSubmapIndex: null,
+          layoutDragPreview: null,
+        },
+      }))
+    },
+
     setLayoutSubmap: (index: number) => {
       set(state => ({
         editor: {

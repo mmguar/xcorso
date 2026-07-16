@@ -237,6 +237,7 @@ export interface AppActions {
 
   enterLayoutMode: (courseId: string) => void
   exitLayoutMode: () => void
+  collapseLayoutCourse: () => void
   setLayoutSubmap: (index: number) => void
   updateCourseLayout: (courseId: string, updates: Partial<SubmapLayout & Pick<CourseLayout, 'included' | 'descMode'>>, submapIndex?: number) => void
   moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex?: number) => void
