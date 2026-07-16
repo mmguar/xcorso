@@ -211,7 +211,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                 </td>
                 {showExtraCol && (
                   <td className="pl-1.5 align-middle whitespace-nowrap">
-                    {hasSubmaps && !locked && (
+                    {hasSubmaps && (
                       <button
                         onClick={() => selectSubmap(null)}
                         className={`text-[10px] font-medium px-1 py-0.5 rounded transition-colors ${
@@ -279,7 +279,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                       onToggleExchange={locked ? undefined : (ccId) => toggleExchangeControl(course.id, ccId)}
                       onToggleMarkedRoute={locked ? undefined : (ccId) => toggleMarkedRoute(course.id, ccId)}
                       textDescriptions={course.textDescriptions}
-                      submapButton={locked ? undefined : startButton}
+                      submapButton={startButton}
                       locked={locked}
                       exchangeSeparator={submapEndIdx != null ? {
                         submapEndIdx,
