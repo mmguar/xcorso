@@ -36,12 +36,21 @@ export function startTriangleAngle(from: Pt, to: Pt): number {
   return Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI + 90
 }
 
-/** Exchange marker: equilateral triangle pointing down, inscribed in radius `r`. */
-export function exchangeTriangleVertices(center: Pt, r: number): [Pt, Pt, Pt] {
-  return [90, 210, 330].map(deg => {
+/** Exchange / continuation marker (ISOM 715): equilateral triangle inscribed in
+ * radius `r`; apex points down at `angleDeg` 0, rotated like the start triangle. */
+export function exchangeTriangleVertices(center: Pt, r: number, angleDeg = 0): [Pt, Pt, Pt] {
+  const pts = [90, 210, 330].map(deg => {
     const rad = (deg * Math.PI) / 180
     return { x: center.x + r * Math.cos(rad), y: center.y + r * Math.sin(rad) }
   }) as [Pt, Pt, Pt]
+  if (angleDeg === 0) return pts
+  return pts.map(p => rotateAround(p, center, angleDeg)) as [Pt, Pt, Pt]
+}
+
+/** Angle (degrees) so the exchange triangle's apex points from `from` toward `to`
+ * (ISOM 715: "points in the direction of the following control"). */
+export function exchangeTriangleAngle(from: Pt, to: Pt): number {
+  return Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI - 90
 }
 
 /** Forbidden-route 'X' mark: two segments crossing at `mark`, ±45° to path direction. */

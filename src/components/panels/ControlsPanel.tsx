@@ -90,6 +90,7 @@ export function ControlsPanel() {
   const t = useT()
   const controls = useStore(s => s.project!.controls)
   const courses = useStore(s => s.project!.courses)
+  const classes = useStore(s => s.project!.classes)
   const skipCodes = useStore(s => s.project!.skipCodes ?? [])
   const locked = useStore(s => !!s.project?.locked)
   const selectedControlId = useStore(s => s.editor.selectedControlId)
@@ -125,6 +126,23 @@ export function ControlsPanel() {
       if (!seen.has(cc.controlId)) {
         seen.add(cc.controlId)
         courseUsageCount.set(cc.controlId, (courseUsageCount.get(cc.controlId) ?? 0) + 1)
+      }
+    }
+  }
+
+  const hasCompetitors = classes.some(c => c.competitors != null && c.competitors > 0)
+  const competitorVisits = new Map<string, number>()
+  if (hasCompetitors) {
+    for (const rc of classes) {
+      if (!rc.competitors) continue
+      const course = courses.find(c => c.id === rc.courseId)
+      if (!course) continue
+      const seen = new Set<string>()
+      for (const cc of course.controls) {
+        if (!seen.has(cc.controlId)) {
+          seen.add(cc.controlId)
+          competitorVisits.set(cc.controlId, (competitorVisits.get(cc.controlId) ?? 0) + rc.competitors)
+        }
       }
     }
   }
@@ -307,6 +325,11 @@ export function ControlsPanel() {
             {(courseUsageCount.get(control.id) ?? 0) > 0 && (
               <span className="text-xs text-gray-400 font-medium">
                 {courseUsageCount.get(control.id)}x
+              </span>
+            )}
+            {(competitorVisits.get(control.id) ?? 0) > 0 && (
+              <span className="text-[10px] text-blue-500 font-medium" title={t('controls.visitors')}>
+                {competitorVisits.get(control.id)}
               </span>
             )}
 

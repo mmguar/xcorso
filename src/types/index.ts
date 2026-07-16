@@ -155,6 +155,7 @@ export interface RaceClass {
   id: string
   name: string
   courseId: string              // references Course.id
+  competitors?: number
 }
 
 // ─── Annotations ────────────────────────────────────────────────────────────
@@ -309,6 +310,8 @@ export interface Project {
   clueSheetSeparateColor?: string
   allControlsMulticolor?: boolean
   allControlsLinkId?: boolean
+  /** Tile the all-controls PDF page across multiple pages when it doesn't fit. */
+  allControlsTiling?: boolean
   locked?: boolean
 }
 

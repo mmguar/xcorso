@@ -7,16 +7,21 @@ export interface SymbolDims {
   startSide: number
   finishROuter: number
   finishRInner: number
+  /** 704 control number height (ISOM: Arial 4.0 mm, non-bold). */
+  labelH: number
   strokeW: number
   legW: number
 }
 
+// ISOM 2017-2 §3.7: 701 start side 6.0, 703 control ø5.0,
+// 706 finish ø4.0 + ø6.0 (CC), 704 number Arial 4.0 non-bold, lines 0.35.
 const ISOM_2017: SymbolDims = {
   baseScale: 15000,
   controlR: 2.5,
   startSide: 6.0,
-  finishROuter: 2.5,
-  finishRInner: 1.75,
+  finishROuter: 3.0,
+  finishRInner: 2.0,
+  labelH: 4.0,
   strokeW: 0.35,
   legW: 0.35,
 }
@@ -27,6 +32,7 @@ const ISSPRM_2019: SymbolDims = {
   startSide: 7.0,
   finishROuter: 3.5,
   finishRInner: 2.5,
+  labelH: 4.0,
   strokeW: 0.35,
   legW: 0.35,
 }
@@ -94,7 +100,12 @@ export interface AnnotationDims {
   hatchSpace: number
   hatchW: number
   boundaryW: number
+  /** 709 boundary-marking outline stroke + intermittent dash pattern. */
+  oobMarkW: number
+  oobMarkDash: number
+  oobMarkGap: number
   northArrowH: number
+  northStrokeW: number
 }
 
 export function getAnnotationDims(scaleFactor: number): AnnotationDims {
@@ -103,13 +114,17 @@ export function getAnnotationDims(scaleFactor: number): AnnotationDims {
     routeXArm:   1.5  * scaleFactor,
     routeXW:     0.35 * scaleFactor,
     routeXSpace: 5.0  * scaleFactor,
-    crossW:      0.2  * scaleFactor,
+    crossW:      0.35 * scaleFactor,
     crossHalf:   1.0  * scaleFactor,
     crossH:      1.5  * scaleFactor,
     crossGap:    0.6  * scaleFactor,
     hatchSpace:  1.2  * scaleFactor,
     hatchW:      0.2  * scaleFactor,
     boundaryW:   0.7  * scaleFactor,
+    oobMarkW:    0.25 * scaleFactor,
+    oobMarkDash: 3.0  * scaleFactor,
+    oobMarkGap:  0.5  * scaleFactor,
     northArrowH: 8.0  * scaleFactor,
+    northStrokeW: 0.15 * scaleFactor,
   }
 }

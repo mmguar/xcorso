@@ -497,10 +497,11 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       set(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
     },
 
-    setAllControlsFlags: (flags: { multicolor?: boolean; linkId?: boolean }) => {
+    setAllControlsFlags: (flags: { multicolor?: boolean; linkId?: boolean; tiling?: boolean }) => {
       h.mutateProjectSilent(p => {
         if (flags.multicolor !== undefined) p.allControlsMulticolor = flags.multicolor || undefined
         if (flags.linkId !== undefined) p.allControlsLinkId = flags.linkId || undefined
+        if (flags.tiling !== undefined) p.allControlsTiling = flags.tiling || undefined
       })
     },
   }

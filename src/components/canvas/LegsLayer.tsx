@@ -53,17 +53,19 @@ function renderLegs(
   const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
   const elements: React.ReactNode[] = []
 
-  // ponytail: IOF 707 — 2mm dash, 0.5mm gap at map scale
-  const markedRouteDash = `${2*upm} ${0.5*upm}`
+  // ponytail: IOF 707 — 2mm dash, 0.5mm gap, scaled like every other symbol
+  // (must match the `2 * sf` dash in pdfExport.ts drawLeg)
+  const markedRouteDash = `${2 * upm * scaleFactor} ${0.5 * upm * scaleFactor}`
 
   // Pre-start taped route
   const firstCc = course.controls[0]
   if (firstCc.markedRoute && !handlesOnly) {
     const startCtrl = controlMap.get(firstCc.controlId)
-    if (startCtrl) {
+    const bends = firstCc.legBendPoints
+    // No early return here: a marked route without bend points must not
+    // swallow the rest of the course's legs.
+    if (startCtrl && bends?.length) {
       const startR = clipRadius(startCtrl, mapScale, upm, appearance.controlScale, spec)
-      const bends = firstCc.legBendPoints
-      if (!bends?.length) return elements
       const pts: MapPoint[] = [...bends, startCtrl.position]
       const clipped = clipPolylineEnd(pts, startR)
       if (clipped.length >= 2) {
@@ -119,7 +121,7 @@ function renderLegs(
     if (startCtrl) {
       const pts: MapPoint[] = [...firstCc.legBendPoints, startCtrl.position]
       const pos = interpolatePolyline(flattenSmooth(pts), firstCc.mapIssueT)
-      const barHalf = 1.25 * upm
+      const barHalf = 1.25 * upm * scaleFactor // matches 1.25 * sf in pdfExport.ts
       const barSw = 0.6 * upm * scaleFactor * appearance.lineWidth
       const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
       if (!handlesOnly) {

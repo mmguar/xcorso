@@ -55,6 +55,8 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   const [shareRole, setShareRole] = useState<'editor' | 'viewer'>('editor')
   const [shareError, setShareError] = useState<string | null>(null)
   const shareRef = useRef<HTMLDivElement>(null)
+  const [confirmUnlock, setConfirmUnlock] = useState(false)
+  const confirmUnlockRef = useRef<HTMLDivElement>(null)
 
   // Project switcher dropdown
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -92,6 +94,15 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
     document.addEventListener('pointerdown', handleClick)
     return () => document.removeEventListener('pointerdown', handleClick)
   }, [historyOpen, fetchVersionHistory])
+
+  useEffect(() => {
+    if (!confirmUnlock) return
+    function handleClick(e: MouseEvent) {
+      if (confirmUnlockRef.current && !confirmUnlockRef.current.contains(e.target as Node)) setConfirmUnlock(false)
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [confirmUnlock])
 
   useEffect(() => {
     if (!shareOpen) return
@@ -258,13 +269,35 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
         <span className="text-[10px] font-medium text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 shrink-0">{t('header.shared')}</span>
       )}
       {projectRole !== 'viewer' && (
-        <button
-          onClick={toggleLocked}
-          className={`p-1 rounded transition-colors shrink-0 ${locked ? 'text-red-500 hover:text-red-700' : 'text-gray-300 hover:text-gray-500'}`}
-          title={locked ? t('header.unlock') : t('header.lock')}
-        >
-          {locked ? <Lock size={14} /> : <LockOpen size={14} />}
-        </button>
+        <div className="relative" ref={confirmUnlockRef}>
+          <button
+            onClick={() => locked ? setConfirmUnlock(o => !o) : toggleLocked()}
+            className={`p-1 rounded transition-colors shrink-0 ${locked ? 'text-red-500 hover:text-red-700' : 'text-gray-300 hover:text-gray-500'}`}
+            title={locked ? t('header.unlock') : t('header.lock')}
+          >
+            {locked ? <Lock size={14} /> : <LockOpen size={14} />}
+          </button>
+          {confirmUnlock && (
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 flex flex-col gap-2">
+              <p className="text-xs font-medium text-gray-800">{t('header.confirmUnlock')}</p>
+              <p className="text-[11px] text-gray-500">{t('header.confirmUnlockDesc')}</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setConfirmUnlock(false); toggleLocked() }}
+                  className="flex-1 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-2 py-1.5 transition-colors"
+                >
+                  {t('header.confirm')}
+                </button>
+                <button
+                  onClick={() => setConfirmUnlock(false)}
+                  className="flex-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {t('header.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Right side */}

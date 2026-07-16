@@ -105,17 +105,19 @@ function OutOfBoundsArea({ points, upm, scale, color, patternId, spec, boundaryM
   const d = dims(upm, scale, spec)
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
   const sp = d.hatchSpace
-  const boundarySw = 0.25 * upm
-  const dashArray = boundaryMarking === 'intermittent' ? `${3 * upm} ${0.5 * upm}` : undefined
+  const boundarySw = d.oobMarkW
+  const dashArray = boundaryMarking === 'intermittent' ? `${d.oobMarkDash} ${d.oobMarkGap}` : undefined
 
   return (
     <g>
       <defs>
-        <pattern id={patternId} width={sp/0.707} height={sp/0.707} // 0.707 is sqrt(2)/2 to account for 45° rotation
+        {/* Rotation is rigid, so the tile period IS the perpendicular line spacing —
+            must stay hatchSpace to match the PDF hatch in pdfExport.ts. */}
+        <pattern id={patternId} width={sp} height={sp}
           patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1={0} y1={0} x2={0} y2={sp/0.707}
+          <line x1={0} y1={0} x2={0} y2={sp}
             stroke={color} strokeWidth={d.hatchW/0.707} />
-          <line x1={0} y1={0} x2={sp/0.707} y2={0}
+          <line x1={0} y1={0} x2={sp} y2={0}
             stroke={color} strokeWidth={d.hatchW/0.707} />
         </pattern>
       </defs>
@@ -162,10 +164,11 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
   const fontSize = h * 0.45
   const strokeW = 0.2 * upm
   const strokeColor = darkenHex(color)
+  const outlineW = dims(upm, scale, spec).northStrokeW
 
   return (
     <g transform={`rotate(${rotation}, ${center.x}, ${center.y})`}>
-      <polygon points={points} fill={color} stroke={strokeColor} strokeWidth={upm * 0.15} strokeLinejoin="round" />
+      <polygon points={points} fill={color} stroke={strokeColor} strokeWidth={outlineW} strokeLinejoin="round" />
       <text
         x={center.x} y={center.y + h * 0.12}
         textAnchor="middle" dominantBaseline="central"

@@ -11,17 +11,20 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
   const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
 
+  // The bar always renders at the effective print scale (layout override, else
+  // general layout default, else map scale) — same rule as the PDF export, so
+  // there is no per-bar scale setting anymore (sb.scale is legacy data).
+  const effectiveScale = useStore(s => s.project!.layoutDefaults?.printScale ?? s.project!.map.scale)
+
   const [segments, setSegments] = useState(String(sb.segments))
-  const [scale, setScale] = useState(String(sb.scale))
   const [segLen, setSegLen] = useState(String(sb.segmentLengthM))
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- sync prop→state */
     setSegments(String(sb.segments))
-    setScale(String(sb.scale))
     setSegLen(String(sb.segmentLengthM))
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [sb.id, sb.segments, sb.scale, sb.segmentLengthM])
+  }, [sb.id, sb.segments, sb.segmentLengthM])
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -44,23 +47,10 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-xs text-gray-600">
+      <div className="flex items-center gap-2 text-xs text-gray-600">
         <span className="w-16 shrink-0">{t('overlay.scaleLabel')}</span>
-        <input
-          type="number"
-          min={100}
-          max={100000}
-          value={parseInt(scale)}
-          onChange={e => setScale(e.target.value)}
-          onBlur={() => {
-            const n = parseInt(scale)
-            if (!isNaN(n) && n >= 100 && n <= 100000) updateScaleBar(sb.id, { scale: n })
-            else setScale(String(sb.scale))
-          }}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-          className="flex-1 min-w-0 text-xs border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-        />
-      </label>
+        <span className="text-gray-400 tabular-nums">1:{effectiveScale.toLocaleString()}</span>
+      </div>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <span className="w-16 shrink-0">{t('overlay.segments')}</span>
@@ -89,7 +79,7 @@ function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
           className="accent-orange-600"
         />
         <span className="text-[10px] text-gray-400">
-          {sb.fixedCmSegments ? t('overlay.segmentEach', { meters: Math.round(sb.scale / 100) }) : ''}
+          {sb.fixedCmSegments ? t('overlay.segmentEach', { meters: Math.round(effectiveScale / 100) }) : ''}
         </span>
       </label>
 
