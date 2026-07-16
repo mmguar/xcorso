@@ -376,7 +376,7 @@ function cleanupSvgIframe() {
 
 // Pad control-centre bounds by the largest symbol's circumradius plus a code-label
 // allowance, scaled like the symbols themselves (baseScale/printScale).
-const LABEL_PAD_MM = 4
+const LABEL_PAD_MM = 2
 function boundsPad(spec: EventSpec, printScale: number): number {
   const dims = getSymbolDims(spec)
   return (controlSymbolRadiusMm('start', dims) + LABEL_PAD_MM) * specScaleFactor(spec, printScale)

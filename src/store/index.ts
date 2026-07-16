@@ -210,6 +210,10 @@ export const useStore = create<Store>((set, get) => {
       if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
       setActiveId(id).catch(() => {})
       acquireTabLock(id)
+      if (get().cloudUser && mapConfig.type === 'ocad') {
+        debouncedSave(id, project, mapData)
+        setTimeout(() => get().syncProject(), 500)
+      }
     },
 
     loadProject: (project, mapData, id, role) => {
@@ -346,14 +350,13 @@ export const useStore = create<Store>((set, get) => {
       set(state => {
         const tool = state.editor.activeTool
         const courseOnlyTool = tool === 'gap' || tool === 'bend'
-        // Measure mode is bound to one course (enterMeasureMode keeps them in
-        // sync); switching course must exit it or the measure overlay and
-        // hit-testing stay on the old course while the canvas shows the new one.
         const leavingMeasure = state.editor.measureMode && id !== state.editor.measureCourseId
+        const inLayout = state.editor.layoutMode
         return {
           editor: {
             ...state.editor,
             ...(leavingMeasure ? { measureMode: false, measureCourseId: null, measureHiddenLegs: [] } : {}),
+            ...(!id && inLayout ? { layoutCourseId: null, layoutSubmapIndex: 0, layoutDragPreview: null } : {}),
             selectedCourseId: id,
             courseViewMode: id ? 'single' : 'all-controls',
             selectedVariationId: null,
@@ -829,7 +832,7 @@ useStore.subscribe((state, prev) => {
     const isProjectSwitch = !prev.project || state.projectId !== prev.projectId
     if (state.cloudUser && !isProjectSwitch && state.project.map.type === 'ocad') {
       if (syncTimer) clearTimeout(syncTimer)
-      syncTimer = setTimeout(() => { syncTimer = null; state.syncProject() }, 300_000)
+      syncTimer = setTimeout(() => { syncTimer = null; state.syncProject() }, 120_000)
     }
   }
 })
