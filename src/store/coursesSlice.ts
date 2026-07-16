@@ -375,6 +375,14 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
       }, 'Change class course')
     },
 
+    updateClassCompetitors: (id: string, count: number | undefined) => {
+      h.mutateProject(p => {
+        const c = p.classes.find(c => c.id === id)
+        if (!c) return false
+        c.competitors = count
+      }, 'Update class competitors')
+    },
+
     toggleCourseLoop: (courseId: string, forkControlId: string) => {
       h.mutateProject(p => {
         const course = p.courses.find(c => c.id === courseId)

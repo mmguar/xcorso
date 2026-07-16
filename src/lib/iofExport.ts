@@ -185,22 +185,26 @@ export function exportIofXml(project: Project): string {
     if (course.relayLegs && course.variations && course.variations.length > 0) {
       for (const v of course.variations) {
         if (v.relayLeg == null) continue
-        classAssignments.push([
+        const lines = [
           '    <ClassCourseAssignment>',
           `      <ClassName>${xmlEscape(rc.name)}</ClassName>`,
           `      <CourseName>${xmlEscape(`${course.name} - ${v.name}`)}</CourseName>`,
           `      <CourseFamily>${xmlEscape(course.name)}</CourseFamily>`,
           `      <AllowedOnLeg>${v.relayLeg}</AllowedOnLeg>`,
-          '    </ClassCourseAssignment>',
-        ].join('\n'))
+        ]
+        if (rc.competitors != null) lines.push(`      <NumberOfCompetitors>${rc.competitors}</NumberOfCompetitors>`)
+        lines.push('    </ClassCourseAssignment>')
+        classAssignments.push(lines.join('\n'))
       }
     } else {
-      classAssignments.push([
+      const lines = [
         '    <ClassCourseAssignment>',
         `      <ClassName>${xmlEscape(rc.name)}</ClassName>`,
         `      <CourseName>${xmlEscape(course.name)}</CourseName>`,
-        '    </ClassCourseAssignment>',
-      ].join('\n'))
+      ]
+      if (rc.competitors != null) lines.push(`      <NumberOfCompetitors>${rc.competitors}</NumberOfCompetitors>`)
+      lines.push('    </ClassCourseAssignment>')
+      classAssignments.push(lines.join('\n'))
     }
   }
   const classAssignmentsXml = classAssignments.join('\n')

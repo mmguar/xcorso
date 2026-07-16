@@ -201,7 +201,7 @@ export function ValidationDialog({ onClose, onExportIof, onSaveProject, onReplac
                   </button>
 
                   {has && (
-                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={isIgnored}

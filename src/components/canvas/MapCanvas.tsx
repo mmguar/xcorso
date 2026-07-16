@@ -21,7 +21,7 @@ import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView, IOF_PURPLE } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec, Course } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { PAGE_SIZES, mmToMap } from '../../lib/pdfExport'
+import { PAGE_SIZES, mmToMap, clueSheetHiddenRestartView } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap, pxToMap,
@@ -31,13 +31,48 @@ import {
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
 } from './hitTesting'
 
+/** Effective print scale for overlay sizing: the active layout submap's scale
+ * in layout mode, else the project-wide layout default. Undefined → map scale.
+ * Must match the printScaleOverride passed to OverlaysLayer. */
+function overlayPrintScaleOf(st: ReturnType<typeof useStore.getState>): number | undefined {
+  const proj = st.project!
+  if (st.editor.layoutMode && st.editor.layoutCourseId) {
+    const lc = proj.courses.find(c => c.id === st.editor.layoutCourseId)
+    if (lc?.layout) return (submapLayoutView(lc.layout, st.editor.layoutSubmapIndex) ?? lc.layout).printScale
+  }
+  return proj.layoutDefaults?.printScale
+}
+
+/** Map units per mm for overlay geometry, adjusted like OverlaysLayer so hit
+ * boxes and handles line up with what is rendered. */
+function overlayUpmOf(st: ReturnType<typeof useStore.getState>): number {
+  const proj = st.project!
+  const upm = unitsPerMm(proj.map)
+  const ps = overlayPrintScaleOf(st)
+  return ps ? upm * ps / proj.map.scale : upm
+}
+
 /** Whether this submap's clue sheet gets a trailing map-flip row — must match
  * the export's logic (pdfExport) so on-map preview boxes size identically. */
 function layoutTrailingFlip(course: Course, submapIndex: number): boolean {
   const submaps = computeSubmaps(course)
   if (submaps.length <= 1 || submapIndex >= submaps.length - 1) return false
   const controls = submaps[submapIndex]?.controls
-  return controls?.[controls.length - 1]?.exchangeMode === 'flip'
+  const mode = controls?.[controls.length - 1]?.exchangeMode
+  return mode === 'flip' || mode === 'exchange'
+}
+
+/** Clue-sheet course + breaks exactly as the export prints them: the submap's
+ * control slice, minus the restart row (with shifted breaks) when
+ * project.clueSheetHideSubmapRestart is set. */
+function clueSheetPreviewView(course: Course, submapIndex: number, hideRestart: boolean, breaks: number[] | undefined): { course: Course; breaks: number[] | undefined } {
+  const submaps = computeSubmaps(course)
+  const isSub = submaps.length > 1 && submaps[submapIndex] != null
+  let controls = isSub ? submaps[submapIndex].controls : course.controls
+  if (isSub && submapIndex > 0 && hideRestart) {
+    ;({ controls, breaks } = clueSheetHiddenRestartView(controls, breaks))
+  }
+  return { course: controls === course.controls ? course : { ...course, controls }, breaks }
 }
 import type { MeasurePointHit } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
@@ -205,8 +240,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
         const offset = cc?.labelOffset ?? c.labelOffset ?? defaultLabelOffset(c.type, upm, controlScale, spec, map.scale)
         const lx = c.position.x + offset.x
         const ly = c.position.y + offset.y
-        const cr = dims.controlR * upm * controlScale * sf
-        const fontSize = cr * 1.1
+        const fontSize = dims.labelH * upm * controlScale * sf
         let labelText: string
         if (seqMap && c.type === 'control') {
           const seqs = seqMap.get(c.id)
@@ -320,6 +354,8 @@ export function MapCanvas({ loadedMap }: Props) {
   const measureHiddenLegs = useStore(s => s.editor.measureHiddenLegs)
   const measuredLegs = useStore(s => s.project!.measuredLegs)
   const clueSheetFontSize = useStore(s => s.project!.clueSheetFontSize)
+const clueSheetHideSubmapRestart = useStore(s => s.project!.clueSheetHideSubmapRestart ?? false)
+const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printScale)
   const layoutMode = useStore(s => s.editor.layoutMode)
   const layoutCourseId = useStore(s => s.editor.layoutCourseId)
   const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
@@ -797,18 +833,19 @@ export function MapCanvas({ loadedMap }: Props) {
           }
 
           // Hit test layout elements (clue sheet, title) — before border translate so elements on top of border margin are draggable
-          const breaks = layout.clueSheetBreaks
+          const sheetView = clueSheetPreviewView(course, smIdx, !!proj.clueSheetHideSubmapRestart, layout.clueSheetBreaks)
+          const breaks = sheetView.breaks
           const trailingFlip = layoutTrailingFlip(course, smIdx)
           const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
           if (breaks && breaks.length > 0) {
-            const sizes = descriptionSheetPartSizes(submapCourse, proj.controls, breaks, trailingFlip, proj.clueSheetFontSize)
+            const sizes = descriptionSheetPartSizes(sheetView.course, proj.controls, breaks, trailingFlip, proj.clueSheetFontSize)
             const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
             for (let i = 0; i < sizes.length; i++) {
               const el = positions[i] ?? layout.clueSheet
               elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
             }
           } else {
-            const sheet = descriptionSheetSize(submapCourse, proj.controls, trailingFlip, proj.clueSheetFontSize)
+            const sheet = descriptionSheetSize(sheetView.course, proj.controls, trailingFlip, proj.clueSheetFontSize)
             elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
           }
           for (const { key, el, wMm, hMm } of elements) {
@@ -828,7 +865,7 @@ export function MapCanvas({ loadedMap }: Props) {
 
           // Hit test overlays (scale bars, text labels) — before border translate
           {
-            const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions)
+            const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, layout.overlayPositions, layout.printScale)
             if (overlayHit) {
               let oPos: { x: number; y: number } | undefined
               const overridePos = layout.overlayPositions?.[overlayHit.id]
@@ -1009,7 +1046,7 @@ export function MapCanvas({ loadedMap }: Props) {
             ? proj.imageOverlays.find(o => o.id === state.editor.selectedOverlayId)
             : null
           if (selectedImg) {
-            const upmVal = unitsPerMm(proj.map)
+            const upmVal = overlayUpmOf(state)
             const handleMapX = selectedImg.position.x + selectedImg.widthMm * upmVal
             const handleMapY = selectedImg.position.y + selectedImg.heightMm * upmVal
             const handleSx = handleMapX * vpRef.current.scale + vpRef.current.x
@@ -1063,7 +1100,7 @@ export function MapCanvas({ loadedMap }: Props) {
             state.setSelectedAnnotation(null)
           }
 
-          const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
+          const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, undefined, overlayPrintScaleOf(state))
           if (overlayHit) {
             const mapPt = screenToMap(sx, sy, vpRef.current)
             let oPos: { x: number; y: number } | undefined
@@ -1478,7 +1515,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const diagLen = Math.hypot(wOrig, hOrig)
         const proj = (relX * wOrig + relY * hOrig) / diagLen
         const st = useStore.getState()
-        const upmVal = unitsPerMm(st.project!.map)
+        const upmVal = overlayUpmOf(st)
         const minMap = 5 * upmVal
         const minProj = Math.hypot(minMap, minMap * (hOrig / wOrig))
         const clampedProj = Math.max(minProj, proj)
@@ -1730,7 +1767,7 @@ export function MapCanvas({ loadedMap }: Props) {
         if (hitControl) {
           state.deleteControl(hitControl.id)
         } else {
-          const hitOverlay = findOverlayAt(sx, sy, vpRef.current, proj)
+          const hitOverlay = findOverlayAt(sx, sy, vpRef.current, proj, undefined, overlayPrintScaleOf(state))
           if (hitOverlay) {
             if (hitOverlay.kind === 'scalebar') state.deleteScaleBar(hitOverlay.id)
             else if (hitOverlay.kind === 'text') state.deleteTextLabel(hitOverlay.id)
@@ -1755,7 +1792,7 @@ export function MapCanvas({ loadedMap }: Props) {
       }
 
       if (!selectedCourseId && activeTool === 'select') {
-        const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj)
+        const overlayHit = findOverlayAt(sx, sy, vpRef.current, proj, undefined, overlayPrintScaleOf(state))
         if (overlayHit) {
           state.setSelectedOverlay(overlayHit.id)
           state.setSelectedControl(null)
@@ -2272,6 +2309,7 @@ export function MapCanvas({ loadedMap }: Props) {
         const submapCourse = submaps.length > 1 && submaps[layoutSubmapIndex]
           ? { ...layoutCourse, controls: submaps[layoutSubmapIndex].controls }
           : layoutCourse
+        const sheetView = clueSheetPreviewView(layoutCourse, layoutSubmapIndex, clueSheetHideSubmapRestart, submapLayout.clueSheetBreaks)
         pageOverlayVpRef.current = vp
         return (
           <div ref={pageOverlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', transformOrigin: '0 0', willChange: 'transform' }}>
@@ -2285,6 +2323,9 @@ export function MapCanvas({ loadedMap }: Props) {
               controls={controls}
               cellSize={clueSheetFontSize}
               trailingFlip={layoutTrailingFlip(layoutCourse, layoutSubmapIndex)}
+              clueSheetCourse={sheetView.course}
+              clueSheetBreaks={sheetView.breaks}
+              projectSpec={projectSpec}
             />
           </div>
         )
@@ -2309,7 +2350,7 @@ export function MapCanvas({ loadedMap }: Props) {
                 map={map}
                 selectedOverlayId={selectedOverlayId}
                 positionOverrides={layoutView?.overlayPositions}
-                printScaleOverride={layoutView?.printScale}
+                printScaleOverride={layoutView?.printScale ?? layoutDefaultPrintScale}
               />
             )
           })()}
@@ -2402,9 +2443,12 @@ export function MapCanvas({ loadedMap }: Props) {
             if (selectedOverlayId) {
               const selImg = imageOverlays.find(o => o.id === selectedOverlayId)
               if (selImg) {
-                const w = selImg.widthMm * upm
-                const h = selImg.heightMm * upm
-                const handleSize = 3 * upm
+                // Same print-scale adjustment as OverlaysLayer so the handle
+                // sits on the rendered image corner.
+                const imgUpm = overlayUpmOf(useStore.getState())
+                const w = selImg.widthMm * imgUpm
+                const h = selImg.heightMm * imgUpm
+                const handleSize = 3 * imgUpm
                 elements.push(
                   <rect key="img-resize"
                     x={selImg.position.x + w - handleSize / 2}

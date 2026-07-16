@@ -137,7 +137,8 @@ function importIofXmlV3(doc: Document, map: MapConfig): IofImportResult {
     if (!className || !courseName) continue
     const course = courses.find(c => c.name === courseName)
     if (!course) continue
-    classes.push({ id: crypto.randomUUID(), name: className, courseId: course.id })
+    const noc = childText(el, 'NumberOfCompetitors')
+    classes.push({ id: crypto.randomUUID(), name: className, courseId: course.id, ...(noc ? { competitors: parseInt(noc) } : {}) })
   }
 
   return { controls, courses, classes }

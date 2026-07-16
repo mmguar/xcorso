@@ -4,7 +4,7 @@ import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps, IOF_PURPLE } from '../../lib/courseUtils'
 import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
-import { startTriangleVertices, exchangeTriangleVertices, startTriangleAngle } from '../../lib/symbolGeometry'
+import { startTriangleVertices, exchangeTriangleVertices, startTriangleAngle, exchangeTriangleAngle } from '../../lib/symbolGeometry'
 import type { SymbolDims } from '../../lib/symbolSpec'
 import { circleGapDashArray } from '../../lib/gapDash'
 import { assignControlColors, MULTICOLOR_PALETTE } from '../../lib/pdfExport'
@@ -49,13 +49,14 @@ function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
   }
 }
 
-function ControlLabel({ x, y, cr, color, label, appearance, upm }: {
-  x: number; y: number; cr: number; color: string; label: string; appearance: AppearanceSettings; upm: number
+// ISOM 704: control number in Arial 4.0 mm (dims.labelH), non-bold.
+function ControlLabel({ x, y, fontSize, color, label, appearance, upm }: {
+  x: number; y: number; fontSize: number; color: string; label: string; appearance: AppearanceSettings; upm: number
 }) {
   if (!label) return null
   return (
     <text x={x} y={y}
-      fontSize={cr * 1.1} fill={color} fontWeight="bold" fontFamily="sans-serif"
+      fontSize={fontSize} fill={color} fontFamily="Arial, sans-serif"
       textAnchor="start" dominantBaseline="auto"
       {...labelOutlineSvgProps(appearance, upm)}>
       {label}
@@ -65,7 +66,7 @@ function ControlLabel({ x, y, cr, color, label, appearance, upm }: {
 
 function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair, rotation = 0 }: ShapeProps) {
   const scale = appearance.controlScale * scaleFactor
-  const cr = dims.controlR * upm * scale
+  const labelFs = dims.labelH * upm * scale
   const { x, y } = control.position
   const side = dims.startSide * upm * scale
   const h = side * Math.sqrt(3) / 2
@@ -90,7 +91,7 @@ function StartTriangle({ control, color, label, upm, appearance, labelOffset, di
       <polygon points={points} fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
+      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -99,6 +100,7 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
   const scale = appearance.controlScale
   const cr = dims.finishROuter * upm * scaleFactor * scale
   const innerR = dims.finishRInner * upm * scaleFactor * scale
+  const labelFs = dims.labelH * upm * scaleFactor * scale
   const { x, y } = control.position
   const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
   const outerCirc = 2 * Math.PI * cr
@@ -128,13 +130,14 @@ function FinishCircles({ control, color, label, upm, appearance, labelOffset, di
       <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
         {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
       />
-      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
+      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
 
 function ControlCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
   const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
+  const labelFs = dims.labelH * upm * scaleFactor * appearance.controlScale
   const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
   const { x, y } = control.position
   const circumference = 2 * Math.PI * cr
@@ -158,13 +161,15 @@ function ControlCircle({ control, color, label, upm, appearance, labelOffset, di
         fill="none" stroke={color} strokeWidth={sw}
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
-      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
+      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
 
-function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
-  const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
+function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair, rotation = 0 }: ShapeProps) {
+  // ISOM 715: circle ø 6.0 (= finish outer), apex toward the following control.
+  const cr = dims.finishROuter * upm * scaleFactor * appearance.controlScale
+  const labelFs = dims.labelH * upm * scaleFactor * appearance.controlScale
   const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
   const { x, y } = control.position
   const circumference = 2 * Math.PI * cr
@@ -173,8 +178,7 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
   const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
   const lx = x + off.x
   const ly = y + off.y
-  // Inscribed equilateral triangle pointing down — vertices at 90°, 210°, 330°
-  const triPoints = exchangeTriangleVertices({ x, y }, cr).map(p => `${p.x},${p.y}`).join(' ')
+  const triPoints = exchangeTriangleVertices({ x, y }, cr, rotation).map(p => `${p.x},${p.y}`).join(' ')
   return (
     <g>
       {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
@@ -190,7 +194,7 @@ function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, d
         {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
       />
       <polygon points={triPoints} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-      <ControlLabel x={lx} y={ly} cr={cr} color={color} label={label} appearance={appearance} upm={upm} />
+      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
     </g>
   )
 }
@@ -268,16 +272,24 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     return assignControlColors(controls)
   }, [selectedCourse, multicolor, controls])
 
-  const startAngles = useMemo(() => {
+  // Start triangles and exchange triangles (ISOM 715) both point toward the
+  // following control. First occurrence wins, matching the PDF export.
+  const symbolAngles = useMemo(() => {
     if (!selectedCourse || selectedCourse.controls.length < 2) return null
     const m = new Map<string, number>()
     const ccs = selectedCourse.controls
     const ctrlMap = new Map(controls.map(c => [c.id, c]))
     for (let i = 0; i < ccs.length - 1; i++) {
       const ctrl = ctrlMap.get(ccs[i].controlId)
-      if (ctrl?.type !== 'start') continue
+      if (!ctrl || m.has(ctrl.id)) continue
+      const isStart = ctrl.type === 'start'
+      if (!isStart && !ccs[i].exchangeMode) continue
       const next = ctrlMap.get(ccs[i + 1].controlId)
-      if (next) m.set(ctrl.id, startTriangleAngle(ctrl.position, next.position))
+      if (next) {
+        m.set(ctrl.id, isStart
+          ? startTriangleAngle(ctrl.position, next.position)
+          : exchangeTriangleAngle(ctrl.position, next.position))
+      }
     }
     return m
   }, [selectedCourse, controls])
@@ -366,7 +378,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
               x2={control.position.x + off.x} y2={control.position.y + off.y}
               stroke={color}
               strokeWidth={dims.strokeW * upm * scaleFactor * 0.4}
-              opacity={0.7}
+              opacity={control.id === draggingLabelControlId ? 0.7 : 1}
             />
           )
         })() : null
@@ -374,7 +386,7 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         return (
           <g key={control.id} data-control-id={control.id} opacity={opacity}>
             {leaderLine}
-            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} rotation={startAngles?.get(control.id)} />
+            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} rotation={symbolAngles?.get(control.id)} />
           </g>
         )
       })}
