@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
+import { useT } from '../../i18n'
 import { useRenderTracker } from '../../lib/perf'
 import { MapCanvasLayer } from './MapCanvasLayer'
 import { MapLayer } from './MapLayer'
@@ -84,6 +85,38 @@ const MIN_SCALE = 0.05
 const MAX_SCALE = 50
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
+function MapScaleInput({ scale }: { scale: number }) {
+  const [value, setValue] = useState(String(scale))
+  const prevScale = useRef(scale)
+  if (scale !== prevScale.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
+    prevScale.current = scale // eslint-disable-line react-hooks/refs
+    setValue(String(scale))
+  }
+  function commit() {
+    const v = parseInt(value)
+    if (v > 0 && isFinite(v) && v !== scale) {
+      useStore.getState().setMapScale(v, 'manual')
+    } else {
+      setValue(String(scale))
+    }
+  }
+  return (
+    <>
+      <div className="w-px h-4 bg-gray-300" />
+      <span className="text-[10px] text-gray-400 select-none">1:</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        className="w-14 px-1 py-0.5 text-[11px] border border-gray-200 rounded focus:border-orange-400 focus:outline-none bg-white tabular-nums"
+      />
+    </>
+  )
+}
+
 function LayoutScaleInput({ courseId, printScale }: { courseId: string; printScale: number }) {
   const [value, setValue] = useState(String(printScale))
   const prevScale = useRef(printScale)
@@ -116,7 +149,25 @@ function LayoutScaleInput({ courseId, printScale }: { courseId: string; printSca
   )
 }
 
+function MeasureBanner({ total }: { total: number }) {
+  const t = useT()
+  return (
+    <div className="absolute top-[var(--ui-top)] left-1/2 -translate-x-1/2 flex items-center gap-3 bg-teal-700/90 text-white text-sm px-3 py-1.5 rounded-full shadow z-10">
+      <span className="font-medium">{formatDistance(total)}</span>
+      <span className="text-teal-100 text-xs hidden sm:inline md:hidden">{t('measure.hintTouch')}</span>
+      <span className="text-teal-100 text-xs hidden md:inline">{t('measure.hintDesktop')}</span>
+      <button
+        onClick={() => useStore.getState().exitMeasureMode()}
+        className="bg-white/20 hover:bg-white/30 transition-colors rounded-full px-2.5 py-0.5 text-xs font-semibold"
+      >
+        {t('measure.done')}
+      </button>
+    </div>
+  )
+}
+
 function MeasureLegPanel({ course, controls }: { course: Course; controls: Control[] }) {
+  const t = useT()
   const hidden = useStore(s => s.editor.measureHiddenLegs)
   const toggleMeasureLeg = useStore(s => s.toggleMeasureLeg)
   const setMeasureHiddenLegs = useStore(s => s.setMeasureHiddenLegs)
@@ -153,12 +204,12 @@ function MeasureLegPanel({ course, controls }: { course: Course; controls: Contr
   return (
     <div data-ui-panel className="absolute top-[var(--ui-top)] right-2 w-40 max-h-[60vh] flex flex-col bg-white/90 backdrop-blur-sm rounded-lg shadow border border-gray-200 z-10 overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 border-b border-gray-100">
-        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Legs</span>
+        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{t('measure.legs')}</span>
         <button
           onClick={() => setMeasureHiddenLegs(allShown ? allKeys : [])}
           className="text-[10px] font-medium text-teal-700 hover:text-teal-900"
         >
-          {allShown ? 'Hide all' : 'Show all'}
+          {allShown ? t('measure.hideAll') : t('measure.showAll')}
         </button>
       </div>
       <div className="overflow-y-auto panel-scroll py-1">
@@ -1824,16 +1875,20 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         case 'crossing-point':
           state.addAnnotationPoint(mapPt)
           state.commitAnnotation('crossing_point')
+          state.setActiveTool('select')
           break
         case 'place-north-arrow':
           state.addAnnotationPoint(mapPt)
           state.commitAnnotation('north_arrow')
+          state.setActiveTool('select')
           break
         case 'place-scalebar':
           state.addScaleBar(mapPt, proj.map.scale)
+          state.setActiveTool('select')
           break
         case 'place-text':
           state.addTextLabel(mapPt)
+          state.setActiveTool('select')
           break
         case 'place-image': {
           const pi = state.editor.pendingImage
@@ -1913,10 +1968,13 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       const { activeTool, pendingAnnotationPoints } = useStore.getState().editor
       if (activeTool === 'forbidden-route' && pendingAnnotationPoints.length >= 2) {
         useStore.getState().commitAnnotation('forbidden_route')
+        useStore.getState().setActiveTool('select')
       } else if (activeTool === 'out-of-bounds' && pendingAnnotationPoints.length >= 3) {
         useStore.getState().commitAnnotation('out_of_bounds')
+        useStore.getState().setActiveTool('select')
       } else if (activeTool === 'out-of-bounds-boundary' && pendingAnnotationPoints.length >= 2) {
         useStore.getState().commitAnnotation('oob_boundary')
+        useStore.getState().setActiveTool('select')
       }
     }
 
@@ -2492,6 +2550,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               </button>
             </>
           )}
+          {map.scale > 0 && <MapScaleInput scale={map.scale} />}
           {layoutMode && layoutCourse?.layout && (
             <LayoutScaleInput courseId={layoutCourse.id} printScale={layoutCourse.layout.printScale} />
           )}
@@ -2505,18 +2564,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         </div>
       )}
 
-      {measureMode && (
-        <div className="absolute top-[var(--ui-top)] left-1/2 -translate-x-1/2 flex items-center gap-3 bg-teal-700/90 text-white text-sm px-3 py-1.5 rounded-full shadow z-10">
-          <span className="font-medium">{formatDistance(measureTotal)}</span>
-          <span className="text-teal-100 text-xs hidden sm:inline">Tap a leg to add a point · drag to shape · long-press to remove</span>
-          <button
-            onClick={() => useStore.getState().exitMeasureMode()}
-            className="bg-white/20 hover:bg-white/30 transition-colors rounded-full px-2.5 py-0.5 text-xs font-semibold"
-          >
-            Done
-          </button>
-        </div>
-      )}
+      {measureMode && <MeasureBanner total={measureTotal} />}
 
       {measureMode && measureCourse && (
         <MeasureLegPanel course={measureCourse} controls={controls} />

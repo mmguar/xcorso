@@ -631,5 +631,12 @@
   "validation.shortLegs": "Tratte corte",
   "validation.longLegs": "Tratte lunghe",
   "validation.parallelLegs": "Tratte parallele",
-  "validation.missingMapIssue": "Punto distribuzione carta mancante"
+  "validation.missingMapIssue": "Punto distribuzione carta mancante",
+
+  "measure.hintDesktop": "Clicca su una tratta per aggiungere un punto · trascina per modellare · tasto destro per rimuovere",
+  "measure.hintTouch": "Tocca una tratta per aggiungere un punto · trascina per modellare · tieni premuto per rimuovere",
+  "measure.done": "Fine",
+  "measure.legs": "Tratte",
+  "measure.hideAll": "Nascondi tutto",
+  "measure.showAll": "Mostra tutto"
 }
