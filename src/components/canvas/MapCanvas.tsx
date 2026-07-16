@@ -534,14 +534,17 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
   useEffect(() => {
     if (!layoutMode) return
     let timer: ReturnType<typeof setTimeout>
-    function onResize() {
+    function snap() {
       clearTimeout(timer)
       timer = setTimeout(() => {
         useStore.setState(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
       }, 200)
     }
-    window.addEventListener('resize', onResize)
-    return () => { window.removeEventListener('resize', onResize); clearTimeout(timer) }
+    window.addEventListener('resize', snap)
+    const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
+    const ro = mp ? new ResizeObserver(snap) : null
+    ro?.observe(mp!)
+    return () => { window.removeEventListener('resize', snap); clearTimeout(timer); ro?.disconnect() }
   }, [layoutMode])
 
   // ── Pan to a requested control (sidebar / clue sheet click) ──────────────
