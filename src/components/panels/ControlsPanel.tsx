@@ -6,6 +6,8 @@ import { defaultControlLabel } from '../../lib/courseUtils'
 import { AppearancePanel } from './AppearancePanel'
 import type { Control } from '../../types'
 
+const EMPTY_CODES: number[] = []
+
 function ControlCodeInput({ control }: { control: Control }) {
   const updateControlCode = useStore(s => s.updateControlCode)
   const [val, setVal] = useState(String(control.code))
@@ -91,7 +93,7 @@ export function ControlsPanel() {
   const controls = useStore(s => s.project!.controls)
   const courses = useStore(s => s.project!.courses)
   const classes = useStore(s => s.project!.classes)
-  const skipCodes = useStore(s => s.project!.skipCodes ?? [])
+  const skipCodes = useStore(s => s.project!.skipCodes) ?? EMPTY_CODES
   const locked = useStore(s => !!s.project?.locked)
   const selectedControlId = useStore(s => s.editor.selectedControlId)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
