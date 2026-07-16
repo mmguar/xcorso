@@ -6,6 +6,8 @@ import { defaultControlLabel } from '../../lib/courseUtils'
 import { AppearancePanel } from './AppearancePanel'
 import type { Control } from '../../types'
 
+const EMPTY_CODES: number[] = []
+
 function ControlCodeInput({ control }: { control: Control }) {
   const updateControlCode = useStore(s => s.updateControlCode)
   const [val, setVal] = useState(String(control.code))
@@ -27,7 +29,7 @@ function ControlCodeInput({ control }: { control: Control }) {
       onChange={e => setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      className="w-10 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+      className="w-10 text-sm font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
     />
   )
 }
@@ -50,7 +52,7 @@ function ControlLabelInput({ control }: { control: Control }) {
       onChange={e => setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      className="w-14 text-sm font-mono border rounded px-1 py-0.5 ml-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+      className="w-10 text-sm font-mono border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
     />
   )
 }
@@ -91,7 +93,7 @@ export function ControlsPanel() {
   const controls = useStore(s => s.project!.controls)
   const courses = useStore(s => s.project!.courses)
   const classes = useStore(s => s.project!.classes)
-  const skipCodes = useStore(s => s.project!.skipCodes ?? [])
+  const skipCodes = useStore(s => s.project!.skipCodes) ?? EMPTY_CODES
   const locked = useStore(s => !!s.project?.locked)
   const selectedControlId = useStore(s => s.editor.selectedControlId)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
@@ -289,75 +291,95 @@ export function ControlsPanel() {
           />
           {t('controls.points')}
         </label>}
-        {controls.map(control => (
-          <div
-            key={control.id}
-            onClick={() => {
-              const selecting = control.id !== selectedControlId
-              setSelectedControl(selecting ? control.id : null)
-              if (selecting) requestCenterOnControl(control.id)
-            }}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-              control.id === selectedControlId
-                ? 'bg-orange-100 border border-orange-300'
-                : 'hover:bg-gray-50 border border-transparent'
-            }`}
-          >
-            <MapPin size={14} className={
-              control.type === 'start' ? 'text-green-600' :
-              control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
-            } />
-
-            <span className="text-xs uppercase font-medium text-gray-500 w-16 shrink-0">
-              {control.type}
-            </span>
-
-            {locked ? (
-              <span className="text-sm font-mono font-semibold text-gray-700 ml-1">
-                {control.type === 'control' ? control.code : (control.label ?? defaultControlLabel(control))}
-              </span>
-            ) : control.type === 'control' ? (
-              <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
-            ) : (
-              <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />
-            )}
-
-            {(courseUsageCount.get(control.id) ?? 0) > 0 && (
-              <span className="text-xs text-gray-400 font-medium">
-                {courseUsageCount.get(control.id)}x
-              </span>
-            )}
-            {(competitorVisits.get(control.id) ?? 0) > 0 && (
-              <span className="text-[10px] text-blue-500 font-medium" title={t('controls.visitors')}>
-                {competitorVisits.get(control.id)}
-              </span>
-            )}
-
-            {showPoints && !locked && (
-              <input
-                type="number"
-                value={control.points ?? ''}
-                placeholder="pts"
-                onClick={e => e.stopPropagation()}
-                onChange={e => {
-                  const v = e.target.value === '' ? undefined : parseInt(e.target.value)
-                  updateControlPoints(control.id, v != null && !isNaN(v) ? v : undefined)
-                }}
-                className="w-14 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400"
-              />
-            )}
-            {locked && control.points != null && (
-              <span className="text-xs font-mono text-gray-400 ml-auto">{control.points}pts</span>
-            )}
-
-            {!locked && <button
-              onClick={e => { e.stopPropagation(); deleteControl(control.id) }}
-              className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
-            >
-              <Trash2 size={14} />
-            </button>}
-          </div>
-        ))}
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="text-gray-400 border-b border-gray-100">
+              <th className="py-1 px-1 text-left font-medium w-6">
+                <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+              </th>
+              <th className="py-1 px-1 text-left font-medium w-12">ID</th>
+              <th className="py-1 px-1 text-center font-medium text-sm w-5" title={t('controls.courseUsage')}>×</th>
+              {hasCompetitors && (
+                <th className="py-1 px-1 text-center font-medium w-5" title={t('controls.visitors')}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" className="inline-block"><circle cx="6" cy="3.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M2 11 a4 4 0 0 1 8 0" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+                </th>
+              )}
+              {showPoints && (
+                <th className="py-1 px-1 text-center font-medium w-12" title={t('controls.points')}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" className="inline-block"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><circle cx="6" cy="6" r="3" fill="none" stroke="currentColor" strokeWidth="1" /><circle cx="6" cy="6" r="1" fill="currentColor" /></svg>
+                </th>
+              )}
+              {!locked && <th className="py-1 px-1 w-6" />}
+            </tr>
+          </thead>
+          <tbody>
+            {controls.map(control => {
+              const typeLabel = control.type === 'start' ? 'START' : control.type === 'finish' ? 'FINISH' : 'CTRL'
+              const typeColor = control.type === 'start' ? 'text-green-600' : control.type === 'finish' ? 'text-red-600' : 'text-orange-600'
+              const usage = courseUsageCount.get(control.id) ?? 0
+              const visitors = competitorVisits.get(control.id) ?? 0
+              return (
+                <tr
+                  key={control.id}
+                  onClick={() => {
+                    const selecting = control.id !== selectedControlId
+                    setSelectedControl(selecting ? control.id : null)
+                    if (selecting) requestCenterOnControl(control.id)
+                  }}
+                  className={`cursor-pointer transition-colors ${
+                    control.id === selectedControlId
+                      ? 'bg-orange-100'
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <td className={`py-1.5 px-1 font-medium uppercase ${typeColor}`}>{typeLabel}</td>
+                  <td className="py-1.5 px-1 font-mono font-semibold text-gray-700">
+                    {locked ? (
+                      control.type === 'control' ? control.code : (control.label ?? defaultControlLabel(control))
+                    ) : control.type === 'control' ? (
+                      <ControlCodeInput key={`${control.id}-${control.code}`} control={control} />
+                    ) : (
+                      <ControlLabelInput key={`${control.id}-${control.label ?? ''}`} control={control} />
+                    )}
+                  </td>
+                  <td className="py-1.5 px-1 text-center text-gray-400">{usage > 0 ? usage : ''}</td>
+                  {hasCompetitors && (
+                    <td className="py-1.5 px-1 text-center text-blue-500 font-medium">{visitors > 0 ? visitors : ''}</td>
+                  )}
+                  {showPoints && (
+                    <td className="py-1.5 px-1 text-center">
+                      {!locked ? (
+                        <input
+                          type="number"
+                          value={control.points ?? ''}
+                          placeholder="—"
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => {
+                            const v = e.target.value === '' ? undefined : parseInt(e.target.value)
+                            updateControlPoints(control.id, v != null && !isNaN(v) ? v : undefined)
+                          }}
+                          className="w-10 text-xs font-mono border rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                      ) : control.points != null ? (
+                        <span className="font-mono text-gray-400">{control.points}</span>
+                      ) : null}
+                    </td>
+                  )}
+                  {!locked && (
+                    <td className="py-1.5 px-1 text-right">
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteControl(control.id) }}
+                        className="text-gray-300 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
       {appearanceButton}
     </div>
