@@ -474,15 +474,15 @@ function SortableDescRow({
               <button
                 onClick={() => onToggleExchange(cc.id)}
                 title={cc.exchangeMode ? t('controlDesc.removeExchange') : t('controlDesc.setExchange')}
-                className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity z-10 ${
+                className={`absolute -top-1 right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity z-10 ${
                   cc.exchangeMode
                     ? 'bg-orange-500 text-white opacity-100'
                     : 'bg-gray-300 hover:bg-orange-400 text-white opacity-60 group-hover:opacity-100'
                 }`}
               >
                 <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="7,3 17,12 7,21" />
-                  <polyline points="17,3 7,12 17,21" />
+                  <path d="M9,3 A9,9 0 1,1 9,21" />
+                  <polyline points="13,18 9,22 5,18" />
                 </svg>
               </button>
             )}
