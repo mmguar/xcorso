@@ -269,6 +269,10 @@ export interface ProjectMeta {
   name: string
   createdAt: string          // ISO 8601
   updatedAt: string
+  eventDate?: string
+  organizer?: string
+  club?: string
+  venue?: string
 }
 
 export interface Project {
