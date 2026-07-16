@@ -32,10 +32,13 @@ function findNextVisible(from: number): number {
   return STEPS.length // done
 }
 
+// ponytail: disabled, not removed — flip to false to re-enable
+const TOUR_DISABLED = true
+
 export function OnboardingTour() {
   const t = useT()
   const [step, setStep] = useState(() =>
-    localStorage.getItem(STORAGE_KEY) ? -1 : findNextVisible(0)
+    TOUR_DISABLED || localStorage.getItem(STORAGE_KEY) ? -1 : findNextVisible(0)
   )
   const [rect, setRect] = useState<DOMRect | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
