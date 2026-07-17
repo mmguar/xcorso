@@ -284,7 +284,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
         {courses.length > 0 && (
           <>
             <div className="w-px h-5 bg-gray-200 mx-0.5 shrink-0" />
-            <div className="flex items-center gap-1 py-0.5 overflow-x-auto min-w-0">
+            <div className="flex items-center gap-1 py-1 px-0.5 overflow-x-auto min-w-0">
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
