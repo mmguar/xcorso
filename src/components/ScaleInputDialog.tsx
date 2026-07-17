@@ -10,12 +10,15 @@ export function ScaleInputDialog({ onConfirm, onCancel }: Props) {
   const t = useT()
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  // ponytail: block backdrop dismiss on the same tick that opens the dialog (touch devices fire a click from the pointerup that triggered mount)
+  // ponytail: block backdrop dismiss shortly after mount — touch devices fire a
+  // synthetic click from the pointerup that triggered mount, and rAF alone isn't
+  // long enough to dodge it on fast mobile browsers.
   const ready = useRef(false)
 
   useEffect(() => {
     inputRef.current?.focus()
-    requestAnimationFrame(() => { ready.current = true })
+    const id = setTimeout(() => { ready.current = true }, 300)
+    return () => clearTimeout(id)
   }, [])
 
   function handleSubmit() {
