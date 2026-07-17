@@ -253,6 +253,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
+  const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const addCourse = useStore(s => s.addCourse)
   const locked = useStore(s => !!s.project?.locked)
 
@@ -291,6 +292,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
                     <button
                       onClick={() => {
                         if (isActive) { setSelectedCourse(null) }
+                        else if (tab === 'layout') { enterLayoutMode(course.id) }
                         else { setSelectedCourse(course.id); if (expanded) setTab('courses') }
                       }}
                       className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${
