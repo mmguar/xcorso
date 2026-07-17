@@ -22,7 +22,6 @@
   "about.missing": "Missing features",
   "about.miss.geo": "Geolocalized maps",
   "about.miss.disciplines": "Other orienteering disciplines (Ski-O, MTB-O, Trail-O)",
-  "about.miss.taped": "Taped routes and funnels",
   "about.miss.more": "Many more!",
   "about.feedback": "If you wish to suggest a feature or report a bug, you can do so by opening an issue on <gh>GitHub</gh> or emailing me. Don't forget that the project is open source, so you can also contribute directly! I would warmly welcome any development.",
   "about.contact": "I would love to hear from you no matter what — drop me a line at <email>mmg@xcorso.it</email>.",

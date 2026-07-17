@@ -37,7 +37,7 @@ export function AboutPage({ onBack }: Props) {
   ] as const
 
   const missingKeys = [
-    'about.miss.geo', 'about.miss.disciplines', 'about.miss.taped', 'about.miss.more',
+    'about.miss.geo', 'about.miss.disciplines', 'about.miss.more',
   ] as const
 
   return (
