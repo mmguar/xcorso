@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About — xcorso</title>
+    <meta name="description" content="xcorso is a free, open-source orienteering course planner for Mac, Windows and iPad. Learn about features, missing features, and how to contribute." />
+    <meta property="og:title" content="About — xcorso" />
+    <meta property="og:description" content="Free, open-source orienteering course planner. OCAD/PDF/image maps, IOF XML export, cloud sync, touch support." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://xcorso.it/about/" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, sans-serif; background: #f9fafb; color: #374151; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; padding: 2.5rem 1.5rem; gap: 2rem; }
+      .logo { width: 4rem; height: 4rem; background: #ea580c; border-radius: 1rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(234,88,12,.3); }
+      .logo svg { width: 2rem; height: 2rem; fill: none; stroke: white; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      h1 { font-size: 1.5rem; font-weight: 700; color: #111827; }
+      article { max-width: 40rem; width: 100%; background: white; border: 1px solid #e5e7eb; border-radius: 1rem; padding: 1.5rem 2rem; }
+      article > * + * { margin-top: 1.5rem; }
+      section > * + * { margin-top: .75rem; }
+      p { font-size: .9rem; line-height: 1.7; }
+      h2 { font-size: 1rem; font-weight: 600; color: #111827; }
+      ul { padding-left: 1.25rem; display: flex; flex-direction: column; gap: .35rem; font-size: .9rem; line-height: 1.6; }
+      .muted { color: #9ca3af; }
+      .divider { border-top: 1px solid #f3f4f6; padding-top: 1.5rem; }
+      a { color: #ea580c; }
+      a:hover { color: #c2410c; }
+      .back { font-size: .85rem; color: #9ca3af; text-decoration: none; transition: color .15s; }
+      .back:hover { color: #ea580c; }
+    </style>
+  </head>
+  <body>
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M3 7l6 -3 6 3 6 -3v13l-6 3-6-3-6 3z"/><path d="M9 4v13"/><path d="M15 7v13"/></svg>
+    </div>
+    <h1>xcorso</h1>
+
+    <article>
+      <section>
+        <p>xcorso is a tool for orienteering course planning. It aims to make course setting more approachable and enjoyable.</p>
+        <p>To achieve that, it is (or aims to be) intuitive, multi-platform, mobile-ready, free, and open source. Compared to other course planning tools, it is definitely not as feature-rich, but it should cover the most common orienteering events.</p>
+        <p>It can be used locally without sharing any data, or users can sign in to sync projects across devices.</p>
+      </section>
+
+      <section>
+        <h2>Features</h2>
+        <ul>
+          <li>Load maps from OCAD, PDF, and image files</li>
+          <li>Organize ISOM 2017-2 and ISSprOM 2019 events</li>
+          <li>Linear and Score-O courses</li>
+          <li>Place controls on the map</li>
+          <li>Design multiple courses with butterfly loops and map exchanges</li>
+          <li>Pick control descriptions and generate clue sheets</li>
+          <li>Add out-of-bounds areas, crossing points, and more</li>
+          <li>Add scale bars, custom text, and images</li>
+          <li>Layout the final print in a WYSIWYG editor</li>
+          <li>Overprint and IOF overprint support</li>
+          <li>Export PDF maps</li>
+          <li>Export courses to IOF XML for race-day use</li>
+          <li>Sync projects across devices</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Missing features</h2>
+        <ul class="muted">
+          <li>Geolocalized maps</li>
+          <li>Other orienteering disciplines (Ski-O, MTB-O, Trail-O)</li>
+          <li>Many more!</li>
+        </ul>
+      </section>
+
+      <section>
+        <p>If you wish to suggest a feature or report a bug, you can do so by opening an issue on <a href="https://github.com/mmguar/xcorso/issues" target="_blank" rel="noopener noreferrer">GitHub</a> or emailing me. Don't forget that the project is open source, so you can also contribute directly! I would warmly welcome any development.</p>
+        <p>I would love to hear from you no matter what — drop me a line at <a href="mailto:mmg@xcorso.it">mmg@xcorso.it</a>.</p>
+      </section>
+
+      <section class="divider">
+        <p>Finally, there is one library that made this entire project possible: <a href="https://github.com/perliedman/ocad2geojson" target="_blank" rel="noopener noreferrer">ocad2geojson</a>.</p>
+        <p>I have tried to respect your privacy as much as possible. If you do not want to use the sync feature, we only collect anonymized error data through Sentry. If you choose to login and sync, the only personal information we store is your email (but your courses will be uploaded). See the <a href="/terms.html">Terms of Service</a> for a more complete picture.</p>
+        <p>Find the source code for xcorso at <a href="https://github.com/mmguar/xcorso" target="_blank" rel="noopener noreferrer">github.com/mmguar/xcorso</a>. It is distributed under the AGPL 3.0 license.</p>
+      </section>
+
+      <div class="divider" style="font-size:.85rem">
+        <a href="/terms.html">Terms of Service</a>
+      </div>
+    </article>
+
+    <a href="/" class="back">&larr; Back to home</a>
+  </body>
+</html>

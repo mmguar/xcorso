@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#ea580c" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xcorso — orienteering course planner for Mac, Windows and iPad</title>
+    <meta name="description" content="Plan orienteering courses on OCAD, bitmap, or PDF maps. Place controls, build courses, export IOF XML and PDF. Free, open source, works on desktop and iPad." />
+    <meta property="og:title" content="xcorso — orienteering course planner for Mac, Windows and iPad" />
+    <meta property="og:description" content="Plan orienteering courses on OCAD, bitmap, or PDF maps. Place controls, build courses, export IOF XML and PDF." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://xcorso.it" />
+    <meta property="og:image" content="/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, sans-serif; background: #f9fafb; color: #1f2937; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; padding: 4rem 1.5rem; gap: 2.5rem; }
+      .logo { width: 4rem; height: 4rem; background: #ea580c; border-radius: 1rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(234,88,12,.3); }
+      .logo svg { width: 2rem; height: 2rem; fill: none; stroke: white; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      h1 { font-size: 1.5rem; font-weight: 700; }
+      .subtitle { color: #6b7280; text-align: center; max-width: 28rem; font-size: .9rem; line-height: 1.6; }
+      .features { max-width: 36rem; width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
+      .feature { background: white; border: 1px solid #e5e7eb; border-radius: 1rem; padding: 1.25rem; }
+      .feature h3 { font-size: .8rem; font-weight: 600; margin-bottom: .25rem; }
+      .feature p { font-size: .75rem; color: #6b7280; line-height: 1.5; }
+      .cta { display: inline-flex; align-items: center; gap: .5rem; background: #ea580c; color: white; font-weight: 600; font-size: .9rem; padding: .75rem 1.75rem; border-radius: .75rem; text-decoration: none; transition: background .15s; }
+      .cta:hover { background: #c2410c; }
+      .links { display: flex; gap: 1.5rem; font-size: .8rem; }
+      .links a { color: #6b7280; text-decoration: none; transition: color .15s; }
+      .links a:hover { color: #ea580c; }
+    </style>
+  </head>
+  <body>
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M3 7l6 -3 6 3 6 -3v13l-6 3-6-3-6 3z"/><path d="M9 4v13"/><path d="M15 7v13"/></svg>
+    </div>
+    <h1>xcorso</h1>
+    <p class="subtitle">
+      Orienteering course planner for Mac, Windows and iPad.
+      Load an OCAD, PDF, or image map and start placing controls — export IOF XML
+      and print-ready PDFs when you're done. Free and open source.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <h3>Any map format</h3>
+        <p>OCAD files, PDFs, and bitmap images. Accurate scale detection for OCAD; manual calibration for the rest.</p>
+      </div>
+      <div class="feature">
+        <h3>Full course design</h3>
+        <p>Linear and Score-O courses, butterfly loops, map exchanges, taped routes, funnels, and control descriptions.</p>
+      </div>
+      <div class="feature">
+        <h3>Print layout</h3>
+        <p>WYSIWYG page editor with overprint, scale bars, clue sheets, and multi-course output.</p>
+      </div>
+      <div class="feature">
+        <h3>IOF XML export</h3>
+        <p>IOF XML v3 for race-day use with SPORTident, Emit, or any IOF-compatible timing system.</p>
+      </div>
+      <div class="feature">
+        <h3>Touch-ready</h3>
+        <p>Full touch and Apple Pencil support. Design courses on an iPad in the field.</p>
+      </div>
+      <div class="feature">
+        <h3>Cloud sync</h3>
+        <p>Sign in to sync projects across devices. Or use it fully offline — no account required.</p>
+      </div>
+    </div>
+
+    <a href="/app" class="cta">Open the app</a>
+
+    <div class="links">
+      <a href="/about/">About</a>
+      <a href="https://github.com/mmguar/xcorso">GitHub</a>
+      <a href="/terms.html">Terms</a>
+    </div>
+  </body>
+</html>
