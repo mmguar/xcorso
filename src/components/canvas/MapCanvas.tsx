@@ -117,34 +117,14 @@ function MapScaleInput({ scale }: { scale: number }) {
   )
 }
 
-function LayoutScaleInput({ courseId, printScale }: { courseId: string; printScale: number }) {
-  const [value, setValue] = useState(String(printScale))
-  const prevScale = useRef(printScale)
-  if (printScale !== prevScale.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
-    prevScale.current = printScale // eslint-disable-line react-hooks/refs
-    setValue(String(printScale))
-  }
-  function commit() {
-    const v = parseInt(value)
-    if (v > 0 && isFinite(v) && v !== printScale) {
-      useStore.getState().updateCourseLayout(courseId, { printScale: v })
-    } else {
-      setValue(String(printScale))
-    }
-  }
+function LayoutScaleLabel({ printScale, mapScale }: { printScale: number; mapScale: number }) {
+  const mismatch = printScale !== mapScale
   return (
     <>
       <div className="w-px h-4 bg-gray-300" />
-      <span className="text-[10px] text-gray-400 select-none">1:</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="w-14 px-1 py-0.5 text-[11px] border border-gray-200 rounded focus:border-orange-400 focus:outline-none bg-white tabular-nums"
-      />
+      <span className={`text-[11px] select-none tabular-nums ${mismatch ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
+        1:{printScale}
+      </span>
     </>
   )
 }
@@ -534,14 +514,17 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
   useEffect(() => {
     if (!layoutMode) return
     let timer: ReturnType<typeof setTimeout>
-    function onResize() {
+    function snap() {
       clearTimeout(timer)
       timer = setTimeout(() => {
         useStore.setState(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
       }, 200)
     }
-    window.addEventListener('resize', onResize)
-    return () => { window.removeEventListener('resize', onResize); clearTimeout(timer) }
+    window.addEventListener('resize', snap)
+    const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
+    const ro = mp ? new ResizeObserver(snap) : null
+    ro?.observe(mp!)
+    return () => { window.removeEventListener('resize', snap); clearTimeout(timer); ro?.disconnect() }
   }, [layoutMode])
 
   // ── Pan to a requested control (sidebar / clue sheet click) ──────────────
@@ -2550,10 +2533,10 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               </button>
             </>
           )}
-          {map.scale > 0 && <MapScaleInput scale={map.scale} />}
-          {layoutMode && layoutCourse?.layout && (
-            <LayoutScaleInput courseId={layoutCourse.id} printScale={layoutCourse.layout.printScale} />
-          )}
+          {layoutMode && layoutCourse?.layout
+            ? <LayoutScaleLabel printScale={layoutCourse.layout.printScale} mapScale={map.scale} />
+            : map.scale > 0 && <MapScaleInput scale={map.scale} />
+          }
         </div>
         {isAllCoursesView && <AllCoursesLegend courses={courses} hiddenIds={allCoursesHidden} />}
       </div>

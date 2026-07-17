@@ -3,6 +3,8 @@ dist/
 .vite/
 tests/internal
 *_review.md
+review.md
+todo.md
 .env
 .env.local
 package_lock.json

@@ -8,10 +8,9 @@ import { listProjects, getSyncMeta } from '../../lib/persistence'
 import type { ProjectSummary } from '../../lib/persistence'
 import { addShare, removeShare, listShares, acceptTerms, TERMS_VERSION, type ShareEntry } from '../../lib/sync'
 import { LogoutDialog } from '../LogoutDialog'
-import { SPEC_LABEL_KEYS } from '../../lib/symbolSpec'
 import { validateProject, countActiveIssues } from '../../lib/validation'
 import { ValidationDialog } from './ValidationDialog'
-import type { EventSpec, MapType } from '../../types'
+import type { MapType } from '../../types'
 
 const MAP_EXTENSIONS = new Set(['ocd', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'])
 
@@ -23,7 +22,7 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   const projectId = useStore(s => s.projectId)
   const mapFileData = useStore(s => s.mapFileData)
   const updateProjectName = useStore(s => s.updateProjectName)
-  const updateProjectSpec = useStore(s => s.updateProjectSpec)
+
   const switchProject = useStore(s => s.switchProject)
   const cloudUser = useStore(s => s.cloudUser)
   const syncStatus = useStore(s => s.syncStatus)
@@ -33,11 +32,17 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
   const locked = useStore(s => !!s.project?.locked)
   const toggleLocked = useStore(s => s.toggleLocked)
   const mapType = useStore(s => s.project!.map.type)
+  const updateProjectMeta = useStore(s => s.updateProjectMeta)
   const isViewer = projectRole === 'viewer' || locked
   const isOwner = projectRole === 'owner'
   const canSync = mapType === 'ocad'
-  const [editingName, setEditingName] = useState(false)
+  const [eventInfoOpen, setEventInfoOpen] = useState(false)
   const [nameVal, setNameVal] = useState(project.meta.name)
+  const [eventDate, setEventDate] = useState(project.meta.eventDate ?? '')
+  const [organizer, setOrganizer] = useState(project.meta.organizer ?? '')
+  const [club, setClub] = useState(project.meta.club ?? '')
+  const [venue, setVenue] = useState(project.meta.venue ?? '')
+  const eventInfoRef = useRef<HTMLDivElement>(null)
   const replaceMapFile = useStore(s => s.replaceMapFile)
   const saveSnapshot = useStore(s => s.saveSnapshot)
   const fetchVersionHistory = useStore(s => s.fetchVersionHistory)
@@ -126,6 +131,35 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
     [validationResult, ignoredCriteria, ignoredInstances],
   )
 
+  function openEventInfo() {
+    setNameVal(project.meta.name)
+    setEventDate(project.meta.eventDate ?? '')
+    setOrganizer(project.meta.organizer ?? '')
+    setClub(project.meta.club ?? '')
+    setVenue(project.meta.venue ?? '')
+    setEventInfoOpen(true)
+  }
+
+  useEffect(() => {
+    if (!eventInfoOpen) return
+    function handleClick(e: MouseEvent) {
+      if (eventInfoRef.current && !eventInfoRef.current.contains(e.target as Node)) setEventInfoOpen(false)
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [eventInfoOpen])
+
+  function commitEventInfo() {
+    updateProjectName(nameVal)
+    updateProjectMeta({
+      eventDate: eventDate || undefined,
+      organizer: organizer || undefined,
+      club: club || undefined,
+      venue: venue || undefined,
+    })
+    setEventInfoOpen(false)
+  }
+
   async function handleSaveProject() {
     const blob = await saveProjectFile(project, mapFileData)
     downloadBlob(blob, `${project.meta.name.replace(/\s+/g, '_')}.oco`)
@@ -189,24 +223,13 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
 
       <div className="relative min-w-0" ref={switcherRef}>
         <div className="flex items-center gap-0.5 min-w-0">
-          {editingName && !isViewer ? (
-            <input
-              autoFocus
-              value={nameVal}
-              onChange={e => setNameVal(e.target.value)}
-              onBlur={() => { updateProjectName(nameVal); setEditingName(false) }}
-              onKeyDown={e => { if (e.key === 'Enter') { updateProjectName(nameVal); setEditingName(false) } }}
-              className="text-xs font-medium border-b border-orange-400 focus:outline-none bg-transparent w-24 sm:w-40"
-            />
-          ) : (
-            <span
-              className={`text-xs font-medium truncate min-w-0 ${isViewer ? 'text-gray-600' : 'edit-icon-group cursor-pointer hover:text-orange-700 transition-colors'}`}
-              onClick={isViewer ? undefined : () => { setNameVal(project.meta.name); setEditingName(true) }}
-              title={project.meta.name}
-            >
-              {project.meta.name}
-            </span>
-          )}
+          <span
+            className={`text-xs font-medium truncate min-w-0 ${isViewer ? 'text-gray-600' : 'edit-icon-group cursor-pointer hover:text-orange-700 transition-colors'}`}
+            onClick={isViewer ? undefined : () => eventInfoOpen ? setEventInfoOpen(false) : openEventInfo()}
+            title={project.meta.name}
+          >
+            {project.meta.name}
+          </span>
           <button
             onClick={() => setSwitcherOpen(o => !o)}
             className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
@@ -215,6 +238,52 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
             <ChevronDown size={14} />
           </button>
         </div>
+
+        {eventInfoOpen && !isViewer && (
+          <div ref={eventInfoRef} className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 flex flex-col gap-2">
+            <input
+              autoFocus
+              value={nameVal}
+              onChange={e => setNameVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitEventInfo() }}
+              placeholder={t('welcome.eventName')}
+              className="text-sm font-medium border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <input
+              type="date"
+              value={eventDate}
+              onChange={e => setEventDate(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <input
+              value={organizer}
+              onChange={e => setOrganizer(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitEventInfo() }}
+              placeholder={t('header.organizer')}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <input
+              value={club}
+              onChange={e => setClub(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitEventInfo() }}
+              placeholder={t('header.club')}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <input
+              value={venue}
+              onChange={e => setVenue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitEventInfo() }}
+              placeholder={t('header.venue')}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-400"
+            />
+            <button
+              onClick={commitEventInfo}
+              className="text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg px-3 py-1.5 transition-colors self-end"
+            >
+              OK
+            </button>
+          </div>
+        )}
 
         {switcherOpen && (
           <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
@@ -247,18 +316,6 @@ export function Header({ onGoHome, onLogin, guardLeave }: Props) {
         )}
       </div>
 
-      {!isViewer && (
-        <select
-          value={project.spec ?? 'isom-2017'}
-          onChange={e => updateProjectSpec(e.target.value as EventSpec)}
-          className="text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 focus:outline-none focus:ring-1 focus:ring-orange-400 shrink-0 hidden sm:block"
-          title={t('header.eventSpec')}
-        >
-          {(Object.entries(SPEC_LABEL_KEYS) as [EventSpec, string][]).map(([key, tKey]) => (
-            <option key={key} value={key}>{t(tKey)}</option>
-          ))}
-        </select>
-      )}
 
       {projectRole === 'viewer' && (
         <span className="flex items-center gap-1 text-[10px] font-medium text-blue-600 bg-blue-50 rounded-full px-2 py-0.5 shrink-0">

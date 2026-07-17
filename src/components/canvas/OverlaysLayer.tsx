@@ -171,12 +171,6 @@ function ImageOverlaySvg({ img, map, selected, printScaleOverride }: { img: Imag
 
   return (
     <g>
-      {img.bgAlpha > 0 && (
-        <rect
-          x={x} y={y} width={w} height={h}
-          fill="white" opacity={img.bgAlpha}
-        />
-      )}
       <image
         x={x} y={y} width={w} height={h}
         href={img.dataUrl}

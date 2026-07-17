@@ -253,6 +253,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
   const courses = useStore(s => s.project?.courses ?? [])
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
+  const enterLayoutMode = useStore(s => s.enterLayoutMode)
   const addCourse = useStore(s => s.addCourse)
   const locked = useStore(s => !!s.project?.locked)
 
@@ -283,7 +284,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
         {courses.length > 0 && (
           <>
             <div className="w-px h-5 bg-gray-200 mx-0.5 shrink-0" />
-            <div className="flex items-center gap-1 py-0.5 overflow-x-auto min-w-0">
+            <div className="flex items-center gap-1 py-1 px-0.5 overflow-x-auto min-w-0">
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
@@ -291,6 +292,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
                     <button
                       onClick={() => {
                         if (isActive) { setSelectedCourse(null) }
+                        else if (tab === 'layout') { enterLayoutMode(course.id) }
                         else { setSelectedCourse(course.id); if (expanded) setTab('courses') }
                       }}
                       className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all shrink-0 ${

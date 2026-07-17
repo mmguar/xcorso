@@ -1210,13 +1210,6 @@ async function drawImageOverlay(
 
   if (w <= 0 || h <= 0) return
 
-  if (img.bgAlpha > 0) {
-    doc.setFillColor(255, 255, 255)
-    doc.setGState(doc.GState({ opacity: img.bgAlpha }))
-    doc.rect(pos.x, pos.y, w, h, 'F')
-    doc.setGState(doc.GState({ opacity: 1 }))
-  }
-
   try {
     const { url, format } = await ensureJpegOrPng(img.dataUrl)
     doc.addImage(url, format, pos.x, pos.y, w, h)

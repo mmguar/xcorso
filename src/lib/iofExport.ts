@@ -216,6 +216,13 @@ export function exportIofXml(project: Project): string {
     `<CourseData iofVersion="3.0" creator="xcorso" createTime="${now}" xmlns="http://www.orienteering.org/datastandard/3.0">`,
     '  <Event>',
     `    <Name>${xmlEscape(project.meta.name)}</Name>`,
+    ...(project.meta.eventDate ? [`    <StartTime><Date>${xmlEscape(project.meta.eventDate)}</Date></StartTime>`] : []),
+    ...(project.meta.organizer || project.meta.club ? [
+      '    <Organiser>',
+      ...(project.meta.organizer ? [`      <Name>${xmlEscape(project.meta.organizer)}</Name>`] : []),
+      ...(project.meta.club ? [`      <ShortName>${xmlEscape(project.meta.club)}</ShortName>`] : []),
+      '    </Organiser>',
+    ] : []),
     '  </Event>',
     '  <RaceCourseData>',
     mapXml,

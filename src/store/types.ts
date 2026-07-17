@@ -86,6 +86,7 @@ export interface AppActions {
   loadProject: (project: Project, mapData: ArrayBuffer | null, id?: string, role?: ShareRole) => void
   updateProjectName: (name: string) => void
   updateProjectSpec: (spec: EventSpec) => void
+  updateProjectMeta: (fields: Partial<Pick<Project['meta'], 'eventDate' | 'organizer' | 'club' | 'venue'>>) => void
 
   setMapScale: (scale: number, source: 'ocad' | 'manual') => void
   setMapScaleMeasurement: (p1: MapPoint, p2: MapPoint, realWorldMeters: number, renderScale?: number) => void
