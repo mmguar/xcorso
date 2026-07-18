@@ -8,6 +8,7 @@
 import { memo, useId } from 'react'
 import type { Annotation, MapConfig, MapPoint, EventSpec } from '../../types'
 import { unitsPerMm, IOF_PURPLE } from '../../lib/courseUtils'
+import { symbolScaleFactor } from '../../lib/symbolSpec'
 import { useRenderTracker } from '../../lib/perf'
 import { walkPath } from '../../lib/geometry'
 import { darkenHex } from '../../lib/color'
@@ -152,7 +153,8 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
   center: MapPoint; upm: number; scale: number; annScale: number; rotation: number; color: string; textColor: string; spec: EventSpec; selected: boolean
 }) {
   const h = northArrowHeight(upm, scale, spec, annScale)
-  const geo = northArrowGeometry(h, upm)
+  const sf = symbolScaleFactor(spec, scale)
+  const geo = northArrowGeometry(h, upm, sf)
 
   const apexY  = center.y + geo.apexLocalY
   const baseY  = center.y + geo.baseLocalY
@@ -162,7 +164,7 @@ function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, 
   const points = `${center.x},${apexY} ${rightX},${baseY} ${leftX},${baseY}`
 
   const fontSize = h * 0.45
-  const strokeW = 0.2 * upm
+  const strokeW = 0.2 * upm * sf
   const strokeColor = darkenHex(color)
   const outlineW = dims(upm, scale, spec).northStrokeW
 

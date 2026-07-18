@@ -95,9 +95,11 @@ export function crossingPointCurve(
 
 const TAN_22_5 = Math.tan(Math.PI / 8)
 
-export function northArrowGeometry(h: number, upm: number) {
+/** `sf` scales the handles like every other symbol (baseScale / printScale) —
+ *  without it they stay paper-1mm and vanish on low-upm bitmap/PDF maps. */
+export function northArrowGeometry(h: number, upm: number, sf = 1) {
   const halfBase = h * TAN_22_5
-  const handleR = 1 * upm
+  const handleR = 1 * upm * sf
   return {
     halfBase,
     apexLocalY: -(2 / 3) * h,

@@ -246,7 +246,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
         if (!p) return null
         const annSf = sf * upm
         const d = getAnnotationDims(annSf)
-        const handleR = 1 * upm
+        const handleR = 1 * upm * sf
         const rotation = (ann.rotation ?? 0) * Math.PI / 180
         const totalHH = crossingPointTotalHH(d, ann.elongation ?? 0, upm)
         const handleLocalY = -(totalHH + handleR * 2)
@@ -520,11 +520,14 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         useStore.setState(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
       }, 200)
     }
-    window.addEventListener('resize', snap)
+    // Observe the canvas div (covers window resize AND the desktop side panel
+    // opening/closing — they're flex siblings) plus the mobile panel, which
+    // overlays the canvas without resizing it.
+    const ro = new ResizeObserver(snap)
+    if (divRef.current) ro.observe(divRef.current)
     const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
-    const ro = mp ? new ResizeObserver(snap) : null
-    ro?.observe(mp!)
-    return () => { window.removeEventListener('resize', snap); clearTimeout(timer); ro?.disconnect() }
+    if (mp) ro.observe(mp)
+    return () => { clearTimeout(timer); ro.disconnect() }
   }, [layoutMode])
 
   // ── Pan to a requested control (sidebar / clue sheet click) ──────────────
@@ -984,7 +987,8 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const sy = e.clientY - rect.top
         const mapPt = screenToMap(sx, sy, vpRef.current)
         const upm = unitsPerMm(proj.map)
-        const handleR = 1 * upm
+        // Same sf-scaled radius as the drawn pending handles.
+        const handleR = 1 * upm * symbolScaleFactor(resolveSpec(proj.spec), proj.map.scale)
         for (let i = 0; i < state.editor.pendingAnnotationPoints.length; i++) {
           const p = state.editor.pendingAnnotationPoints[i]
           if (Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < handleR) {
@@ -2399,16 +2403,19 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           {(() => {
             const upm = unitsPerMm(map)
             const spec = resolveSpec(projectSpec, selectedCourse?.spec)
-            const strokeW = 0.2 * upm
+            // Handles scale with the symbol scale factor like every other
+            // symbol — flat mm × upm is invisible on low-upm bitmap/PDF maps.
+            const sf = symbolScaleFactor(spec, map.scale)
+            const strokeW = 0.2 * upm * sf
             const elements: React.ReactNode[] = []
 
             if (selectedAnnotationId) {
               const ann = annotations.find(a => a.id === selectedAnnotationId)
               if (ann?.type === 'crossing_point' && ann.points[0]) {
-                const d = getAnnotationDims(symbolScaleFactor(spec, map.scale) * upm)
+                const d = getAnnotationDims(sf * upm)
                 const { x, y } = ann.points[0]
                 const totalHH = crossingPointTotalHH(d, ann.elongation ?? 0, upm)
-                const handleR = 1 * upm
+                const handleR = 1 * upm * sf
                 const rotation = ann.rotation ?? 0
                 elements.push(
                   <g key="cp-handles" transform={`rotate(${rotation}, ${x}, ${y})`}>
@@ -2428,7 +2435,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               }
               if (ann?.type === 'north_arrow' && ann.points[0]) {
                 const h = northArrowHeight(upm, map.scale, spec, ann.scale ?? 1)
-                const geo = northArrowGeometry(h, upm)
+                const geo = northArrowGeometry(h, upm, sf)
                 const { x, y } = ann.points[0]
                 const rotation = ann.rotation ?? 0
                 const color = ann.color ?? '#38bdf8'
@@ -2451,7 +2458,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
                 )
               }
               if (ann?.type === 'out_of_bounds' && ann.points.length >= 3) {
-                const handleR = 1 * upm
+                const handleR = 1 * upm * sf
                 elements.push(
                   <g key="oob-handles">
                     {ann.points.map((p, i) => (
@@ -2467,7 +2474,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             }
 
             if (activeTool === 'out-of-bounds' && pendingAnnotationPoints.length > 0) {
-              const handleR = 1 * upm
+              const handleR = 1 * upm * sf
               elements.push(
                 <g key="pending-oob-handles">
                   {pendingAnnotationPoints.map((p, i) => (
