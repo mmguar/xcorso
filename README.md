@@ -1,6 +1,22 @@
 # xcorso
 
-A web-based orienteering course planner. Designed as a lightweight static website, it runs on any device with a modern browser, desktop or touch. It currently does not replace all complex workflows in [Condes](https://condes.net) and [Purple Pen](https://purplepen.golde.org/), but it can be used to design most orienteering events.
+A web-based orienteering course planner. Designed as a lightweight static website, it runs on any device with a modern browser, desktop or touch — including Mac, Linux, and tablets, with nothing to install.
+
+It doesn't quite replace all the complex workflows in [Condes](https://condes.net) and [Purple Pen](https://purplepen.golde.org/), but it can be used to design most orienteering events.
+
+[Open xcorso](https://xcorso.it) · [Try it with a demo map](https://xcorso.it/?demo) · [Issues](https://github.com/mmguar/xcorso/issues)
+
+
+## Status
+
+I've planned two events for BAOC with xcorso from start to finish, using the XML output in MeOS for punching and timing
+As of July 2026, nobody else has used it for a real event yet. If you'd like to try, I'd be happy to help you out and be on call.
+
+## Working alongside Condes and Purple Pen
+
+xcorso exports IOF XML v3, which both Condes and Purple Pen can open. If you want to try
+it without changing how your club works, you can plan on the map in the terrain and do the
+final print from whichever tool you already use.
 
 ## What it does
 
@@ -13,56 +29,26 @@ A web-based orienteering course planner. Designed as a lightweight static websit
 - **Overlays** — placeable scale bars and text labels on the map
 - **Cosmetic course modifications** — hide parts of the control marker or bend legs to avoid covering features. Change the appearance of control symbols.
 - **Symbol specs** — ISOM 2017-2 (forest) and ISSprOM 2019 (sprint), selectable per project or per course, with spec-correct symbol dimensions
-- **Export** — IOF XML v3 with class assignments (opens in Condes/Purple Pen), PDF with print preview dialog (page size, orientation, print scale, description sheet placement, tiling), and `.oco` project save/load (ZIP archive)
+- **Export** — IOF XML v3 with class assignments, PDF with print preview dialog (page size, orientation, print scale, description sheet placement, tiling), and `.oco` project save/load (ZIP archive)
 
-### Additional Features
+<!-- Keep your existing "Additional Features" section here unchanged. -->
 
-- Show a rasterized version of the map or the fullly rendered vectorial image (HD)
-- Drag controls and labels to reposition them, can be course-specific
-- Set saturation of the map both while editing and for printing
-- Right-click a control on the map to remove its last occurrence from the course
-- Drag-to-reorder controls in the course editor panel (clue sheet view)
-- Butterfly loops
-- Automatically suggest a scale for printing
-- Tiled PDF export when map extends beyond page
+## What it doesn't do
 
-## Development roadmap
+- Ski-O, MTB-O and Trail-O
+- Advanced relays
+- KML/GPX export
 
-### Pre-release — 
 
-- [x] Map loading (OCAD, bitmap, PDF)
-- [x] Control placement (start, finish, control) with drag-to-move
-- [x] Forbidden routes, crossing points, out-of-bounds areas
-- [x] Scale measurement tool
-- [x] .oco project save/load
-- [x] Linear + Score-O  course creation with leg drawing and distance calculation
-- [x] IOF XML v3 export (with class-course assignments)
-- [x] Race classes — assign classes to courses
-- [x] All-controls view (controls only, no legs) with PDF export support
-- [x] Control descriptions — IOF 2018 pictographic symbols, full grid editor and PDF export
-- [x] Map saturation slider (default 50%)
-- [x] Butterfly loop variations (define loops, generate permutations, export per-variation)
-- [x] Per-course text descriptions option for clue sheets
-- [x] Finish type selector (taped / funnel / navigate)
-- [x] Circle gaps, leg gaps and bend points
-- [x] Scale bars and text labels (map overlays)
-- [x] Appearance panel (control size, line width, colour, outline)
-- [x] ISOM 2017-2 / ISSprOM 2019 symbol spec support
-- [x] PDF export dialog with print preview, page size selection, and tiling
+## Browser support
 
-### Current roadmap
+| Browser             | Minimum version |
+| ------------------- | --------------- |
+| Safari / iOS Safari | 15.4 (Mar 2022) |
+| Chrome / Edge       | 119 (Nov 2023)  |
+| Firefox             | 121 (Dec 2023)  |
 
-- [ ] Harden IOF XML export
-- [ ] Fix some render errors 
-- [ ] Fix rendering of some clue sheet modifiers
-- [ ] Additional loop types
-- [ ] KML/GPX export
-- [ ] CMYK/offset printing 
-- [ ] Better handling of e-punch stations numbers
-
-### Currently out of scope
-
-- Ski-O/MTB-O/Trail-O
+On iPad, this covers 5th generation (2017) and newer.
 
 ## Comments/complaints/suggestions
 

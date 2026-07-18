@@ -37,7 +37,7 @@ export function AboutPage({ onBack }: Props) {
   ] as const
 
   const missingKeys = [
-    'about.miss.geo', 'about.miss.disciplines', 'about.miss.taped', 'about.miss.more',
+    'about.miss.geo', 'about.miss.disciplines', 'about.miss.more',
   ] as const
 
   return (
@@ -79,6 +79,14 @@ export function AboutPage({ onBack }: Props) {
           <p>
             {rich(t('about.contact'), {
               email: c => <a href={`mailto:${c}`} className={linkClass}>{c}</a>,
+            })}
+          </p>
+        </section>
+
+        <section>
+          <p>
+            {rich(t('about.tryDemo'), {
+              demo: c => <a href="/?demo" className={linkClass}>{c}</a>,
             })}
           </p>
         </section>

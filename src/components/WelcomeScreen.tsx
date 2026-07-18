@@ -329,6 +329,20 @@ export function WelcomeScreen({ onProjectLoaded, onAbout, onLogin }: Props) {
           </p>
         </div>
 
+        {/* Demo prompt when no projects */}
+        {projects.length === 0 && !cloudUser && (
+          <a
+            href="/?demo"
+            className="w-full max-w-sm flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-orange-300 bg-orange-50/50 hover:border-orange-400 hover:bg-orange-50 transition-colors"
+          >
+            <Map size={20} className="text-orange-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-orange-700">{t('welcome.tryDemo')}</span>
+              <p className="text-xs text-orange-400">{t('welcome.tryDemoDesc')}</p>
+            </div>
+          </a>
+        )}
+
         {/* Saved projects */}
         {(projects.length > 0 || cloudUser) && (
           <div className="w-full max-w-sm flex flex-col gap-1.5">

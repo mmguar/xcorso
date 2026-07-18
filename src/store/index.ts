@@ -230,8 +230,10 @@ export const useStore = create<Store>((set, get) => {
       // An auto-sync armed for the previous project must not fire on this one
       // — it could even first-sync-create a cloud copy uninvited.
       if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
-      setActiveId(projectId).catch(() => {})
-      acquireTabLock(projectId)
+      if (projectId !== '__demo__') {
+        setActiveId(projectId).catch(() => {})
+        acquireTabLock(projectId)
+      }
     },
 
     updateProjectName: (name) => {
@@ -828,7 +830,7 @@ persistence.setOnSaveError(() => useStore.setState({ localSaveFailed: true }))
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 
 useStore.subscribe((state, prev) => {
-  if (state.project && state.projectId && state.project !== prev.project && state.projectRole !== 'viewer') {
+  if (state.project && state.projectId && state.project !== prev.project && state.projectRole !== 'viewer' && state.projectId !== '__demo__') {
     debouncedSave(state.projectId, state.project, state.mapFileData)
 
     // Auto-sync to cloud after 5 minutes of inactivity — but not on initial load
