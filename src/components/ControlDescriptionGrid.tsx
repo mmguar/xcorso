@@ -1,4 +1,4 @@
-import React, { memo, useState, type ReactNode } from 'react'
+import React, { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import {
   DndContext,
@@ -92,7 +92,7 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
 
   const distances = computeCourseDistances(course, controls, mapConfig, measuredLegs)
   const totalLength = resolveCourseLength(course, distances)
-  const [picker, setPicker] = useState<{ controlId: string; column: IofColumn } | null>(null)
+  const [picker, setPicker] = useState<{ ccId: string; column: IofColumn } | null>(null)
 
   const showExtraCol = true
 
@@ -351,8 +351,8 @@ function SortableDescRow({
   row: RowData
   courseId: string
   showExtraCol: boolean
-  picker: { controlId: string; column: IofColumn } | null
-  setPicker: (p: { controlId: string; column: IofColumn } | null) => void
+  picker: { ccId: string; column: IofColumn } | null
+  setPicker: (p: { ccId: string; column: IofColumn } | null) => void
   onRemove?: (ccId: string) => void
   onToggleLoop?: (courseId: string, controlId: string) => void
   onTogglePhiLoop?: (courseId: string, controlId: string, controlId2: string) => void
@@ -420,7 +420,7 @@ function SortableDescRow({
         {columns.map(col => {
           const field = columnFields[col.id]
           const value = desc[field]
-          const isActive = picker?.controlId === ctrl.id && picker?.column === col.id
+          const isActive = picker?.ccId === cc.id && picker?.column === col.id
           const isDimText = col.id === 'F' && value && isDimensionText(value)
           const sym = value ? getSymbol(value) : undefined
 
@@ -429,7 +429,7 @@ function SortableDescRow({
               key={col.id}
               className={`${BORDER} text-center ${locked ? '' : 'cursor-pointer hover:bg-orange-50'} ${isActive ? 'bg-orange-100' : ''}`}
               style={{ width: CELL, height: CELL, padding: 0 }}
-              onClick={locked ? undefined : () => setPicker(isActive ? null : { controlId: ctrl.id, column: col.id })}
+              onClick={locked ? undefined : () => setPicker(isActive ? null : { ccId: cc.id, column: col.id })}
             >
               {value && (textDescriptions && sym
                 ? <span className="text-[8px] leading-tight px-0.5">{t('iof.' + sym.code)}</span>
@@ -489,11 +489,10 @@ function SortableDescRow({
           </td>
         )}
       </tr>
-      {picker?.controlId === ctrl.id && (
+      {picker?.ccId === cc.id && (
         <tr>
-          <td colSpan={colCount} className="p-0 border-0 relative">
-            {/* ponytail: absolute so picker doesn't widen the table */}
-            <div className="absolute left-0 w-full z-20">
+          <td colSpan={colCount} className="p-0 border-0">
+            <div>
             <SymbolPicker
               column={picker.column}
               current={ctrl.description?.[columnFields[picker.column]]}
@@ -1056,8 +1055,13 @@ function SymbolPicker({
     : column === 'C' ? groupDirectionSymbols(filtered, t)
     : null
 
+  const pickerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    pickerRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [])
+
   return (
-    <div className="mt-1 border border-gray-300 rounded-lg bg-white shadow-lg p-2 max-h-64 overflow-y-auto">
+    <div ref={pickerRef} className="mt-1 border border-gray-300 rounded-lg bg-white shadow-lg p-2 max-h-64 overflow-y-auto">
       <div className="flex items-center gap-2 mb-2">
         {column !== 'F' && (
           <input
