@@ -168,7 +168,7 @@ function CourseEditor({ course, locked }: { course: Course; locked: boolean }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   return (
-    <div className="border border-orange-200 rounded-xl rounded-t-none border-t-0 overflow-hidden mb-2">
+    <div className="border border-orange-200 rounded-xl rounded-t-none border-t-0 mb-2">
       {!locked && <>
       {/* Course metadata toolbar */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
