@@ -81,7 +81,7 @@ export function SidePanel() {
         ${collapsed ? 'w-12' : 'w-88 overflow-hidden'}
       `}>
         {collapsed ? (
-          <CollapsedSidebar onExpand={() => setCollapsed(false)} />
+          <CollapsedSidebar tab={tab} setTab={setTab} switchMode={switchMode} onExpand={() => setCollapsed(false)} />
         ) : (
           <>
             <div className="flex border-b border-gray-200">
@@ -168,9 +168,10 @@ function SubmapChips({ course }: { course: Course }) {
   )
 }
 
-function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
+function CollapsedSidebar({ tab, setTab, switchMode, onExpand }: { tab: Tab; setTab: (t: Tab) => void; switchMode: (t: Tab) => void; onExpand: () => void }) {
   const t = useT()
   const courses = useStore(s => s.project?.courses ?? [])
+  const [expanded, setExpanded] = useState(false)
   const selectedCourseId = useStore(s => s.editor.selectedCourseId)
   const setSelectedCourse = useStore(s => s.setSelectedCourse)
   const addCourse = useStore(s => s.addCourse)
@@ -186,12 +187,27 @@ function CollapsedSidebar({ onExpand }: { onExpand: () => void }) {
       >
         <PanelRight size={22} />
       </button>
-
+      <div className="flex flex-col items-center gap-0.5 shrink-0">
+        {(['controls', 'courses', 'layout'] as Tab[]).map(tabKey => (
+          <button
+            key={tabKey}
+            onClick={() => { if (tabKey !== tab) switchMode(tabKey); setTab(tabKey); setExpanded(e => tabKey === tab ? !e : true) }}
+            title={t('panel.' + tabKey)}
+            className={`w-10 h-10 flex items-center justify-center rounded-md transition-colors ${
+              tab === tabKey && expanded
+                ? 'bg-orange-100 text-orange-700'
+                : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            {tabKey === 'controls' ? <MapPin size={22} /> : tabKey === 'courses' ? <Navigation size={22} /> : <LayoutPanelLeft size={22} />}
+          </button>
+        ))}
+      </div>
       {courses.length > 0 && (
         <>
           {/* Scrollable course (+ submap) chips; the + menu stays outside so
               its dropdown isn't clipped by the scroll container. */}
-          <div className="flex flex-col items-center gap-1.5 px-1 overflow-y-auto panel-scroll min-h-0">
+          <div className="flex flex-col items-center gap-1.5 px-2 py-2 overflow-y-auto panel-scroll min-h-0">
             {courses.map(course => {
               const isActive = course.id === selectedCourseId
               return (
@@ -284,7 +300,7 @@ function MobileTopBar({ tab, setTab, switchMode }: { tab: Tab; setTab: (t: Tab) 
         {courses.length > 0 && (
           <>
             <div className="w-px h-5 bg-gray-200 mx-0.5 shrink-0" />
-            <div className="flex items-center gap-1 py-1 px-0.5 overflow-x-auto min-w-0">
+            <div className="flex items-center gap-1 py-2 px-2 overflow-x-auto min-w-0">
               {courses.map(course => {
                 const isActive = course.id === selectedCourseId
                 return (
