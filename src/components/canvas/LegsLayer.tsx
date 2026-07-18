@@ -90,7 +90,7 @@ function renderLegs(
     const startCtrl = controlMap.get(firstCc.controlId)
     const bends = firstCc.legBendPoints
     if (startCtrl && bends) {
-      const handleR = BEND_HANDLE_R_MM * upm
+      const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
       bends.forEach((bp, j) => {
         elements.push(
           <circle key={`bend-prestart-${j}`} cx={bp.x} cy={bp.y} r={handleR}
@@ -103,7 +103,7 @@ function renderLegs(
   // Green "+" to re-add map issue point when deleted
   if (firstCc.markedRoute && firstCc.mapIssueT == null && firstCc.legBendPoints?.length && !handlesOnly) {
     const addPt = firstCc.legBendPoints[0]
-    const addR = 0.8 * upm
+    const addR = 0.8 * upm * scaleFactor
     const arm = addR * 0.5
     elements.push(
       <circle key="mapissue-add-bg" cx={addPt.x} cy={addPt.y} r={addR}
@@ -139,9 +139,9 @@ function renderLegs(
         )
       }
       if (!handlesOnly) {
-        const delD = barHalf + 1.5 * upm
+        const delD = barHalf + 1.5 * upm * scaleFactor
         const delX = pos.x + perpX * delD, delY = pos.y + perpY * delD
-        const delR = 0.8 * upm
+        const delR = 0.8 * upm * scaleFactor
         const xArm = delR * 0.5
         elements.push(
           <circle key="mapissue-del-bg" cx={delX} cy={delY} r={delR}
@@ -222,7 +222,7 @@ function renderLegs(
 
       // Handles: taped bend points, nav bend points, divider
       if (showBendHandles) {
-        const handleR = BEND_HANDLE_R_MM * upm
+        const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
         bendPoints?.forEach((bp, j) => {
           elements.push(
             <circle key={`bend-${cc.id}-${j}`} cx={bp.x} cy={bp.y} r={handleR}
@@ -289,7 +289,7 @@ function renderLegs(
       }
 
       if (showBendHandles) {
-        const handleR = BEND_HANDLE_R_MM * upm
+        const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
         bendPoints.forEach((bp, j) => {
           elements.push(
             <circle

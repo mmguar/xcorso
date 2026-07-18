@@ -308,11 +308,13 @@ export function findMapIssueAt(screenX: number, screenY: number, vp: Viewport, p
 
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
+  // Sizes match the sf-scaled drawing in LegsLayer.
+  const sf = symbolScaleFactor(resolveSpec(project.spec, course.spec), project.map.scale)
 
   // No map issue point — test the green "+" add button at route start
   if (firstCc.mapIssueT == null) {
     const addPt = firstCc.legBendPoints[0]
-    const addR = handleHitRadius(1 * upm, vp)
+    const addR = handleHitRadius(0.8 * upm * sf, vp)
     if (Math.hypot(mapPt.x - addPt.x, mapPt.y - addPt.y) < addR) {
       return { courseId: course.id, courseControlId: firstCc.id, kind: 'add' }
     }
@@ -324,13 +326,13 @@ export function findMapIssueAt(screenX: number, screenY: number, vp: Viewport, p
   if (!startCtrl) return null
   const pts: MapPoint[] = flattenSmooth([...firstCc.legBendPoints, startCtrl.position])
   const pos = interpolatePolyline(pts, firstCc.mapIssueT)
-  const barHalf = 1.25 * upm
+  const barHalf = 1.25 * upm * sf
 
   // Delete button
   const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
-  const delX = pos.x + perpX * (barHalf + 1.5 * upm)
-  const delY = pos.y + perpY * (barHalf + 1.5 * upm)
-  const delR = handleHitRadius(1 * upm, vp)
+  const delX = pos.x + perpX * (barHalf + 1.5 * upm * sf)
+  const delY = pos.y + perpY * (barHalf + 1.5 * upm * sf)
+  const delR = handleHitRadius(0.8 * upm * sf, vp)
   if (Math.hypot(mapPt.x - delX, mapPt.y - delY) < delR) {
     return { courseId: course.id, courseControlId: firstCc.id, kind: 'delete' }
   }
@@ -460,7 +462,8 @@ export function findOobVertexHandle(screenX: number, screenY: number, vp: Viewpo
   if (!ann || ann.type !== 'out_of_bounds' || ann.points.length < 3) return null
   const mapPt = screenToMap(screenX, screenY, vp)
   const upm = unitsPerMm(project.map)
-  const grabR = handleHitRadius(1 * upm, vp)
+  const sf = symbolScaleFactor(resolveSpec(project.spec), project.map.scale)
+  const grabR = handleHitRadius(1 * upm * sf, vp)
   for (let i = 0; i < ann.points.length; i++) {
     if (Math.hypot(mapPt.x - ann.points[i].x, mapPt.y - ann.points[i].y) < grabR) {
       return { ann, vertexIndex: i }
@@ -478,7 +481,7 @@ export function findCrossingPointRotationHandle(screenX: number, screenY: number
   const spec = resolveSpec(project.spec)
   const sf = symbolScaleFactor(spec, project.map.scale)
   const d = getAnnotationDims(sf * upm)
-  const handleR = 1 * upm
+  const handleR = 1 * upm * sf
 
   const center = ann.points[0]
   const rotation = (ann.rotation ?? 0) * Math.PI / 180
@@ -502,7 +505,7 @@ export function findCrossingPointResizeHandle(screenX: number, screenY: number, 
   const spec = resolveSpec(project.spec)
   const sf = symbolScaleFactor(spec, project.map.scale)
   const d = getAnnotationDims(sf * upm)
-  const handleR = 1 * upm
+  const handleR = 1 * upm * sf
 
   const center = ann.points[0]
   const rotation = (ann.rotation ?? 0) * Math.PI / 180
@@ -525,7 +528,7 @@ export function findNorthArrowRotationHandle(screenX: number, screenY: number, v
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec)
   const h = northArrowHeight(upm, project.map.scale, spec, ann.scale ?? 1)
-  const geo = northArrowGeometry(h, upm)
+  const geo = northArrowGeometry(h, upm, symbolScaleFactor(spec, project.map.scale))
   const center = ann.points[0]
   const rotation = ann.rotation ?? 0
 
@@ -543,7 +546,7 @@ export function findNorthArrowResizeHandle(screenX: number, screenY: number, vp:
   const upm = unitsPerMm(project.map)
   const spec = resolveSpec(project.spec)
   const h = northArrowHeight(upm, project.map.scale, spec, ann.scale ?? 1)
-  const geo = northArrowGeometry(h, upm)
+  const geo = northArrowGeometry(h, upm, symbolScaleFactor(spec, project.map.scale))
   const center = ann.points[0]
   const rotation = ann.rotation ?? 0
 
