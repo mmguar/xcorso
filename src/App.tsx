@@ -10,6 +10,7 @@ import { AboutPage } from './components/AboutPage'
 import { LoginModal } from './components/LoginModal'
 import { ConflictModal } from './components/ConflictModal'
 import { getActiveId, getSyncMeta, loadProject as loadPersistedProject, flushSave } from './lib/persistence'
+import { loadProjectFile } from './lib/projectFile'
 import { fetchUser } from './lib/sync'
 
 function ErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
@@ -70,24 +71,30 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
 
   useEffect(() => {
-    const projectP = getActiveId().then(async id => {
-      if (!id) return
-      const saved = await loadPersistedProject(id)
-      if (saved?.project) {
-        // Restore the share role — defaulting to 'owner' on refresh let shared
-        // projects silently fork into the editor's own cloud account.
-        const sync = await getSyncMeta(id)
-        loadProject(saved.project, saved.mapFileData, id, sync?.role)
-        setScreen('editor')
-      }
-    }).finally(() => setRestoring(false))
+    const isDemo = new URLSearchParams(window.location.search).has('demo')
 
-    const authP = fetchUser().then(u => { if (u) setCloudUser(u) })
+    const projectP = (isDemo
+      ? fetch('/demo.oco').then(r => r.blob()).then(b => loadProjectFile(new File([b], 'demo.oco'))).then(({ project, mapData }) => {
+          loadProject(project, mapData, '__demo__')
+          setScreen('editor')
+        })
+      : getActiveId().then(async id => {
+          if (!id) return
+          const saved = await loadPersistedProject(id)
+          if (saved?.project) {
+            const sync = await getSyncMeta(id)
+            loadProject(saved.project, saved.mapFileData, id, sync?.role)
+            setScreen('editor')
+          }
+        })
+    ).finally(() => setRestoring(false))
 
-    // After both project and auth resolve, check if remote has a newer version
-    Promise.all([projectP, authP]).then(() => {
-      useStore.getState().checkForRemoteUpdate()
-    })
+    if (!isDemo) {
+      const authP = fetchUser().then(u => { if (u) setCloudUser(u) })
+      Promise.all([projectP, authP]).then(() => {
+        useStore.getState().checkForRemoteUpdate()
+      })
+    }
   }, [loadProject, setCloudUser])
 
   useEffect(() => {
