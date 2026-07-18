@@ -55,6 +55,14 @@ export function AboutPage({ onBack }: Props) {
           <p>{t('about.intro2')}</p>
           <p>{t('about.intro3')}</p>
         </section>
+        
+        <section>
+          <p>
+            {rich(t('about.tryDemo'), {
+              demo: c => <a href="/?demo" className={linkClass}>{c}</a>,
+            })}
+          </p>
+        </section>
 
         <section>
           <h2 className="text-base font-semibold text-gray-900 mb-2">{t('about.features')}</h2>
@@ -83,13 +91,6 @@ export function AboutPage({ onBack }: Props) {
           </p>
         </section>
 
-        <section>
-          <p>
-            {rich(t('about.tryDemo'), {
-              demo: c => <a href="/?demo" className={linkClass}>{c}</a>,
-            })}
-          </p>
-        </section>
 
         <section className="flex flex-col gap-3 border-t border-gray-100 pt-6">
           <p>
