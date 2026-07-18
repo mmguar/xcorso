@@ -10,7 +10,7 @@
     "preinstall": "npx only-allow pnpm",
     "postinstall": "patch-package",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build-about.js && tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview"
