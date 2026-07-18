@@ -1,6 +1,6 @@
 # xcorso
 
-https://github.com/user-attachments/assets/da97ea16-c893-495d-8b1f-7a0cd587dcdc
+https://github.com/user-attachments/assets/db793cb7-2c39-4f02-bfb8-b4d1b8ace345
 
 A web-based orienteering course planner. Designed as a lightweight static website, it runs on any device with a modern browser, desktop or touch — including Mac, Linux, and tablets, with nothing to install.
 

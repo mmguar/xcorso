@@ -31,6 +31,10 @@
       .links { display: flex; gap: 1.5rem; font-size: .8rem; }
       .links a { color: #6b7280; text-decoration: none; transition: color .15s; }
       .links a:hover { color: #ea580c; }
+      .demo-video { max-width: 36rem; width: 100%; border-radius: 1rem; box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+      .demo-link { font-size: .85rem; color: #ea580c; text-decoration: none; font-weight: 500; transition: color .15s; }
+      .demo-link:hover { color: #c2410c; text-decoration: underline; }
+      @media (prefers-reduced-motion: reduce) { .demo-video, .demo-link { display: none; } }
     </style>
   </head>
   <body>
@@ -44,9 +48,11 @@
       and print-ready PDFs. Free and open source.
     </p>
 
-    <video class="demo-video" autoplay loop muted playsinline poster="">
-      <source src="" type="video/mp4">
+    <video class="demo-video" autoplay loop muted playsinline poster="https://github.com/user-attachments/assets/af796523-2ed3-4534-a9f6-a514c3a9f17c" aria-label="Demo of xcorso course planning>
+      <source src="https://github.com/user-attachments/assets/db793cb7-2c39-4f02-bfb8-b4d1b8ace345" type="video/mp4">
+
     </video>
+    <a href="/app?demo" class="demo-link">Try this demo here!</a>
 
     <div class="features">
       <div class="feature">
