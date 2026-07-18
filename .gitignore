@@ -8,3 +8,4 @@ todo.md
 .env
 .env.local
 package_lock.json
+public/about.html

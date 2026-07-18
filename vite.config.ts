@@ -1,9 +1,23 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// ponytail: rewrite /app → /app.html so the SPA entry works at a clean URL
+function appRewrite(): Plugin {
+  return {
+    name: 'app-rewrite',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === '/app' || req.url?.startsWith('/app?')) req.url = '/app.html'
+        next()
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [appRewrite(), react(), tailwindcss()],
+  build: { rollupOptions: { input: 'app.html' } },
   server: { host: true },
   optimizeDeps: {
     exclude: ['pdfjs-dist'],
