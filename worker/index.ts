@@ -90,11 +90,9 @@ export default {
       // ponytail: rate limiting moved to Cloudflare WAF rules, saves 2 KV ops per request
       res = await handler(request, env, params)
     } else {
-      // Serve static landing/about pages for crawlers (real HTML, not empty SPA shell)
-      const p = url.pathname
-      if (request.method === 'GET' && (p === '/' || p === '/about' || p === '/about/')) {
-        const file = p === '/' ? '/_landing.html' : '/_about.html'
-        res = await env.ASSETS.fetch(new Request(new URL(file, request.url), request))
+      // /app serves the SPA entry; static assets fall through to ASSETS
+      if (request.method === 'GET' && url.pathname === '/app') {
+        res = await env.ASSETS.fetch(new Request(new URL('/app.html', request.url), request))
       } else {
         res = await env.ASSETS.fetch(request)
       }
