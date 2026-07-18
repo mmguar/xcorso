@@ -83,6 +83,14 @@ export function AboutPage({ onBack }: Props) {
           </p>
         </section>
 
+        <section>
+          <p>
+            {rich(t('about.tryDemo'), {
+              demo: c => <a href="/?demo" className={linkClass}>{c}</a>,
+            })}
+          </p>
+        </section>
+
         <section className="flex flex-col gap-3 border-t border-gray-100 pt-6">
           <p>
             {rich(t('about.credits'), {
