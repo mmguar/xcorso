@@ -390,15 +390,17 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         const dx = center.x - layout.mapCenter.x
         const dy = center.y - layout.mapCenter.y
         layout.mapCenter = center
-        if (layout.overlayPositions) {
-          // New object reference so the memoized OverlaysLayer re-renders.
-          const shifted: Record<string, MapPoint> = {}
-          for (const id of Object.keys(layout.overlayPositions)) {
-            const pos = layout.overlayPositions[id]
-            shifted[id] = { x: pos.x + dx, y: pos.y + dy }
-          }
-          layout.overlayPositions = shifted
+        // Overlays are page-relative in layout mode: shift every overlay by the
+        // pan delta, seeding from the project position for overlays never
+        // individually moved — otherwise they slide with the map until the
+        // first manual drag gives them an override entry.
+        // New object reference so the memoized OverlaysLayer re-renders.
+        const shifted: Record<string, MapPoint> = {}
+        for (const o of [...p.scaleBars, ...p.textLabels, ...p.imageOverlays]) {
+          const pos = layout.overlayPositions?.[o.id] ?? o.position
+          shifted[o.id] = { x: pos.x + dx, y: pos.y + dy }
         }
+        layout.overlayPositions = shifted
       })
     },
 
