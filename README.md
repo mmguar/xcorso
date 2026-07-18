@@ -1,5 +1,7 @@
 # xcorso
 
+https://github.com/user-attachments/assets/da97ea16-c893-495d-8b1f-7a0cd587dcdc
+
 A web-based orienteering course planner. Designed as a lightweight static website, it runs on any device with a modern browser, desktop or touch — including Mac, Linux, and tablets, with nothing to install.
 
 It doesn't quite replace all the complex workflows in [Condes](https://condes.net) and [Purple Pen](https://purplepen.golde.org/), but it can be used to design most orienteering events.
