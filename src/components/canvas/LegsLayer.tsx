@@ -92,53 +92,47 @@ function renderLegs(
     if (startCtrl && bends) {
       const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
       bends.forEach((bp, j) => {
-        elements.push(
-          <circle key={`bend-prestart-${j}`} cx={bp.x} cy={bp.y} r={handleR}
-            fill="white" stroke={legColor} strokeWidth={strokeWidth * 0.8} />
-        )
+        // First handle (route start) always visible via handlesOnly pass; rest only in bend mode
+        if (j > 0) {
+          elements.push(
+            <circle key={`bend-prestart-${j}`} cx={bp.x} cy={bp.y} r={handleR}
+              fill="white" stroke={legColor} strokeWidth={strokeWidth * 0.8} />
+          )
+        }
       })
     }
   }
-
-  // Green "+" to re-add map issue point when deleted
-  if (firstCc.markedRoute && firstCc.mapIssueT == null && firstCc.legBendPoints?.length && !handlesOnly) {
-    const addPt = firstCc.legBendPoints[0]
-    const addR = 0.8 * upm * scaleFactor
-    const arm = addR * 0.5
+  // First pre-start handle rendered in handlesOnly pass (outside overprint multiply)
+  if (firstCc.markedRoute && handlesOnly && firstCc.legBendPoints?.length) {
+    const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
+    const bp = firstCc.legBendPoints[0]
     elements.push(
-      <circle key="mapissue-add-bg" cx={addPt.x} cy={addPt.y} r={addR}
-        fill="#16a34a" stroke="white" strokeWidth={strokeWidth * 0.4} />,
-      <line key="mapissue-add-v" x1={addPt.x} y1={addPt.y - arm} x2={addPt.x} y2={addPt.y + arm}
-        stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
-      <line key="mapissue-add-h" x1={addPt.x - arm} y1={addPt.y} x2={addPt.x + arm} y2={addPt.y}
-        stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+      <circle key="bend-prestart-0" cx={bp.x} cy={bp.y} r={handleR}
+        fill={legColor} stroke="white" strokeWidth={strokeWidth * 0.8} />
     )
   }
 
-  // Map issue point (perpendicular bar on pre-start taped route)
-  if (firstCc.markedRoute && firstCc.mapIssueT != null && firstCc.legBendPoints?.length) {
-    const startCtrl = controlMap.get(firstCc.controlId)
-    if (startCtrl) {
-      const pts: MapPoint[] = [...firstCc.legBendPoints, startCtrl.position]
-      const pos = interpolatePolyline(flattenSmooth(pts), firstCc.mapIssueT)
-      const barHalf = 1.25 * upm * scaleFactor // matches 1.25 * sf in pdfExport.ts
-      const barSw = 0.6 * upm * scaleFactor * appearance.lineWidth
-      const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
-      if (!handlesOnly) {
-        const x1 = pos.x + perpX * barHalf, y1 = pos.y + perpY * barHalf
-        const x2 = pos.x - perpX * barHalf, y2 = pos.y - perpY * barHalf
-        if (outlineSw > 0) {
-          elements.push(
-            <line key="mapissue-outline" x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke={appearance.outlineColor} strokeWidth={barSw + outlineSw * 2} strokeLinecap="butt" />
-          )
-        }
-        elements.push(
-          <line key="mapissue" x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke={legColor} strokeWidth={barSw} strokeLinecap="butt" />
-        )
-      }
-      if (!handlesOnly) {
+  // Green "+" / red "x" for map issue point — rendered in handlesOnly pass (outside overprint)
+  if (firstCc.markedRoute && handlesOnly && firstCc.legBendPoints?.length) {
+    if (firstCc.mapIssueT == null) {
+      const addPt = firstCc.legBendPoints[0]
+      const addR = 0.8 * upm * scaleFactor
+      const arm = addR * 0.5
+      elements.push(
+        <circle key="mapissue-add-bg" cx={addPt.x} cy={addPt.y} r={addR}
+          fill="#16a34a" stroke="white" strokeWidth={strokeWidth * 0.4} />,
+        <line key="mapissue-add-v" x1={addPt.x} y1={addPt.y - arm} x2={addPt.x} y2={addPt.y + arm}
+          stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+        <line key="mapissue-add-h" x1={addPt.x - arm} y1={addPt.y} x2={addPt.x + arm} y2={addPt.y}
+          stroke="white" strokeWidth={strokeWidth * 0.6} strokeLinecap="round" />,
+      )
+    } else {
+      const startCtrl = controlMap.get(firstCc.controlId)
+      if (startCtrl) {
+        const pts: MapPoint[] = [...firstCc.legBendPoints, startCtrl.position]
+        const pos = interpolatePolyline(flattenSmooth(pts), firstCc.mapIssueT)
+        const barHalf = 1.25 * upm * scaleFactor
+        const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
         const delD = barHalf + 1.5 * upm * scaleFactor
         const delX = pos.x + perpX * delD, delY = pos.y + perpY * delD
         const delR = 0.8 * upm * scaleFactor
@@ -155,6 +149,30 @@ function renderLegs(
     }
   }
 
+  // Map issue point (perpendicular bar on pre-start taped route) — ink pass
+  if (firstCc.markedRoute && firstCc.mapIssueT != null && firstCc.legBendPoints?.length && !handlesOnly) {
+    const startCtrl = controlMap.get(firstCc.controlId)
+    if (startCtrl) {
+      const pts: MapPoint[] = [...firstCc.legBendPoints, startCtrl.position]
+      const pos = interpolatePolyline(flattenSmooth(pts), firstCc.mapIssueT)
+      const barHalf = 1.25 * upm * scaleFactor
+      const barSw = 0.6 * upm * scaleFactor * appearance.lineWidth
+      const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
+      const x1 = pos.x + perpX * barHalf, y1 = pos.y + perpY * barHalf
+      const x2 = pos.x - perpX * barHalf, y2 = pos.y - perpY * barHalf
+      if (outlineSw > 0) {
+        elements.push(
+          <line key="mapissue-outline" x1={x1} y1={y1} x2={x2} y2={y2}
+            stroke={appearance.outlineColor} strokeWidth={barSw + outlineSw * 2} strokeLinecap="butt" />
+        )
+      }
+      elements.push(
+        <line key="mapissue" x1={x1} y1={y1} x2={x2} y2={y2}
+          stroke={legColor} strokeWidth={barSw} strokeLinecap="butt" />
+      )
+    }
+  }
+
   for (let i = 0; i < course.controls.length - 1; i++) {
     const fromControl = controlMap.get(course.controls[i].controlId)
     const toControl = controlMap.get(course.controls[i + 1].controlId)
@@ -167,6 +185,7 @@ function renderLegs(
       || (isLastLeg && course.finishType === 'taped' ? 'full' as const
         : isLastLeg && course.finishType === 'funnel' ? 'partial' as const
         : undefined)
+    const isFunnelFinish = isLastLeg && course.finishType === 'funnel' && !cc.markedRoute
     const bendPoints = cc.legBendPoints
     const navBendPoints = cc.legNavBendPoints
     const noGap = !!effectiveMarkedRoute
@@ -178,49 +197,80 @@ function renderLegs(
       const divider = cc.markedRouteEnd
       const legKey = `${course.id}-${course.controls[i].id}-${cc.id}`
 
-      // Taped segment: from → bends → divider (dashed)
-      const tapedPath: MapPoint[] = bendPoints?.length
+      // First segment: from → bends → divider
+      const firstPath: MapPoint[] = bendPoints?.length
         ? [fromControl.position, ...bendPoints, divider]
         : [fromControl.position, divider]
-      const tapedClipped = clipPolylineStart(tapedPath, fromR)
-      if (!handlesOnly && tapedClipped.length >= 2) {
-        const tapedD = smoothPathD(tapedClipped)
+      const firstClipped = clipPolylineStart(firstPath, fromR)
+      if (!handlesOnly && firstClipped.length >= 2) {
+        // ponytail: funnel = navigate first (solid/straight), taped second (dashed/smooth)
+        const firstSmooth = !isFunnelFinish
+        const firstDash = isFunnelFinish ? undefined : markedRouteDash
+        const firstD = firstSmooth ? smoothPathD(firstClipped) : undefined
+        const firstStr = firstSmooth ? undefined : firstClipped.map(p => `${p.x},${p.y}`).join(' ')
         if (outlineSw > 0) {
           elements.push(
-            <path key={`${legKey}-taped-outline`} d={tapedD} fill="none"
-              stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
-              strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={markedRouteDash} />
+            firstSmooth
+              ? <path key={`${legKey}-taped-outline`} d={firstD!} fill="none"
+                  stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
+                  strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={firstDash!} />
+              : <polyline key={`${legKey}-taped-outline`} points={firstStr!} fill="none"
+                  stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
+                  strokeLinecap="round" strokeLinejoin="round" />
           )
         }
         elements.push(
-          <path key={`${legKey}-taped`} d={tapedD} fill="none"
-            stroke={legColor} strokeWidth={strokeWidth}
-            strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={markedRouteDash} />
+          firstSmooth
+            ? <path key={`${legKey}-taped`} d={firstD!} fill="none"
+                stroke={legColor} strokeWidth={strokeWidth}
+                strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={firstDash!} />
+            : <polyline key={`${legKey}-taped`} points={firstStr!} fill="none"
+                stroke={legColor} strokeWidth={strokeWidth}
+                strokeLinecap="round" strokeLinejoin="round" />
         )
       }
 
-      // Navigation segment: divider → nav bends → control (solid)
-      const navPath: MapPoint[] = navBendPoints?.length
+      // Second segment: divider → nav bends → control
+      const secondPath: MapPoint[] = navBendPoints?.length
         ? [divider, ...navBendPoints, toControl.position]
         : [divider, toControl.position]
-      const navClipped = clipPolylineEnd(navPath, toR)
-      if (!handlesOnly && navClipped.length >= 2) {
-        const navStr = navClipped.map(p => `${p.x},${p.y}`).join(' ')
+      const secondClipped = clipPolylineEnd(secondPath, toR)
+      if (!handlesOnly && secondClipped.length >= 2) {
+        const secondSmooth = isFunnelFinish
+        const secondDash = isFunnelFinish ? markedRouteDash : undefined
+        const secondD = secondSmooth ? smoothPathD(secondClipped) : undefined
+        const secondStr = secondSmooth ? undefined : secondClipped.map(p => `${p.x},${p.y}`).join(' ')
         if (outlineSw > 0) {
           elements.push(
-            <polyline key={`${legKey}-nav-outline`} points={navStr} fill="none"
-              stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
-              strokeLinecap="round" strokeLinejoin="round" />
+            secondSmooth
+              ? <path key={`${legKey}-nav-outline`} d={secondD!} fill="none"
+                  stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
+                  strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={secondDash!} />
+              : <polyline key={`${legKey}-nav-outline`} points={secondStr!} fill="none"
+                  stroke={appearance.outlineColor} strokeWidth={strokeWidth + outlineSw * 2}
+                  strokeLinecap="round" strokeLinejoin="round" />
           )
         }
         elements.push(
-          <polyline key={`${legKey}-nav`} points={navStr} fill="none"
-            stroke={legColor} strokeWidth={strokeWidth}
-            strokeLinecap="round" strokeLinejoin="round" />
+          secondSmooth
+            ? <path key={`${legKey}-nav`} d={secondD!} fill="none"
+                stroke={legColor} strokeWidth={strokeWidth}
+                strokeLinecap="butt" strokeLinejoin="round" strokeDasharray={secondDash!} />
+            : <polyline key={`${legKey}-nav`} points={secondStr!} fill="none"
+                stroke={legColor} strokeWidth={strokeWidth}
+                strokeLinecap="round" strokeLinejoin="round" />
         )
       }
 
-      // Handles: taped bend points, nav bend points, divider
+      // Divider handle rendered in handlesOnly pass (outside overprint multiply)
+      if (handlesOnly) {
+        const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
+        elements.push(
+          <circle key={`mre-${cc.id}`} cx={divider.x} cy={divider.y} r={handleR}
+            fill={legColor} stroke="white" strokeWidth={strokeWidth * 0.8} />
+        )
+      }
+      // Bend handles only in bend mode
       if (showBendHandles) {
         const handleR = BEND_HANDLE_R_MM * upm * scaleFactor
         bendPoints?.forEach((bp, j) => {
@@ -235,10 +285,6 @@ function renderLegs(
               fill="white" stroke={legColor} strokeWidth={strokeWidth * 0.8} />
           )
         })
-        elements.push(
-          <circle key={`mre-${cc.id}`} cx={divider.x} cy={divider.y} r={handleR}
-            fill={legColor} stroke="white" strokeWidth={strokeWidth * 0.8} />
-        )
       }
       continue
     }

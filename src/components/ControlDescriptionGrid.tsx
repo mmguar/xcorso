@@ -574,41 +574,54 @@ function ExchangeRow({
   showExtraCol: boolean
   locked?: boolean
 }) {
-  const t = useT()
+  const [open, setOpen] = useState(false)
+  const otherMode: 'exchange' | 'flip' = exchangeMode === 'exchange' ? 'flip' : 'exchange'
+
   return (
     <tr className="group">
-      <td colSpan={8} className={`${BORDER} relative`} style={{ height: CELL, padding: 0 }}>
-        <div className="flex items-center justify-center h-full gap-2 ml-3">
-          {exchangeMode === 'flip' ? (
-            <svg width="56" height="22" viewBox="-82 -18 238 70" className="inline-block shrink-0">
-              <path
-                d="M -80.360565,49.756998 V -17.208278 H 54.554767 v 66.965274 z"
-                fill="none"
-                stroke="black"
-                strokeWidth={3.22857}
-              />
-              <path
-                d="m 49.30259,11.022181 v 6.893485 L 8.2699446,2.8156518 49.959111,-14.91045 v 8.5347896 c 15.43476,-2.485079 33.252421,1.8872434 43.986994,20.3521914 5.028306,12.413486 -4.5942,21.038774 -16.325094,26.752301 -8.097252,3.943763 -16.901703,8.282472 -23.066244,9.028164 C 64.528975,43.023482 82.356897,37.724495 77.533048,24.480888 73.266429,16.666484 68.17025,9.3888529 49.30259,11.022181 Z"
-                fill="black"
-                stroke="black"
-                strokeWidth={0}
-              />
-            </svg>
-          ) : (
-            <ExchangeRowSvg />
-          )}
-          {!locked && <select
-            value={exchangeMode}
-            onChange={e => onModeChange(e.target.value as 'exchange' | 'flip')}
-            className="text-[10px] border border-gray-300 rounded px-1 py-0.5 bg-white opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <option value="exchange">{t('controlDesc.exchange')}</option>
-            <option value="flip">{t('controlDesc.flip')}</option>
-          </select>}
-        </div>
+      <td
+        colSpan={8}
+        className={`${BORDER} relative ${locked ? '' : 'cursor-pointer hover:bg-orange-50'}`}
+        style={{ height: CELL, padding: locked ? 0 : '0 14px 0 0' }}
+        tabIndex={locked ? undefined : 0}
+        onClick={locked ? undefined : () => setOpen(v => !v)}
+        onBlur={locked ? undefined : () => setTimeout(() => setOpen(false), 150)}
+      >
+        {exchangeMode === 'flip' ? <FlipRowSvg /> : <ExchangeRowSvg />}
+        {!locked && <DropdownChevron />}
+        {open && (
+          <div className="absolute left-0 bottom-full z-30 bg-white border border-gray-300 rounded shadow-md"
+            style={{ width: '100%' }}>
+            <div className="px-1 py-0.5 hover:bg-orange-100 text-gray-600 cursor-pointer"
+              onClick={e => { e.stopPropagation(); onModeChange(otherMode); setOpen(false) }}>
+              {otherMode === 'flip' ? <FlipRowSvg /> : <ExchangeRowSvg />}
+            </div>
+          </div>
+        )}
       </td>
       {showExtraCol && <td />}
     </tr>
+  )
+}
+
+function FlipRowSvg() {
+  return (
+    <div className="flex items-center justify-center" style={{ height: CELL }}>
+      <svg width="56" height="22" viewBox="-82 -18 238 70">
+        <path d="M -80.360565,49.756998 V -17.208278 H 54.554767 v 66.965274 z"
+          fill="none" stroke="currentColor" strokeWidth={3.22857} />
+        <path d="m 49.30259,11.022181 v 6.893485 L 8.2699446,2.8156518 49.959111,-14.91045 v 8.5347896 c 15.43476,-2.485079 33.252421,1.8872434 43.986994,20.3521914 5.028306,12.413486 -4.5942,21.038774 -16.325094,26.752301 -8.097252,3.943763 -16.901703,8.282472 -23.066244,9.028164 C 64.528975,43.023482 82.356897,37.724495 77.533048,24.480888 73.266429,16.666484 68.17025,9.3888529 49.30259,11.022181 Z"
+          fill="currentColor" stroke="currentColor" strokeWidth={0} />
+      </svg>
+    </div>
+  )
+}
+
+function DropdownChevron() {
+  return (
+    <svg className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-600" width="8" height="5" viewBox="0 0 8 5">
+      <path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
@@ -882,7 +895,7 @@ function FinishDescRow({
       <td
         colSpan={8}
         className={`${BORDER} relative ${locked ? '' : 'cursor-pointer hover:bg-orange-50'}`}
-        style={{ height: CELL, padding: 0 }}
+        style={{ height: CELL, padding: locked ? 0 : '0 14px 0 0' }}
         tabIndex={locked ? undefined : 0}
         onClick={locked ? undefined : () => setOpen(v => !v)}
         onBlur={locked ? undefined : () => setTimeout(() => setOpen(false), 150)}
@@ -893,6 +906,7 @@ function FinishDescRow({
           <circle cx={finishX} cy={CY} r={finishR} fill="none" stroke="black" strokeWidth={sw} />
           <circle cx={finishX} cy={CY} r={finishRInner} fill="none" stroke="black" strokeWidth={sw} />
         </svg>
+        {!locked && <DropdownChevron />}
         {onRemove && (
           <button
             onClick={e => { e.stopPropagation(); onRemove(cc.id) }}
