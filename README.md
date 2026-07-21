@@ -54,7 +54,7 @@ On iPad, this covers 5th generation (2017) and newer.
 
 ## Comments/complaints/suggestions
 
-I take them all! You can email me at matteo.guareschi@gmail.com, you can open an issue on github, or you write your code and create a PR.
+I take them all! You can email me at mmg@xcorso.it, you can open an issue on github, or you write your code and create a PR.
 
 Obviously the project is fairly vibe-coded, but I am trying to keep it manageable and with some level of standards. Trying to!
 

@@ -1692,21 +1692,22 @@ export async function exportCoursePdf(
                   doc.setLineWidth(dims.legW * sf)
                   strokeSeg(pts, smooth)
                 }
-                // Taped segment: from → bends → divider (dashed, clip start only)
+                const isFunnelFinish = isLastLeg && course.finishType === 'funnel' && !cc.markedRoute
+                // First segment: from → bends → divider
                 const tapedPts: Pos[] = bends?.length ? [fromPos, ...bends, divider] : [fromPos, divider]
                 const tapedClipped = clipPolyline(tapedPts, fromR, 0)
                 if (tapedClipped.length >= 2) {
-                  doc.setLineDashPattern([2 * sf, 0.5 * sf], 0)
-                  doc.setLineCap(0)
-                  segWithOutline(tapedClipped, true)
-                  doc.setLineDashPattern([], 0)
-                  doc.setLineCap(1)
+                  if (!isFunnelFinish) { doc.setLineDashPattern([2 * sf, 0.5 * sf], 0); doc.setLineCap(0) }
+                  segWithOutline(tapedClipped, !isFunnelFinish)
+                  if (!isFunnelFinish) { doc.setLineDashPattern([], 0); doc.setLineCap(1) }
                 }
-                // Navigation segment: divider → nav bends → to (solid, clip end only)
+                // Second segment: divider → nav bends → to
                 const navPts: Pos[] = navBends?.length ? [divider, ...navBends, toPos] : [divider, toPos]
                 const navClipped = clipPolyline(navPts, 0, toR)
                 if (navClipped.length >= 2) {
-                  segWithOutline(navClipped, false)
+                  if (isFunnelFinish) { doc.setLineDashPattern([2 * sf, 0.5 * sf], 0); doc.setLineCap(0) }
+                  segWithOutline(navClipped, isFunnelFinish)
+                  if (isFunnelFinish) { doc.setLineDashPattern([], 0); doc.setLineCap(1) }
                 }
               } else {
                 const bends = cc.legBendPoints?.map(p => toPage(p))

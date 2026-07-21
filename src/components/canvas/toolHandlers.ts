@@ -88,8 +88,11 @@ export function handleBendTap(sx: number, sy: number, vp: Viewport, project: Pro
   const cc = course.controls.find(c => c.id === legHit.courseControlId)
   if (!cc) return
 
+  const isPreStart = course.controls[0] === cc
   const { segment, index: insertIdx } = legBendInsertIndex(course, cc, legHit.segmentIndex)
-  useStore.getState().addLegBendPoint(legHit.courseId, legHit.courseControlId, mapPt, insertIdx, segment)
+  // Pre-start polyline is [bends..., start], so segmentIndex N is after bends[N]
+  const idx = isPreStart ? insertIdx + 1 : insertIdx
+  useStore.getState().addLegBendPoint(legHit.courseId, legHit.courseControlId, mapPt, idx, segment)
 }
 
 export function handleBendRightClick(sx: number, sy: number, vp: Viewport, project: Project, selectedCourseId: string | null) {

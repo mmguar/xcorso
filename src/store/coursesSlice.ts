@@ -1,6 +1,7 @@
 import type { Control, Course, CourseType, CourseControl, RaceClass, EventSpec, FinishType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
 import { defaultControlLabel, generateAllPermutations, IOF_PURPLE, unitsPerMm } from '../lib/courseUtils'
+import { getSymbolDims, symbolScaleFactor, controlSymbolRadiusMm, resolveSpec } from '../lib/symbolSpec'
 
 function insertBeforeFinish(course: Course, controls: Control[], entries: CourseControl[]) {
   const getType = (id: string) => controls.find(c => c.id === id)?.type
@@ -503,7 +504,11 @@ export function createCoursesSlice(set: SetState, get: GetState, h: StoreHelpers
               const ctrl = p.controls.find(c => c.id === cc.controlId)
               if (ctrl) {
                 const upm = unitsPerMm(p.map)
-                cc.legBendPoints = [{ x: ctrl.position.x - upm * 15, y: ctrl.position.y }]
+                const spec = resolveSpec(p.spec, course.spec)
+                const sf = p.map.scale > 0 ? symbolScaleFactor(spec, p.map.scale) : 1
+                const symR = controlSymbolRadiusMm('start', getSymbolDims(spec)) * upm * sf
+                const offset = Math.max(symR * 4, upm * 10)
+                cc.legBendPoints = [{ x: ctrl.position.x - offset, y: ctrl.position.y }]
               }
             }
             cc.mapIssueT = 0.5
