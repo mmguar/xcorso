@@ -1035,7 +1035,24 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const rect = getRect()
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
-        const labelHit = findLabelAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale, state.editor.selectedSubmapIndex)
+        let handleHit = false
+        const mreHitSel = findMarkedRouteEndAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
+        if (mreHitSel) {
+          dragMRE = mreHitSel
+          dragMREStarted = false
+          handleHit = true
+        }
+        // Pre-start first bend handle + divider — always visible, allow dragging in select mode
+        if (!handleHit) {
+          const bpHitSel = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
+          const selCrs = state.editor.selectedCourseId ? proj.courses.find(c => c.id === state.editor.selectedCourseId) : null
+          if (bpHitSel && selCrs && bpHitSel.courseControlId === selCrs.controls[0]?.id && bpHitSel.bendIndex === 0) {
+            dragBend = bpHitSel
+            dragBendStarted = false
+            handleHit = true
+          }
+        }
+        const labelHit = !handleHit && findLabelAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale, state.editor.selectedSubmapIndex)
         if (labelHit) {
           const mapPt = screenToMap(sx, sy, vpRef.current)
           dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
@@ -2261,13 +2278,13 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             projectSpec={projectSpec}
             viewportScale={vp.scale}
           />
-          {/* Bend handles (white) — kept out of the overprint multiply. */}
-          {activeTool === 'bend' && (
+          {/* Handles outside overprint multiply: divider always, bend handles in bend mode */}
+          {!layoutMode && (
             <LegsLayer
               course={selectedCourse}
               controls={controls}
               map={map}
-              showBendHandles
+              showBendHandles={activeTool === 'bend'}
               handlesOnly
               appearance={appearance}
               projectSpec={projectSpec}
