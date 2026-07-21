@@ -1,4 +1,3 @@
-import { Map } from 'lucide-react'
 import { useT, useLocale } from '../i18n'
 import type { ReactNode } from 'react'
 
