@@ -43,9 +43,6 @@ export function AboutPage({ onBack }: Props) {
   return (
     <div className="flex flex-col items-center h-dvh bg-gray-50 px-6 py-10 gap-8 overflow-y-auto">
       <div className="flex flex-col items-center gap-3 shrink-0">
-        <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg">
-          <Map size={32} className="text-white" />
-        </div>
         <h1 className="text-2xl font-bold text-gray-900">xcorso</h1>
       </div>
 
