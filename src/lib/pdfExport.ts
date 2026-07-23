@@ -8,8 +8,7 @@ import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, IOF_PURPLE } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance, scaleBarLayoutMm } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
-import type { SymbolDims } from './symbolSpec'
+import { resolveSpec, getSymbolDims, dimsFor, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
 import { circleGapDashArray, legGapDashArray } from './gapDash'
 import { walkPath, clipPolyline, distance, polylineLength, interpolatePolyline, catmullRomToCubics, flattenSmooth } from './geometry'
 import { hexToRgb, darkenHex } from './color'
@@ -109,22 +108,6 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   outlineEnabled: false, outlineColor: '#ffffff', outlineWidth: 0.7,
 }
 
-// Appearance-adjusted symbol dims: controlScale scales the geometry,
-// lineWidth scales the strokes — mirrors ControlsLayer / LegsLayer.
-function dimsFor(spec: EventSpec, app: AppearanceSettings): SymbolDims {
-  const d = getSymbolDims(spec)
-  if (app.controlScale === 1 && app.lineWidth === 1) return d
-  return {
-    ...d,
-    controlR: d.controlR * app.controlScale,
-    startSide: d.startSide * app.controlScale,
-    finishROuter: d.finishROuter * app.controlScale,
-    finishRInner: d.finishRInner * app.controlScale,
-    labelH: d.labelH * app.controlScale,
-    strokeW: d.strokeW * app.lineWidth,
-    legW: d.legW * app.lineWidth,
-  }
-}
 
 export interface CourseFitInfo {
   courseId: string

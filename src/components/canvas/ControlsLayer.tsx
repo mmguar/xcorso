@@ -1,32 +1,12 @@
 import { memo, useMemo } from 'react'
-import type { Control, Course, CourseControl, CircleGap, AppearanceSettings, MapPoint } from '../../types'
+import type { Control, Course, CourseControl } from '../../types'
 import { useStore } from '../../store'
 import { useRenderTracker } from '../../lib/perf'
 import { defaultControlLabel, buildSequenceMap as buildSeqMap, formatSequenceLabel, unitsPerMm, computeSubmaps, IOF_PURPLE } from '../../lib/courseUtils'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
-import { startTriangleVertices, exchangeTriangleVertices, startTriangleAngle, exchangeTriangleAngle } from '../../lib/symbolGeometry'
-import type { SymbolDims } from '../../lib/symbolSpec'
-import { circleGapDashArray } from '../../lib/gapDash'
+import { resolveSpec, getSymbolDims, dimsFor, symbolScaleFactor as specScaleFactor, symbolLabelOffset } from '../../lib/symbolSpec'
+import { startTriangleAngle, exchangeTriangleAngle } from '../../lib/symbolGeometry'
 import { assignControlColors, MULTICOLOR_PALETTE } from '../../lib/pdfExport'
-
-function gapsToDashArray(gaps: CircleGap[], circumference: number): { dashArray: string; dashOffset: number } | null {
-  const dashes = circleGapDashArray(gaps, circumference)
-  return dashes ? { dashArray: dashes.join(' '), dashOffset: 0 } : null
-}
-
-interface ShapeProps {
-  control: Control
-  color: string
-  label: string
-  mapScale: number
-  upm: number
-  appearance: AppearanceSettings
-  labelOffset?: MapPoint
-  dims: SymbolDims
-  scaleFactor: number
-  showCrosshair: boolean
-  rotation?: number
-}
+import { renderControlSymbol } from '../../lib/courseRenderer'
 
 function Crosshair({ x, y, extent, sw, color }: { x: number; y: number; extent: number; sw: number; color: string }) {
   return (
@@ -37,166 +17,10 @@ function Crosshair({ x, y, extent, sw, color }: { x: number; y: number; extent: 
   )
 }
 
-function labelOutlineSvgProps(appearance: AppearanceSettings, upm: number) {
-  if (!appearance.outlineEnabled) return {}
-  const outlineSw = appearance.outlineWidth * upm
-  return {
-    stroke: appearance.outlineColor,
-    strokeWidth: outlineSw * 2,
-    strokeLinejoin: 'round' as const,
-    strokeLinecap: 'round' as const,
-    paintOrder: 'stroke fill' as const,
-  }
-}
-
-// ISOM 704: control number in Arial 4.0 mm (dims.labelH), non-bold.
-function ControlLabel({ x, y, fontSize, color, label, appearance, upm }: {
-  x: number; y: number; fontSize: number; color: string; label: string; appearance: AppearanceSettings; upm: number
-}) {
-  if (!label) return null
-  return (
-    <text x={x} y={y}
-      fontSize={fontSize} fill={color} fontFamily="Arial, sans-serif"
-      textAnchor="start" dominantBaseline="auto"
-      {...labelOutlineSvgProps(appearance, upm)}>
-      {label}
-    </text>
-  )
-}
-
-function StartTriangle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair, rotation = 0 }: ShapeProps) {
-  const scale = appearance.controlScale * scaleFactor
-  const labelFs = dims.labelH * upm * scale
-  const { x, y } = control.position
-  const side = dims.startSide * upm * scale
-  const h = side * Math.sqrt(3) / 2
-  const points = startTriangleVertices({ x, y }, side, rotation).map(p => `${p.x},${p.y}`).join(' ')
-  const perimeter = side * 3
-  const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
-  const dash = control.gaps?.length ? gapsToDashArray(control.gaps, perimeter) : null
-  const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
-  const lx = x + off.x
-  const ly = y + off.y
-  const chExtent = h * 2 / 3
-  return (
-    <g>
-      {showCrosshair && <Crosshair x={x} y={y} extent={chExtent} sw={sw * 0.5} color={color} />}
-      {appearance.outlineEnabled && (
-        <polygon points={points} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
-          strokeLinejoin="round"
-          {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
-        />
-      )}
-      <polygon points={points} fill="none" stroke={color} strokeWidth={sw}
-        {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
-      />
-      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
-    </g>
-  )
-}
-
-function FinishCircles({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
-  const scale = appearance.controlScale
-  const cr = dims.finishROuter * upm * scaleFactor * scale
-  const innerR = dims.finishRInner * upm * scaleFactor * scale
-  const labelFs = dims.labelH * upm * scaleFactor * scale
-  const { x, y } = control.position
-  const sw = dims.strokeW * upm * scaleFactor * appearance.lineWidth
-  const outerCirc = 2 * Math.PI * cr
-  const innerCirc = 2 * Math.PI * innerR
-  const outerDash = control.gaps?.length ? gapsToDashArray(control.gaps, outerCirc) : null
-  const innerDash = control.gaps?.length ? gapsToDashArray(control.gaps, innerCirc) : null
-  const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
-  const lx = x + off.x
-  const ly = y + off.y
-  return (
-    <g>
-      {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
-      {appearance.outlineEnabled && (
-        <>
-          <circle cx={x} cy={y} r={innerR} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
-            {...(innerDash ? { strokeDasharray: innerDash.dashArray, strokeDashoffset: innerDash.dashOffset } : {})}
-          />
-          <circle cx={x} cy={y} r={cr} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
-            {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
-          />
-        </>
-      )}
-      <circle cx={x} cy={y} r={innerR} fill="none" stroke={color} strokeWidth={sw}
-        {...(innerDash ? { strokeDasharray: innerDash.dashArray, strokeDashoffset: innerDash.dashOffset } : {})}
-      />
-      <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
-        {...(outerDash ? { strokeDasharray: outerDash.dashArray, strokeDashoffset: outerDash.dashOffset } : {})}
-      />
-      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
-    </g>
-  )
-}
-
-function ControlCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair }: ShapeProps) {
-  const cr = dims.controlR * upm * scaleFactor * appearance.controlScale
-  const labelFs = dims.labelH * upm * scaleFactor * appearance.controlScale
-  const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
-  const { x, y } = control.position
-  const circumference = 2 * Math.PI * cr
-  const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
-  const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
-  const lx = x + off.x
-  const ly = y + off.y
-  return (
-    <g>
-      {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
-      {appearance.outlineEnabled && (
-        <circle
-          cx={x} cy={y} r={cr}
-          fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
-          {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
-        />
-      )}
-      <circle
-        cx={x} cy={y} r={cr}
-        fill="none" stroke={color} strokeWidth={sw}
-        {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
-      />
-      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
-    </g>
-  )
-}
-
-function ExchangeCircle({ control, color, label, upm, appearance, labelOffset, dims, scaleFactor, showCrosshair, rotation = 0 }: ShapeProps) {
-  // ISOM 715: circle ø 6.0 (= finish outer), apex toward the following control.
-  const cr = dims.finishROuter * upm * scaleFactor * appearance.controlScale
-  const labelFs = dims.labelH * upm * scaleFactor * appearance.controlScale
-  const sw = dims.strokeW * scaleFactor * upm * appearance.lineWidth
-  const { x, y } = control.position
-  const circumference = 2 * Math.PI * cr
-  const dash = control.gaps?.length ? gapsToDashArray(control.gaps, circumference) : null
-  const outlineSw = appearance.outlineEnabled ? appearance.outlineWidth * upm : 0
-  const off = labelOffset ?? symbolLabelOffset(control.type, dims, upm * appearance.controlScale * scaleFactor)
-  const lx = x + off.x
-  const ly = y + off.y
-  const triPoints = exchangeTriangleVertices({ x, y }, cr, rotation).map(p => `${p.x},${p.y}`).join(' ')
-  return (
-    <g>
-      {showCrosshair && <Crosshair x={x} y={y} extent={cr} sw={sw * 0.5} color={color} />}
-      {appearance.outlineEnabled && (
-        <>
-          <circle cx={x} cy={y} r={cr} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2}
-            {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
-          />
-          <polygon points={triPoints} fill="none" stroke={appearance.outlineColor} strokeWidth={sw + outlineSw * 2} strokeLinejoin="round" />
-        </>
-      )}
-      <circle cx={x} cy={y} r={cr} fill="none" stroke={color} strokeWidth={sw}
-        {...(dash ? { strokeDasharray: dash.dashArray, strokeDashoffset: dash.dashOffset } : {})}
-      />
-      <polygon points={triPoints} fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-      <ControlLabel x={lx} y={ly} fontSize={labelFs} color={color} label={label} appearance={appearance} upm={upm} />
-    </g>
-  )
+function crosshairExtent(type: string, dims: ReturnType<typeof getSymbolDims>, sf: number): number {
+  if (type === 'start') return dims.startSide * sf * Math.sqrt(3) / 2 * 2 / 3
+  if (type === 'finish' || type === 'exchange') return dims.finishROuter * sf
+  return dims.controlR * sf
 }
 
 interface Props {
@@ -294,6 +118,14 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
     return m
   }, [selectedCourse, controls])
 
+  const bakedDims = dimsFor(spec, appearance)
+  const sf = upm * scaleFactor
+  // outlineWidth is mm on paper; scale to map units for the SVG coordinate system
+  const canvasAppearance = useMemo(() => ({
+    ...appearance,
+    outlineWidth: appearance.outlineWidth * upm,
+  }), [appearance, upm])
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {controls.map(control => {
@@ -303,9 +135,6 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
         const isInSubmap = submapInfo ? submapInfo.controlIds.has(control.id) : true
         const isActiveInCourse = isInCourse && isInSubmap
 
-        // When viewing a submap, course controls belonging to other submap
-        // segments are not drawn as faint background — only controls outside the
-        // course remain as context.
         if (submapInfo && isInCourse && !isInSubmap) return null
 
         let color: string
@@ -349,22 +178,11 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
         const labelOffset = cc?.labelOffset ?? control.labelOffset
 
-        let Shape: (props: ShapeProps) => React.ReactNode
-        if (control.type === 'start') {
-          Shape = StartTriangle
-        } else if (control.type === 'finish') {
-          Shape = FinishCircles
-        } else if (selectedCourse) {
-          const isExchange = !!cc?.exchangeMode
-          if (isExchange && submapInfo && control.id === submapInfo.lastCcId) {
-            Shape = ControlCircle
-          } else if (isExchange) {
-            Shape = ExchangeCircle
-          } else {
-            Shape = ControlCircle
-          }
+        let isExchange = false
+        if (selectedCourse) {
+          isExchange = !!cc?.exchangeMode && !(submapInfo && control.id === submapInfo.lastCcId)
         } else {
-          Shape = globalExchangeIds?.has(control.id) ? ExchangeCircle : ControlCircle
+          isExchange = globalExchangeIds?.has(control.id) ?? false
         }
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId
@@ -383,10 +201,28 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
           )
         })() : null
 
+        const symbolSvg = renderControlSymbol({
+          type: control.type,
+          position: control.position,
+          dims: bakedDims,
+          scale: sf,
+          color,
+          appearance: canvasAppearance,
+          isExchange,
+          gaps: control.gaps,
+          rotation: symbolAngles?.get(control.id),
+          label,
+          labelOffset,
+        })
+
+        const chSw = bakedDims.strokeW * sf
+        const chExtent = crosshairExtent(isExchange ? 'exchange' : control.type, bakedDims, sf)
+
         return (
           <g key={control.id} data-control-id={control.id} opacity={opacity}>
             {leaderLine}
-            <Shape control={control} color={color} label={label} mapScale={map.scale} upm={upm} appearance={appearance} labelOffset={labelOffset} dims={dims} scaleFactor={scaleFactor} showCrosshair={showCrosshair} rotation={symbolAngles?.get(control.id)} />
+            {showCrosshair && <Crosshair x={control.position.x} y={control.position.y} extent={chExtent} sw={chSw * 0.5} color={color} />}
+            <g dangerouslySetInnerHTML={{ __html: symbolSvg }} />
           </g>
         )
       })}
