@@ -7,6 +7,7 @@ import {
   checkFitForCourseObj, checkTilingForCourseObj, suggestFitScaleForCourseObj,
   checkFitForAllControls,
 } from '../../lib/pdfExport'
+import { exportCourseImages } from '../../lib/imageExport'
 import { defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
 import { setDescTranslator } from '../../lib/pdfDescriptionSheet'
@@ -898,6 +899,7 @@ export function LayoutPanel() {
   const scalable = canExportPdf(project.map)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'png'>('pdf')
   const [allControls, setAllControls] = useState(true)
   const allControlsMulticolor = useStore(s => s.project!.allControlsMulticolor ?? false)
   const allControlsLinkId = useStore(s => s.project!.allControlsLinkId ?? false)
@@ -936,42 +938,57 @@ export function LayoutPanel() {
         isViewer ? !viewerExclusions.has(c.id) : c.layout?.included !== false
       )
 
-      // Scale, clue-sheet positions, page size, border and centring are all read
-      // per-submap directly from each course's layout inside exportCoursePdf, so
-      // only the course-level description mode needs to be threaded through here.
-      const descModes: Record<string, DescMode> = {}
-      for (const c of includedCourses) {
-        if (!c.layout) continue
-        descModes[c.id] = c.layout.descMode ?? 'none'
-      }
-
-      const options: PdfExportOptions = {
-        pageSize: defaults.pageSize,
-        orientation: defaults.orientation,
-        printScale: defaults.printScale,
-        courseIds: includedCourses.map(c => c.id),
-        allControls,
-        allControlsMulticolor: allControls && allControlsMulticolor,
-        allControlsLinkId: allControls && allControlsLinkId,
-        tiling: allControls && (currentProject.allControlsTiling ?? false),
-        descModes,
-        appearance: useStore.getState().editor.appearance,
-        mapOpacity: defaults.mapOpacity,
-        mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
-        rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
-        mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
-        overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
-        overprintMode: currentProject.overprintMode ?? 'simulated',
-      }
+      const courseIds = includedCourses.map(c => c.id)
+      const currentMap = useStore.getState().loadedMap
 
       setDescTranslator(t)
-      const currentMap = useStore.getState().loadedMap
-      const blob = await exportCoursePdf(currentProject, options, currentMap)
-      downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+      if (exportFormat === 'png') {
+        const images = await exportCourseImages(currentProject, {
+          pageSize: defaults.pageSize,
+          orientation: defaults.orientation,
+          printScale: defaults.printScale,
+          courseIds,
+          allControls,
+          allControlsMulticolor: allControls && allControlsMulticolor,
+          allControlsLinkId: allControls && allControlsLinkId,
+          appearance: useStore.getState().editor.appearance,
+          mapOpacity: defaults.mapOpacity,
+          mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
+          overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
+          overprintMode: currentProject.overprintMode ?? 'simulated',
+        }, currentMap)
+        for (const { name, blob } of images) {
+          downloadBlob(blob, name.replace(/\s+/g, '_'))
+        }
+      } else {
+        const descModes: Record<string, DescMode> = {}
+        for (const c of includedCourses) {
+          if (!c.layout) continue
+          descModes[c.id] = c.layout.descMode ?? 'none'
+        }
+        const options: PdfExportOptions = {
+          pageSize: defaults.pageSize,
+          orientation: defaults.orientation,
+          printScale: defaults.printScale,
+          courseIds,
+          allControls,
+          allControlsMulticolor: allControls && allControlsMulticolor,
+          allControlsLinkId: allControls && allControlsLinkId,
+          tiling: allControls && (currentProject.allControlsTiling ?? false),
+          descModes,
+          appearance: useStore.getState().editor.appearance,
+          mapOpacity: defaults.mapOpacity,
+          mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
+          rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
+          mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
+          overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
+          overprintMode: currentProject.overprintMode ?? 'simulated',
+        }
+        const blob = await exportCoursePdf(currentProject, options, currentMap)
+        downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      // A stale dev/PWA page can fail to fetch the lazily-loaded pdf modules;
-      // only a reload picks up the fresh chunks.
       setExportError(/dynamically imported module|outdated optimize dep|Importing a module script failed/i.test(msg)
         ? t('layout.exportFailed')
         : t('layout.exportError', { error: msg }))
@@ -1072,14 +1089,24 @@ export function LayoutPanel() {
         {exportError && (
           <p className="text-[11px] text-red-600 mb-2">{exportError}</p>
         )}
-        <button
-          data-tour="export-pdf"
-          onClick={handleExport}
-          disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
-          className="w-full bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {exporting ? t('layout.exporting') : t('layout.exportPdf')}
-        </button>
+        <div className="flex gap-1.5">
+          <select
+            value={exportFormat}
+            onChange={e => setExportFormat(e.target.value as 'pdf' | 'png')}
+            className="border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white"
+          >
+            <option value="pdf">PDF</option>
+            <option value="png">PNG</option>
+          </select>
+          <button
+            data-tour="export-pdf"
+            onClick={handleExport}
+            disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
+            className="flex-1 bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {exporting ? t('layout.exporting') : t('layout.export')}
+          </button>
+        </div>
       </div>
     </div>
   )

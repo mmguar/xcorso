@@ -2,25 +2,21 @@
 // the store statically import page-geometry helpers from this module, so the
 // runtime library is loaded on demand in exportCoursePdf instead.
 import type { jsPDF } from 'jspdf'
-import type { Project, Course, Control, CourseControl, MapPoint, MapConfig, ScaleBar, TextLabel, ImageOverlay, EventSpec, MapBorder, CircleGap, LegGap, ControlType, Annotation, OverprintMode, AppearanceSettings } from '../types'
+import type { Project, Course, Control, CourseControl, MapPoint, MapConfig, EventSpec, MapBorder, OverprintMode, AppearanceSettings } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { defaultControlLabel, buildSequenceMap, formatSequenceLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, IOF_PURPLE } from './courseUtils'
-import { computeCourseDistances, resolveCourseLength, formatScaleBarDistance, scaleBarLayoutMm } from './distance'
-import { resolveSpec, getSymbolDims, symbolScaleFactor as specScaleFactor, getAnnotationDims, controlSymbolRadiusMm, symbolLabelOffset, MM_TO_PT } from './symbolSpec'
-import type { SymbolDims } from './symbolSpec'
-import { circleGapDashArray, legGapDashArray } from './gapDash'
-import { walkPath, clipPolyline, distance, polylineLength, interpolatePolyline, catmullRomToCubics, flattenSmooth } from './geometry'
-import { hexToRgb, darkenHex } from './color'
+import { defaultControlLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, IOF_PURPLE } from './courseUtils'
+import { computeCourseDistances, resolveCourseLength } from './distance'
+import { resolveSpec, getSymbolDims, dimsFor, symbolScaleFactor as specScaleFactor, controlSymbolRadiusMm, symbolLabelOffset } from './symbolSpec'
+import { distance } from './geometry'
+import { hexToRgb } from './color'
 import {
-  startTriangleVertices, startTriangleAngle,
-  exchangeTriangleVertices, exchangeTriangleAngle,
-  routeXMarkSegments,
-  crossingPointCurve,
-  northArrowGeometry,
-  rotateAround,
-} from './symbolGeometry'
+  renderControlSymbol,
+  renderAnnotationInk, renderNorthArrows,
+  renderScaleBar, renderTextLabel,
+  buildCourseInkSvg,
+} from './courseRenderer'
 
 export const MARGIN = 10
 export const TILE_OVERLAP = 15
@@ -109,22 +105,6 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   outlineEnabled: false, outlineColor: '#ffffff', outlineWidth: 0.7,
 }
 
-// Appearance-adjusted symbol dims: controlScale scales the geometry,
-// lineWidth scales the strokes — mirrors ControlsLayer / LegsLayer.
-function dimsFor(spec: EventSpec, app: AppearanceSettings): SymbolDims {
-  const d = getSymbolDims(spec)
-  if (app.controlScale === 1 && app.lineWidth === 1) return d
-  return {
-    ...d,
-    controlR: d.controlR * app.controlScale,
-    startSide: d.startSide * app.controlScale,
-    finishROuter: d.finishROuter * app.controlScale,
-    finishRInner: d.finishRInner * app.controlScale,
-    labelH: d.labelH * app.controlScale,
-    strokeW: d.strokeW * app.lineWidth,
-    legW: d.legW * app.lineWidth,
-  }
-}
 
 export interface CourseFitInfo {
   courseId: string
@@ -637,545 +617,32 @@ export interface CourseTileInfo {
   totalPages: number
 }
 
-// ── Color helpers ───────────────────────────────────────────────────────────
+// ── SVG embedding helpers ──────────────────────────────────────────────────
 
-function setColor(doc: jsPDF, hex: string) {
-  const [r, g, b] = hexToRgb(hex)
-  doc.setDrawColor(r, g, b)
-  doc.setFillColor(r, g, b)
-  doc.setTextColor(r, g, b)
+function parseSvgStr(content: string, w: number, h: number): SVGElement {
+  const xml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${content}</svg>`
+  const parsed = new DOMParser().parseFromString(xml, 'image/svg+xml')
+  return parsed.documentElement as unknown as SVGElement
 }
 
-// ── Gap dash patterns ──────────────────────────────────────────────────────
-
-function legGapDash(gaps: LegGap[], lineLen: number): { dash: number[]; phase: number } | null {
-  const dash = legGapDashArray(gaps, lineLen)
-  return dash ? { dash, phase: 0 } : null
+async function embedSvg(doc: jsPDF, content: string, w: number, h: number) {
+  if (!content) return
+  const el = parseSvgStr(content, w, h)
+  await doc.svg(el, { x: 0, y: 0, width: w, height: h })
 }
 
-// ── Drawing primitives ──────────────────────────────────────────────────────
-
-function drawControlSymbol(doc: jsPDF, type: string, pos: Pos, printScale: number, spec: EventSpec, app: AppearanceSettings, color: string, isExchange = false, gaps?: CircleGap[], startAngle = 0) {
-  const dims = dimsFor(spec, app)
-  const sf = specScaleFactor(spec, printScale)
-  const startSide = dims.startSide * sf
-  const finishOuter = dims.finishROuter * sf
-  const finishInner = dims.finishRInner * sf
-  const controlR = dims.controlR * sf
-  const strokeSw = dims.strokeW * sf
-
-  // mirror=true for circles: jsPDF winds the opposite way from SVG (see gapDash.ts).
-  // The start triangle is drawn with explicit, matching vertex order, so it uses mirror=false.
-  const gapDash = gaps?.length
-    ? (circ: number, mirror: boolean) => {
-        const d = circleGapDashArray(gaps, circ, mirror)
-        if (d) doc.setLineDashPattern(d, 0)
-      }
-    : () => {}
-  const resetDash = gaps?.length ? () => doc.setLineDashPattern([], 0) : () => {}
-
-  function pass(sw: number) {
-    if (type === 'start') {
-      const [a, b, c] = startTriangleVertices(pos, startSide, startAngle)
-      doc.setLineWidth(sw)
-      gapDash(startSide * 3, false)
-      doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
-      resetDash()
-    } else if (type === 'finish') {
-      doc.setLineWidth(sw)
-      gapDash(2 * Math.PI * finishOuter, true)
-      doc.circle(pos.x, pos.y, finishOuter, 'S')
-      resetDash()
-      gapDash(2 * Math.PI * finishInner, true)
-      doc.circle(pos.x, pos.y, finishInner, 'S')
-      resetDash()
-    } else if (isExchange) {
-      // ISOM 715: circle ø 6.0 (= finish outer), apex toward the following
-      // control (startAngle doubles as the triangle angle here).
-      doc.setLineWidth(sw)
-      gapDash(2 * Math.PI * finishOuter, true)
-      doc.circle(pos.x, pos.y, finishOuter, 'S')
-      resetDash()
-      const [a, b, c] = exchangeTriangleVertices(pos, finishOuter, startAngle)
-      doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'S')
-    } else {
-      doc.setLineWidth(sw)
-      gapDash(2 * Math.PI * controlR, true)
-      doc.circle(pos.x, pos.y, controlR, 'S')
-      resetDash()
-    }
-  }
-
-  if (app.outlineEnabled) {
-    setColor(doc, app.outlineColor)
-    doc.setLineJoin(1)
-    pass(strokeSw + app.outlineWidth * 2)
-  }
-  setColor(doc, color)
-  pass(strokeSw)
-}
-
-function clipR(type: string, printScale: number, spec: EventSpec, app: AppearanceSettings, gap = true): number {
-  const dims = dimsFor(spec, app)
-  const sf = specScaleFactor(spec, printScale)
-  const gapMul = gap ? 1.4 : 1
-  return controlSymbolRadiusMm(type as ControlType, dims) * sf * gapMul
-}
-
-function drawLeg(doc: jsPDF, from: Pos, to: Pos, fromType: string, toType: string, printScale: number, spec: EventSpec, app: AppearanceSettings, color: string, bendPoints?: Pos[], gaps?: LegGap[], markedRoute?: string) {
-  const dims = dimsFor(spec, app)
-  const sf = specScaleFactor(spec, printScale)
-  doc.setLineCap(1)
-  const noGap = !!markedRoute
-  const fromR = clipR(fromType, printScale, spec, app, !noGap)
-  const toR = clipR(toType, printScale, spec, app, !noGap)
-
-  const fullPts: Pos[] = bendPoints?.length ? [from, ...bendPoints, to] : [from, to]
-  const fullLen = polylineLength(fullPts)
-
-  const clipped = clipPolyline(fullPts, fromR, toR)
-  if (clipped.length < 2) return
-
-  const clippedLen = polylineLength(clipped)
-
-  // Remap gaps from full-leg fractions to clipped-leg fractions
-  let remapped: LegGap[] | undefined
-  if (gaps?.length && fullLen > 0) {
-    const clipStart = fromR / fullLen
-    const clipEnd = 1 - toR / fullLen
-    const clipRange = clipEnd - clipStart
-    if (clipRange > 0) {
-      remapped = gaps
-        .map(g => ({
-          start: Math.max(0, (g.start - clipStart) / clipRange),
-          end: Math.min(1, (g.end - clipStart) / clipRange),
-        }))
-        .filter(g => g.end > 0 && g.start < 1)
-    }
-  }
-
-  // ponytail: IOF 707 2mm dash, 0.5mm gap for marked/taped routes
-  const gd = markedRoute ? { dash: [2 * sf, 0.5 * sf], phase: 0 }
-    : remapped?.length ? legGapDash(remapped, clippedLen) : null
-  if (gd) {
-    doc.setLineDashPattern(gd.dash, gd.phase)
-    doc.setLineCap(0)
-  }
-
-  function strokePath() {
-    doc.moveTo(clipped[0].x, clipped[0].y)
-    if (markedRoute && clipped.length >= 3) {
-      const segs = catmullRomToCubics(clipped)
-      for (const s of segs) doc.curveTo(s.cp1.x, s.cp1.y, s.cp2.x, s.cp2.y, s.end.x, s.end.y)
-    } else {
-      for (let i = 1; i < clipped.length; i++) doc.lineTo(clipped[i].x, clipped[i].y)
-    }
-    doc.stroke()
-  }
-
-  if (app.outlineEnabled) {
-    setColor(doc, app.outlineColor)
-    doc.setLineJoin(1)
-    doc.setLineWidth(dims.legW * sf + app.outlineWidth * 2)
-    strokePath()
-  }
-  setColor(doc, color)
-  doc.setLineWidth(dims.legW * sf)
-  strokePath()
-
-  if (gd) {
-    doc.setLineDashPattern([], 0)
-    doc.setLineCap(1)
-  }
-}
-
-
-function drawLabel(doc: jsPDF, label: string, pos: Pos, type: ControlType, printScale: number, spec: EventSpec, app: AppearanceSettings, color: string, labelOffsetMm?: Pos) {
-  const dims = dimsFor(spec, app)
-  const sf = specScaleFactor(spec, printScale)
-
-  // ISOM 704: control number in Arial 4.0 mm (dims.labelH), non-bold.
-  doc.setFontSize(dims.labelH * sf * MM_TO_PT)
-  doc.setFont('helvetica', 'normal')
-
-  const off = labelOffsetMm ?? symbolLabelOffset(type, dims, sf)
-  const x = pos.x + off.x
-  const y = pos.y + off.y
-  if (app.outlineEnabled) {
-    setColor(doc, app.outlineColor)
-    doc.setLineWidth(app.outlineWidth * 2)
-    doc.setLineJoin(1)
-    doc.text(label, x, y, { renderingMode: 'stroke' })
-  }
-  setColor(doc, color)
-  doc.text(label, x, y)
-}
-
-function annotationDimsMm(mapScale: number, spec: EventSpec) {
-  const s = mapScale > 0 ? specScaleFactor(spec, mapScale) : 1.5
-  return getAnnotationDims(s)
-}
-
-// ── Forbidden route ─────────────────────────────────────────────────────────
-
-function drawForbiddenRoute(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
-  if (points.length < 2) return
-  const d = annotationDimsMm(mapScale, spec)
-
-  doc.setLineCap(1)
-  doc.setLineJoin(1)
-  doc.setLineWidth(d.routeLineW)
-  doc.moveTo(points[0].x, points[0].y)
-  for (let i = 1; i < points.length; i++) {
-    doc.lineTo(points[i].x, points[i].y)
-  }
-  doc.stroke()
-
-  doc.setLineWidth(d.routeXW)
-  const marks = walkPath(points, d.routeXSpace)
-  for (const m of marks) {
-    for (const [p0, p1] of routeXMarkSegments(m, d.routeXArm)) {
-      doc.moveTo(p0.x, p0.y)
-      doc.lineTo(p1.x, p1.y)
-    }
-  }
-  if (marks.length > 0) doc.stroke()
-}
-
-// ── Crossing point ──────────────────────────────────────────────────────────
-
-function drawCrossingPoint(doc: jsPDF, center: Pos, rotation: number, elongation: number, mapScale: number, spec: EventSpec, elongScale: number) {
-  const d = annotationDimsMm(mapScale, spec)
-  // Elongation is anchored to map features (stored in mm at map scale, like the
-  // canvas ext = elongation * upm), so it rescales with the print scale.
-  const ext = Math.max(0, elongation) * elongScale
-  // Split the pinch curve at its centre; elongation pulls the halves apart and
-  // joins them with a vertical line at the inner pinch (matches canvas render).
-  const { spread, midX, ctrlY, totalHH } = crossingPointCurve(d, ext)
-  const { x, y } = center
-  const rot = (px: number, py: number): Pos => rotateAround({ x: px, y: py }, center, rotation)
-  // Quadratic (p0 → qc → p1) drawn as a cubic via the 2/3 control rule.
-  function quad(p0: Pos, qc: Pos, p1: Pos) {
-    doc.curveTo(
-      p0.x + 2 / 3 * (qc.x - p0.x), p0.y + 2 / 3 * (qc.y - p0.y),
-      p1.x + 2 / 3 * (qc.x - p1.x), p1.y + 2 / 3 * (qc.y - p1.y),
-      p1.x, p1.y,
-    )
-  }
-
-  doc.setLineWidth(d.crossW)
-  doc.setLineCap(1)
-
-  for (const s of [1, -1]) {
-    const top      = rot(x + s * spread, y - totalHH)
-    const pinchTop = rot(x + s * midX, y - ext)
-    const ctrlTop  = rot(x + s * midX, y - ctrlY - ext)
-    const pinchBot = rot(x + s * midX, y + ext)
-    const ctrlBot  = rot(x + s * midX, y + ctrlY + ext)
-    const bot      = rot(x + s * spread, y + totalHH)
-
-    doc.moveTo(top.x, top.y)
-    quad(top, ctrlTop, pinchTop)
-    doc.lineTo(pinchBot.x, pinchBot.y)
-    quad(pinchBot, ctrlBot, bot)
-  }
-  doc.stroke()
-}
-
-// ── Out-of-bounds area ──────────────────────────────────────────────────────
-
-function drawOutOfBoundsArea(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec, boundaryMarking: 'none' | 'continuous' | 'intermittent') {
-  if (points.length < 3) return
-  const d = annotationDimsMm(mapScale, spec)
-
-  // Bounding box
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const p of points) {
-    if (p.x < minX) minX = p.x
-    if (p.y < minY) minY = p.y
-    if (p.x > maxX) maxX = p.x
-    if (p.y > maxY) maxY = p.y
-  }
-
-  // Save state, build clipping path, draw hatching, restore
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jsPDF undocumented internal API
-  const internal = (doc as any).internal
-  internal.write('q')
-
-  // Clipping path via moveTo/lineTo (writes correct PDF coords)
-  doc.moveTo(points[0].x, points[0].y)
-  for (let i = 1; i < points.length; i++) {
-    doc.lineTo(points[i].x, points[i].y)
-  }
-  internal.write('h W n')
-
-  // 45° hatch — spacing matches AnnotationsLayer hatchSpace along the diagonal family y = x + c
-  const hatchW = d.hatchW / 0.707
-  doc.setLineWidth(hatchW)
-  const cMin1 = minY - maxX
-  const cMax1 = maxY - minX
-  const cStep = d.hatchSpace * Math.SQRT2
-
-  let hatchStarted = false
-  for (let c = cMin1; c <= cMax1; c += cStep) {
-    const xStart = Math.max(minX, minY - c)
-    const xEnd = Math.min(maxX, maxY - c)
-    if (xStart >= xEnd) continue
-    doc.moveTo(xStart, xStart + c)
-    doc.lineTo(xEnd, xEnd + c)
-    hatchStarted = true
-  }
-
-  const cMin2 = minX + minY
-  const cMax2 = maxX + maxY
-
-  for (let c = cMin2; c <= cMax2; c += cStep) {
-    const xStart = Math.max(minX, c - maxY)
-    const xEnd = Math.min(maxX, c - minY)
-    if (xStart <= xEnd) {
-      doc.moveTo(xStart, c - xStart)
-      doc.lineTo(xEnd, c - xEnd)
-      hatchStarted = true
-    }
-  }
-  if (hatchStarted) doc.stroke()
-
-  internal.write('Q')
-
-  // Boundary outline — drawn after restoring the clip so the stroke isn't clipped
-  if (boundaryMarking !== 'none') {
-    doc.setLineWidth(d.oobMarkW)
-    if (boundaryMarking === 'intermittent') {
-      doc.setLineDashPattern([d.oobMarkDash, d.oobMarkGap], 0)
-    }
-    doc.moveTo(points[0].x, points[0].y)
-    for (let i = 1; i < points.length; i++) {
-      doc.lineTo(points[i].x, points[i].y)
-    }
-    doc.lineTo(points[0].x, points[0].y)
-    doc.stroke()
-    if (boundaryMarking === 'intermittent') doc.setLineDashPattern([], 0)
-  }
-}
-
-// ── North arrow ────────────────────────────────────────────────────────────
-
-function drawNorthArrow(
-  doc: jsPDF,
-  center: Pos,
-  rotation: number,
-  annScale: number,
-  mapScale: number,
-  spec: EventSpec,
-  color: string,
-  textColor: string,
-) {
-  const d = annotationDimsMm(mapScale, spec)
-  const h = d.northArrowH * annScale
-  const { halfBase, apexLocalY, baseLocalY } = northArrowGeometry(h, 1)
-  const strokeW = d.northStrokeW
-
-  const { x: cx, y: cy } = center
-  const rot = (lx: number, ly: number): Pos => rotateAround({ x: cx + lx, y: cy + ly }, center, rotation)
-
-  const apex = rot(0, apexLocalY)
-  const br = rot(halfBase, baseLocalY)
-  const bl = rot(-halfBase, baseLocalY)
-
-  // Filled triangle
-  const [r, g, b] = hexToRgb(color)
-  doc.setFillColor(r, g, b)
-  const [dr, dg, db] = hexToRgb(darkenHex(color))
-  doc.setDrawColor(dr, dg, db)
-  doc.setLineWidth(strokeW)
-  doc.setLineJoin(1)
-  doc.moveTo(apex.x, apex.y)
-  doc.lineTo(br.x, br.y)
-  doc.lineTo(bl.x, bl.y)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jsPDF undocumented internal API
-  ;(doc as any).internal.write('h')
-  doc.fillStroke()
-
-  // "N" text
-  const fontSize = h * 0.45
-  const textPos = rot(0, h * 0.12)
-  const [tr, tg, tb] = hexToRgb(textColor)
-  doc.setTextColor(tr, tg, tb)
-  doc.setFontSize(fontSize * MM_TO_PT)
-  doc.setFont('helvetica', 'bold')
-  // baseline 'middle' matches the canvas dominantBaseline="central"
-  doc.text('N', textPos.x, textPos.y, { align: 'center', baseline: 'middle', angle: -rotation })
-}
-
-// OOB boundary — a simple polyline with 0.7 mm stroke (at base scale).
-function drawOobBoundary(doc: jsPDF, points: Pos[], mapScale: number, spec: EventSpec) {
-  if (points.length < 2) return
-  const d = annotationDimsMm(mapScale, spec)
-  doc.setLineCap(1)
-  doc.setLineJoin(1)
-  doc.setLineWidth(d.boundaryW)
-  doc.moveTo(points[0].x, points[0].y)
-  for (let i = 1; i < points.length; i++) {
-    doc.lineTo(points[i].x, points[i].y)
-  }
-  doc.stroke()
-}
-
-// Purple ISOM symbols (709/710/711) — the overprint-able annotation ink.
-function drawAnnotationInk(
-  doc: jsPDF,
-  annotations: Annotation[],
-  toPage: (pt: MapPoint) => Pos,
-  mapScale: number,
-  spec: EventSpec,
-  /** Native map scale — converts map-anchored mm (crossing elongation) to paper mm. */
-  nativeScale: number,
-) {
-  const elongScale = mapScale > 0 ? nativeScale / mapScale : 1
-  for (const ann of annotations) {
-    if (ann.type === 'forbidden_route') {
-      drawForbiddenRoute(doc, ann.points.map(p => toPage(p)), mapScale, spec)
-    } else if (ann.type === 'crossing_point' && ann.points[0]) {
-      drawCrossingPoint(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.elongation ?? 0, mapScale, spec, elongScale)
-    } else if (ann.type === 'out_of_bounds') {
-      drawOutOfBoundsArea(doc, ann.points.map(p => toPage(p)), mapScale, spec, ann.boundaryMarking ?? 'none')
-    } else if (ann.type === 'oob_boundary') {
-      drawOobBoundary(doc, ann.points.map(p => toPage(p)), mapScale, spec)
-    }
-  }
-}
-
-// North arrows — excluded from overprint (multiply would erase their white "N").
-function drawNorthArrows(
-  doc: jsPDF,
-  annotations: Annotation[],
-  toPage: (pt: MapPoint) => Pos,
-  mapScale: number,
-  spec: EventSpec,
-) {
-  for (const ann of annotations) {
-    if (ann.type === 'north_arrow' && ann.points[0]) {
-      drawNorthArrow(doc, toPage(ann.points[0]), ann.rotation ?? 0, ann.scale ?? 1, mapScale, spec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff')
-    }
-  }
-}
-
-// Crossfade the course/annotation ink between a solid knockout pass and a
-// multiply (overprint) pass against the rasterised map, mirroring the screen.
-// t=0 → solid, t=1 → full overprint. GState is reset to opaque/Normal after.
-function overprintPass(doc: jsPDF, overprint: number, drawInk: () => void) {
+async function overprintSvg(doc: jsPDF, overprint: number, inkSvg: string, w: number, h: number) {
+  if (!inkSvg) return
   const t = Math.max(0, Math.min(1, overprint))
   if (t < 1) {
     doc.setGState(doc.GState({ opacity: 1 - t, blendMode: 'Normal' }))
-    drawInk()
+    await embedSvg(doc, inkSvg, w, h)
   }
   if (t > 0) {
     doc.setGState(doc.GState({ opacity: t, blendMode: 'Multiply' }))
-    drawInk()
+    await embedSvg(doc, inkSvg, w, h)
   }
   doc.setGState(doc.GState({ opacity: 1, blendMode: 'Normal' }))
-}
-
-// ── Labelling ───────────────────────────────────────────────────────────────
-
-function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
-  if (seqMap && c.type === 'control') {
-    const seqs = seqMap.get(c.id)
-    return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
-  }
-  return defaultControlLabel(c)
-}
-
-// ── Scale bar ──────────────────────────────────────────────────────────────
-
-function drawScaleBar(
-  doc: jsPDF,
-  sb: ScaleBar,
-  toPage: (pt: MapPoint) => Pos,
-  printScale: number,
-) {
-  const scaleDen = printScale
-  const lay = scaleBarLayoutMm(sb, scaleDen)
-  const { segMm, barH, textH, pad, strokeW, tickH, boxW, boxH } = lay
-  const segRealM = sb.fixedCmSegments ? scaleDen / 100 : sb.segmentLengthM
-
-  const origin = toPage(sb.position)
-
-  // Background
-  if (sb.bgAlpha > 0) {
-    doc.setFillColor(255, 255, 255)
-    doc.setGState(doc.GState({ opacity: sb.bgAlpha }))
-    doc.roundedRect(origin.x, origin.y, boxW, boxH, 0.5, 0.5, 'F')
-    doc.setGState(doc.GState({ opacity: 1 }))
-  }
-
-  const barX = origin.x + pad
-  const barY = origin.y + pad + textH + tickH
-
-  // Segments
-  for (let i = 0; i < sb.segments; i++) {
-    doc.setLineWidth(strokeW)
-    doc.setDrawColor(0, 0, 0)
-    if (i % 2 === 0) {
-      doc.setFillColor(0, 0, 0)
-    } else {
-      doc.setFillColor(255, 255, 255)
-    }
-    doc.rect(barX + i * segMm, barY, segMm, barH, 'FD')
-  }
-
-  // Ticks and labels
-  doc.setTextColor(0, 0, 0)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(textH * 0.7 * MM_TO_PT)
-
-  for (let i = 0; i <= sb.segments; i++) {
-    const tx = barX + i * segMm
-    doc.setLineWidth(strokeW)
-    doc.setDrawColor(0, 0, 0)
-    doc.line(tx, barY - tickH, tx, barY)
-
-    if (i === 0 || i === 1 || i === sb.segments) {
-      const label = formatScaleBarDistance(i * segRealM)
-      doc.text(label, tx, barY - tickH - textH * 0.15, { align: 'center' })
-    }
-  }
-
-  // Scale text
-  doc.setFontSize(textH * 0.8 * MM_TO_PT)
-  doc.text(`1:${scaleDen.toLocaleString()}`, origin.x + boxW / 2, barY + barH + textH + pad * 0.3, { align: 'center' })
-}
-
-// ── Text label ─────────────────────────────────────────────────────────────
-
-function drawTextLabel(
-  doc: jsPDF,
-  tl: TextLabel,
-  toPage: (pt: MapPoint) => Pos,
-) {
-  const pos = toPage(tl.position)
-  const fontSize = tl.fontSizeMm
-  const lines = tl.text.split('\n')
-  const lineHeight = fontSize * 1.25
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(fontSize * MM_TO_PT)
-
-  if (tl.bgAlpha > 0) {
-    const pad = 0.15 * fontSize
-    const maxLineW = Math.max(...lines.map(l => doc.getStringUnitWidth(l) * fontSize))
-    const blockH = lineHeight * lines.length
-    doc.setFillColor(255, 255, 255)
-    doc.setGState(doc.GState({ opacity: tl.bgAlpha }))
-    doc.roundedRect(pos.x - pad, pos.y - fontSize - pad, maxLineW + pad * 2, blockH + pad * 2, 0.15 * fontSize, 0.15 * fontSize, 'F')
-    doc.setGState(doc.GState({ opacity: 1 }))
-  }
-
-  const [r, g, b] = hexToRgb(tl.color)
-  doc.setTextColor(r, g, b)
-  for (let i = 0; i < lines.length; i++) {
-    doc.text(lines[i], pos.x, pos.y + i * lineHeight)
-  }
 }
 
 async function ensureJpegOrPng(dataUrl: string): Promise<{ url: string; format: 'PNG' | 'JPEG' }> {
@@ -1197,25 +664,6 @@ async function ensureJpegOrPng(dataUrl: string): Promise<{ url: string; format: 
   return { url: canvas.toDataURL('image/png'), format: 'PNG' }
 }
 
-async function drawImageOverlay(
-  doc: jsPDF,
-  img: ImageOverlay,
-  toPage: (pt: MapPoint) => Pos,
-) {
-  const pos = toPage(img.position)
-  // widthMm/heightMm are true paper mm (like scale bars and text labels) — do
-  // NOT convert through map units or the image rescales with the print scale.
-  const w = img.widthMm
-  const h = img.heightMm
-
-  if (w <= 0 || h <= 0) return
-
-  try {
-    const { url, format } = await ensureJpegOrPng(img.dataUrl)
-    doc.addImage(url, format, pos.x, pos.y, w, h)
-  } catch { /* skip image if it can't be converted */ }
-}
-
 // ── Main export ─────────────────────────────────────────────────────────────
 
 export async function exportCoursePdf(
@@ -1231,7 +679,7 @@ export async function exportCoursePdf(
   const useRaster = options.mapRendering === 'raster'
   const [{ jsPDF: JsPdf }] = await Promise.all([
     import('jspdf'),
-    loadedMap?.type === 'svg' && !useRaster ? import('svg2pdf.js') : Promise.resolve(),
+    import('svg2pdf.js'),
   ])
   const doc = new JsPdf({ orientation: orient, unit: 'mm', format: [pw, ph], compress: true })
   const controlMap = controlsById(project.controls)
@@ -1448,37 +896,50 @@ export async function exportCoursePdf(
           const ctrlColor = IOF_PURPLE
           const annColor = IOF_PURPLE
           const allCtrlSpec = resolveSpec(project.spec)
+          const acDims = dimsFor(allCtrlSpec, app)
+          const acSf = specScaleFactor(allCtrlSpec, acScale)
+          const elongScale = project.map.scale > 0 ? project.map.scale / acScale : 1
 
           const colorMap = options.allControlsMulticolor ? assignControlColors(project.controls) : null
 
-          overprintPass(doc, courseOverprint, () => {
-            setColor(doc, annColor)
-            drawAnnotationInk(doc, project.annotations, toPage, mapScale, allCtrlSpec, project.map.scale)
+          // Build course ink SVG
+          const pageAnns = project.annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
+          let inkSvg = renderAnnotationInk(pageAnns, mapScale, allCtrlSpec, annColor, 1, 'ac', elongScale)
 
-            const acDims = dimsFor(allCtrlSpec, app)
-            const acSf = specScaleFactor(allCtrlSpec, acScale)
-
-            for (const ctrl of project.controls) {
-              const cc = colorMap ? MULTICOLOR_PALETTE[colorMap.get(ctrl.id) ?? 0] : ctrlColor
-              const pos = toPage(ctrl.position)
-              // Controls used as exchanges anywhere show their inner triangle,
-              // matching the all-controls canvas view.
-              drawControlSymbol(doc, ctrl.type, pos, acScale, allCtrlSpec, app, cc, exchangeControlIds.has(ctrl.id), ctrl.gaps)
-              const loMm = ctrl.labelOffset ? mapToMm(ctrl.labelOffset, project.map, acScale) : undefined
-              drawLabel(doc, defaultControlLabel(ctrl), pos, ctrl.type, acScale, allCtrlSpec, app, cc, loMm)
-
-              if (options.allControlsLinkId) {
-                const off = loMm ?? symbolLabelOffset(ctrl.type, acDims, acSf)
-                doc.setLineWidth(getSymbolDims(allCtrlSpec).strokeW * acSf * 0.4)
-                doc.line(pos.x, pos.y, pos.x + off.x, pos.y + off.y)
-              }
+          for (const ctrl of project.controls) {
+            const cc = colorMap ? MULTICOLOR_PALETTE[colorMap.get(ctrl.id) ?? 0] : ctrlColor
+            const pos = toPage(ctrl.position)
+            const loMm = ctrl.labelOffset ? mapToMm(ctrl.labelOffset, project.map, acScale) : undefined
+            inkSvg += renderControlSymbol({
+              type: ctrl.type, position: pos, dims: acDims, scale: acSf,
+              color: cc, appearance: app, isExchange: exchangeControlIds.has(ctrl.id),
+              gaps: ctrl.gaps, label: defaultControlLabel(ctrl), labelOffset: loMm,
+            })
+            if (options.allControlsLinkId) {
+              const off = loMm ?? symbolLabelOffset(ctrl.type, acDims, acSf)
+              const sw = getSymbolDims(allCtrlSpec).strokeW * acSf * 0.4
+              inkSvg += `<line x1="${pos.x}" y1="${pos.y}" x2="${pos.x + off.x}" y2="${pos.y + off.y}" stroke="${cc}" stroke-width="${sw}"/>`
             }
-          })
+          }
+          await overprintSvg(doc, courseOverprint, inkSvg, pw, ph)
           await embedTopColors(toPage, pw, ph)
-          drawNorthArrows(doc, project.annotations, toPage, mapScale, allCtrlSpec)
-          for (const sb of project.scaleBars) drawScaleBar(doc, sb, toPage, acScale)
-          for (const tl of project.textLabels) drawTextLabel(doc, tl, toPage)
-          for (const img of project.imageOverlays) await drawImageOverlay(doc, img, toPage)
+
+          const northSvg = renderNorthArrows(pageAnns, mapScale, allCtrlSpec, 1)
+          if (northSvg) await embedSvg(doc, northSvg, pw, ph)
+
+          let overlaySvg = ''
+          for (const sb of project.scaleBars) overlaySvg += renderScaleBar({ ...sb, position: toPage(sb.position) }, acScale, 1)
+          for (const tl of project.textLabels) overlaySvg += renderTextLabel({ ...tl, position: toPage(tl.position) }, 1)
+          if (overlaySvg) await embedSvg(doc, overlaySvg, pw, ph)
+          for (const img of project.imageOverlays) {
+            const pos = toPage(img.position)
+            if (img.widthMm > 0 && img.heightMm > 0) {
+              try {
+                const { url, format } = await ensureJpegOrPng(img.dataUrl)
+                doc.addImage(url, format, pos.x, pos.y, img.widthMm, img.heightMm)
+              } catch { /* skip */ }
+            }
+          }
 
         }
       }
@@ -1607,152 +1068,27 @@ export async function exportCoursePdf(
 
           await embedMap(toPage, cpw, cph)
 
-          const mapScale = courseScale
-          const annColor = IOF_PURPLE
           const courseSpec = resolveSpec(project.spec, course.spec)
           const courseInk = app.color || course.color
-          overprintPass(doc, courseOverprint, () => {
-          setColor(doc, annColor)
-          drawAnnotationInk(doc, project.annotations, toPage, mapScale, courseSpec, project.map.scale)
+          const cDims = dimsFor(courseSpec, app)
+          const cSf = specScaleFactor(courseSpec, courseScale)
+          const elongScale = project.map.scale > 0 ? project.map.scale / courseScale : 1
 
-          if (pageCourse.type === 'linear' && pageCourse.controls.length >= 2) {
-            // Pre-start taped route
-            const firstCc = pageCourse.controls[0]
-            if (firstCc.markedRoute && firstCc.legBendPoints?.length) {
-              const startCtrl = controlMap.get(firstCc.controlId)
-              if (startCtrl) {
-                const bends = firstCc.legBendPoints.map(p => toPage(p))
-                const startPos = toPage(startCtrl.position)
-                drawLeg(doc, bends[0], startPos, 'control', startCtrl.type, courseScale, courseSpec, app, courseInk,
-                  bends.length > 1 ? bends.slice(1) : undefined, undefined, 'full')
-                // Map issue point
-                if (firstCc.mapIssueT != null) {
-                  const pts = flattenSmooth([...bends, startPos])
-                  const pos = interpolatePolyline(pts, firstCc.mapIssueT)
-                  const sf = specScaleFactor(courseSpec, courseScale)
-                  const barHalf = 1.25 * sf
-                  const barSw = 0.6 * sf * app.lineWidth
-                  const perpX = -Math.sin(pos.angle), perpY = Math.cos(pos.angle)
-                  doc.setLineCap(0)
-                  doc.setLineDashPattern([], 0)
-                  const strokeBar = () => {
-                    doc.moveTo(pos.x + perpX * barHalf, pos.y + perpY * barHalf)
-                    doc.lineTo(pos.x - perpX * barHalf, pos.y - perpY * barHalf)
-                    doc.stroke()
-                  }
-                  if (app.outlineEnabled) {
-                    setColor(doc, app.outlineColor)
-                    doc.setLineWidth(barSw + app.outlineWidth * 2)
-                    strokeBar()
-                  }
-                  setColor(doc, courseInk)
-                  doc.setLineWidth(barSw)
-                  strokeBar()
-                }
-              }
-            }
-            for (let i = 0; i < pageCourse.controls.length - 1; i++) {
-              const from = controlMap.get(pageCourse.controls[i].controlId)
-              const to = controlMap.get(pageCourse.controls[i + 1].controlId)
-              if (!from || !to) continue
-              const cc = pageCourse.controls[i + 1]
-              const isLastLeg = i === pageCourse.controls.length - 2
-              const effectiveMarkedRoute = cc.markedRoute
-                || (isLastLeg && course.finishType === 'taped' ? 'full'
-                  : isLastLeg && course.finishType === 'funnel' ? 'partial'
-                  : undefined)
-              if (effectiveMarkedRoute === 'partial' && cc.markedRouteEnd) {
-                const dims = dimsFor(courseSpec, app)
-                const sf = specScaleFactor(courseSpec, courseScale)
-                const divider = toPage(cc.markedRouteEnd)
-                const fromPos = toPage(from.position)
-                const toPos = toPage(to.position)
-                const fromR = clipR(from.type, courseScale, courseSpec, app, false)
-                const toR = clipR(to.type, courseScale, courseSpec, app, false)
-                const bends = cc.legBendPoints?.map(p => toPage(p))
-                const navBends = cc.legNavBendPoints?.map(p => toPage(p))
-                const strokeSeg = (pts: Pos[], smooth: boolean) => {
-                  doc.moveTo(pts[0].x, pts[0].y)
-                  if (smooth && pts.length >= 3) {
-                    const segs = catmullRomToCubics(pts)
-                    for (const s of segs) doc.curveTo(s.cp1.x, s.cp1.y, s.cp2.x, s.cp2.y, s.end.x, s.end.y)
-                  } else {
-                    for (let k = 1; k < pts.length; k++) doc.lineTo(pts[k].x, pts[k].y)
-                  }
-                  doc.stroke()
-                }
-                const segWithOutline = (pts: Pos[], smooth: boolean) => {
-                  if (app.outlineEnabled) {
-                    setColor(doc, app.outlineColor)
-                    doc.setLineJoin(1)
-                    doc.setLineWidth(dims.legW * sf + app.outlineWidth * 2)
-                    strokeSeg(pts, smooth)
-                  }
-                  setColor(doc, courseInk)
-                  doc.setLineWidth(dims.legW * sf)
-                  strokeSeg(pts, smooth)
-                }
-                const isFunnelFinish = isLastLeg && course.finishType === 'funnel' && !cc.markedRoute
-                // First segment: from → bends → divider
-                const tapedPts: Pos[] = bends?.length ? [fromPos, ...bends, divider] : [fromPos, divider]
-                const tapedClipped = clipPolyline(tapedPts, fromR, 0)
-                if (tapedClipped.length >= 2) {
-                  if (!isFunnelFinish) { doc.setLineDashPattern([2 * sf, 0.5 * sf], 0); doc.setLineCap(0) }
-                  segWithOutline(tapedClipped, !isFunnelFinish)
-                  if (!isFunnelFinish) { doc.setLineDashPattern([], 0); doc.setLineCap(1) }
-                }
-                // Second segment: divider → nav bends → to
-                const navPts: Pos[] = navBends?.length ? [divider, ...navBends, toPos] : [divider, toPos]
-                const navClipped = clipPolyline(navPts, 0, toR)
-                if (navClipped.length >= 2) {
-                  if (isFunnelFinish) { doc.setLineDashPattern([2 * sf, 0.5 * sf], 0); doc.setLineCap(0) }
-                  segWithOutline(navClipped, isFunnelFinish)
-                  if (isFunnelFinish) { doc.setLineDashPattern([], 0); doc.setLineCap(1) }
-                }
-              } else {
-                const bends = cc.legBendPoints?.map(p => toPage(p))
-                drawLeg(doc, toPage(from.position), toPage(to.position), from.type, to.type, courseScale, courseSpec, app, courseInk, bends, cc.legGaps, effectiveMarkedRoute)
-              }
-            }
-          }
-
-          const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
-          const drawn = new Set<string>()
-          const lastCcId = pageCourse.controls[pageCourse.controls.length - 1]?.controlId
-          const firstCcId = hasSubmaps && submap.index > 0 ? pageCourse.controls[0]?.controlId : null
-
-          for (const cc of pageCourse.controls) {
-            if (drawn.has(cc.controlId)) continue
-            drawn.add(cc.controlId)
-
-            const ctrl = controlMap.get(cc.controlId)
-            if (!ctrl) continue
-
-            const pos = toPage(ctrl.position)
-            const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
-            let sAngle = 0
-            if (ctrl.type === 'start' || isExchange) {
-              const ccIdx = pageCourse.controls.findIndex(c => c.controlId === cc.controlId)
-              const nextCtrl = ccIdx >= 0 ? controlMap.get(pageCourse.controls[ccIdx + 1]?.controlId) : undefined
-              if (nextCtrl) {
-                sAngle = ctrl.type === 'start'
-                  ? startTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
-                  : exchangeTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
-              }
-            }
-            drawControlSymbol(doc, ctrl.type, pos, courseScale, courseSpec, app, courseInk, isExchange, ctrl.gaps, sAngle)
-            const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
-            if (ctrl.type === 'control' && (!isSubmapStart || project.labelSubmapStart)) {
-              const lo = cc.labelOffset ?? ctrl.labelOffset
-              const loMm = lo ? mapToMm(lo, project.map, courseScale) : undefined
-              let label = getLabel(ctrl, seqMap)
-              if (course.showPoints && ctrl.points != null) label += ` [${ctrl.points}]`
-              drawLabel(doc, label, pos, ctrl.type, courseScale, courseSpec, app, courseInk, loMm)
-            }
-          }
+          const inkSvg = buildCourseInkSvg({
+            pageCourse, controls: project.controls, controlMap,
+            annotations: project.annotations, toPage,
+            offsetToMm: pt => mapToMm(pt, project.map, courseScale),
+            printScale: courseScale, spec: courseSpec, app,
+            dims: cDims, sf: cSf, color: courseInk, elongScale,
+            idPrefix: `c${pageIndex}`, hasSubmaps, submapIndex: submap.index,
+            labelSubmapStart: project.labelSubmapStart,
           })
+          await overprintSvg(doc, courseOverprint, inkSvg, cpw, cph)
           await embedTopColors(toPage, cpw, cph)
-          drawNorthArrows(doc, project.annotations, toPage, mapScale, courseSpec)
+
+          const pageAnns = project.annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
+          const northSvg = renderNorthArrows(pageAnns, courseScale, courseSpec, 1)
+          if (northSvg) await embedSvg(doc, northSvg, cpw, cph)
 
           const mb = sLayout?.mapBorder
           if (mb) {
@@ -1761,31 +1097,38 @@ export async function exportCoursePdf(
             const bw = mb.width
             const bh = mb.height
             doc.setFillColor(255, 255, 255)
-            doc.rect(0, 0, cpw, by, 'F')               // top
-            doc.rect(0, by + bh, cpw, cph - by - bh, 'F') // bottom
-            doc.rect(0, by, bx, bh, 'F')                // left
-            doc.rect(bx + bw, by, cpw - bx - bw, bh, 'F') // right
+            doc.rect(0, 0, cpw, by, 'F')
+            doc.rect(0, by + bh, cpw, cph - by - bh, 'F')
+            doc.rect(0, by, bx, bh, 'F')
+            doc.rect(bx + bw, by, cpw - bx - bw, bh, 'F')
             const [r, g, b] = hexToRgb(mb.color)
-            const sw = mb.strokeWidth
             doc.setDrawColor(r, g, b)
-            doc.setLineWidth(sw)
+            doc.setLineWidth(mb.strokeWidth)
             doc.rect(bx, by, bw, bh, 'S')
           }
 
+          let overlaySvg = ''
           for (const sb of project.scaleBars) {
             const overridePos = sLayout?.overlayPositions?.[sb.id]
             const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
-            drawScaleBar(doc, effectiveSb, toPage, courseScale)
+            overlaySvg += renderScaleBar({ ...effectiveSb, position: toPage(effectiveSb.position) }, courseScale, 1)
           }
           for (const tl of project.textLabels) {
             const overridePos = sLayout?.overlayPositions?.[tl.id]
             const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
-            drawTextLabel(doc, effectiveTl, toPage)
+            overlaySvg += renderTextLabel({ ...effectiveTl, position: toPage(effectiveTl.position) }, 1)
           }
+          if (overlaySvg) await embedSvg(doc, overlaySvg, cpw, cph)
           for (const img of project.imageOverlays) {
             const overridePos = sLayout?.overlayPositions?.[img.id]
             const effectiveImg = overridePos ? { ...img, position: overridePos } : img
-            await drawImageOverlay(doc, effectiveImg, toPage)
+            const pos = toPage(effectiveImg.position)
+            if (effectiveImg.widthMm > 0 && effectiveImg.heightMm > 0) {
+              try {
+                const { url, format } = await ensureJpegOrPng(effectiveImg.dataUrl)
+                doc.addImage(url, format, pos.x, pos.y, effectiveImg.widthMm, effectiveImg.heightMm)
+              } catch { /* skip */ }
+            }
           }
           if ((descMode === 'on-map' || descMode === 'both') && pageCourse.controls.length > 0) {
             const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
