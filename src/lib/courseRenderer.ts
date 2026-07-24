@@ -4,7 +4,7 @@
 //   - PDF export: parsed and embedded via svg2pdf.js
 //   - Image export: rasterized to canvas
 
-import type { MapPoint, CircleGap, LegGap, EventSpec, AppearanceSettings, Annotation, ScaleBar, TextLabel, ImageOverlay } from '../types'
+import type { MapPoint, CircleGap, LegGap, EventSpec, AppearanceSettings, Annotation, ScaleBar, TextLabel, ImageOverlay, Course, Control } from '../types'
 import type { SymbolDims } from './symbolSpec'
 import { symbolScaleFactor, symbolLabelOffset, getAnnotationDims } from './symbolSpec'
 import type { AnnotationDims } from './symbolSpec'
@@ -15,6 +15,8 @@ import {
   routeXMarkSegments,
   crossingPointCurve,
   northArrowGeometry,
+  startTriangleAngle,
+  exchangeTriangleAngle,
 } from './symbolGeometry'
 import { walkPath, clipPolyline, clipPolylineEnd, polylineLength, smoothPathD, interpolatePolyline, flattenSmooth } from './geometry'
 import { darkenHex } from './color'
@@ -22,6 +24,7 @@ import { formatScaleBarDistance, scaleBarLayoutMm } from './distance'
 import { measureTextWidth } from './textMeasure'
 import { controlSymbolRadiusMm } from './symbolSpec'
 import type { ControlType } from '../types'
+import { buildSequenceMap, defaultControlLabel, formatSequenceLabel, IOF_PURPLE } from './courseUtils'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -527,5 +530,131 @@ export function renderNorthArrows(
       svg += renderNorthArrow(ann.points[0], ann.rotation ?? 0, ann.scale ?? 1, mapScale, spec, ann.color ?? '#38bdf8', ann.textColor ?? '#ffffff', unitScale)
     }
   }
+  return svg
+}
+
+// ── Course ink builder (shared by PDF + image export) ──────────────────────
+
+interface Pos { x: number; y: number }
+
+function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
+  if (seqMap && c.type === 'control') {
+    const seqs = seqMap.get(c.id)
+    return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
+  }
+  return defaultControlLabel(c)
+}
+
+export interface BuildCourseInkOpts {
+  pageCourse: Course
+  controls: Control[]
+  controlMap: Map<string, Control>
+  annotations: Annotation[]
+  toPage: (pt: MapPoint) => Pos
+  offsetToMm: (pt: MapPoint) => Pos
+  printScale: number
+  spec: EventSpec
+  app: AppearanceSettings
+  dims: SymbolDims
+  sf: number
+  color: string
+  elongScale: number
+  idPrefix: string
+  hasSubmaps: boolean
+  submapIndex: number
+  labelSubmapStart?: boolean
+}
+
+export function buildCourseInkSvg(o: BuildCourseInkOpts): string {
+  const { pageCourse: pc, controls, controlMap, annotations, toPage, offsetToMm,
+    printScale, spec, app, dims, sf, color, elongScale, idPrefix, hasSubmaps, submapIndex } = o
+
+  const pageAnns = annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
+  let svg = renderAnnotationInk(pageAnns, printScale, spec, IOF_PURPLE, 1, idPrefix, elongScale)
+
+  if (pc.type === 'linear' && pc.controls.length >= 2) {
+    const firstCc = pc.controls[0]
+    if (firstCc.markedRoute && firstCc.legBendPoints?.length) {
+      const startCtrl = controlMap.get(firstCc.controlId)
+      if (startCtrl) {
+        svg += renderPreStartRoute({
+          startPosition: toPage(startCtrl.position), startType: startCtrl.type,
+          dims, scale: sf, color, appearance: app,
+          bendPoints: firstCc.legBendPoints.map(p => toPage(p)),
+          mapIssueT: firstCc.mapIssueT,
+        })
+      }
+    }
+    for (let i = 0; i < pc.controls.length - 1; i++) {
+      const from = controlMap.get(pc.controls[i].controlId)
+      const to = controlMap.get(pc.controls[i + 1].controlId)
+      if (!from || !to) continue
+      const cc = pc.controls[i + 1]
+      const isLastLeg = i === pc.controls.length - 2
+      const effectiveMarkedRoute = cc.markedRoute
+        || (isLastLeg && pc.finishType === 'taped' ? 'full' as const
+          : isLastLeg && pc.finishType === 'funnel' ? 'partial' as const
+          : undefined)
+      if (effectiveMarkedRoute === 'partial' && cc.markedRouteEnd) {
+        const isFunnelFinish = isLastLeg && pc.finishType === 'funnel' && !cc.markedRoute
+        svg += renderPartialLeg({
+          from: toPage(from.position), to: toPage(to.position),
+          divider: toPage(cc.markedRouteEnd),
+          fromType: from.type, toType: to.type,
+          dims, scale: sf, color, appearance: app,
+          bendPoints: cc.legBendPoints?.map(p => toPage(p)),
+          navBendPoints: cc.legNavBendPoints?.map(p => toPage(p)),
+          isFunnelFinish,
+        })
+      } else {
+        svg += renderLeg({
+          from: toPage(from.position), to: toPage(to.position),
+          fromType: from.type, toType: to.type,
+          dims, scale: sf, color, appearance: app,
+          bendPoints: cc.legBendPoints?.map(p => toPage(p)),
+          gaps: cc.legGaps, markedRoute: effectiveMarkedRoute,
+        })
+      }
+    }
+  }
+
+  const seqMap = pc.type === 'linear' ? buildSequenceMap(pc, controls) : null
+  const drawn = new Set<string>()
+  const lastCcId = pc.controls[pc.controls.length - 1]?.controlId
+  const firstCcId = hasSubmaps && submapIndex > 0 ? pc.controls[0]?.controlId : null
+
+  for (const cc of pc.controls) {
+    if (drawn.has(cc.controlId)) continue
+    drawn.add(cc.controlId)
+    const ctrl = controlMap.get(cc.controlId)
+    if (!ctrl) continue
+    const pos = toPage(ctrl.position)
+    const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
+    let sAngle = 0
+    if (ctrl.type === 'start' || isExchange) {
+      const ccIdx = pc.controls.findIndex(c => c.controlId === cc.controlId)
+      const nextCtrl = ccIdx >= 0 ? controlMap.get(pc.controls[ccIdx + 1]?.controlId) : undefined
+      if (nextCtrl) {
+        sAngle = ctrl.type === 'start'
+          ? startTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
+          : exchangeTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
+      }
+    }
+    const isSubmapStart = firstCcId != null && cc.controlId === firstCcId && !!cc.exchangeMode
+    let label = ''
+    if (ctrl.type === 'control' && (!isSubmapStart || o.labelSubmapStart)) {
+      label = getLabel(ctrl, seqMap)
+      if (pc.showPoints && ctrl.points != null) label += ` [${ctrl.points}]`
+    }
+    const lo = cc.labelOffset ?? ctrl.labelOffset
+    const loMm = lo ? offsetToMm(lo) : undefined
+    svg += renderControlSymbol({
+      type: ctrl.type, position: pos, dims, scale: sf,
+      color, appearance: app, isExchange,
+      gaps: ctrl.gaps, rotation: sAngle,
+      label, labelOffset: loMm,
+    })
+  }
+
   return svg
 }

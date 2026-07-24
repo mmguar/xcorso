@@ -6,17 +6,17 @@ import {
 } from './pdfExport'
 import { resolveSpec, dimsFor, symbolScaleFactor as specScaleFactor } from './symbolSpec'
 import {
-  IOF_PURPLE, buildSequenceMap, controlsById, computeSubmaps,
-  submapLayoutView, defaultControlLabel, formatSequenceLabel,
+  IOF_PURPLE, controlsById, computeSubmaps,
+  submapLayoutView, defaultControlLabel,
 } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength } from './distance'
 import { descriptionSheetSize, descriptionSheetPartSizes, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { startTriangleAngle, exchangeTriangleAngle } from './symbolGeometry'
 import { hexToRgb } from './color'
 import { applyMapOverprint } from './overprint'
 import {
-  renderControlSymbol, renderLeg, renderPartialLeg, renderPreStartRoute,
+  renderControlSymbol,
   renderAnnotationInk, renderNorthArrows, renderScaleBar, renderTextLabel,
+  buildCourseInkSvg,
 } from './courseRenderer'
 
 interface Pos { x: number; y: number }
@@ -43,13 +43,6 @@ export interface ImageExportOptions {
   scaleOverrides?: Record<string, number>
 }
 
-function getLabel(c: Control, seqMap: Map<string, number[]> | null): string {
-  if (seqMap && c.type === 'control') {
-    const seqs = seqMap.get(c.id)
-    return seqs ? formatSequenceLabel(seqs) : defaultControlLabel(c)
-  }
-  return defaultControlLabel(c)
-}
 
 async function loadImage(src: string): Promise<HTMLImageElement> {
   const img = new Image()
@@ -343,6 +336,7 @@ export async function exportCourseImages(
       const blob = await renderPage(
         project, pageCourse, toPage, cpw, cph, pxPerMm, courseScale, courseSpec, app, loadedMap,
         mapOpacity, mapOverprint, courseOverprint, elongScale, controlMap, options, onMapSheet,
+        hasSubmaps, submap.index,
       )
       const suffix = submaps.length > 1 ? `_${submap.index + 1}` : ''
       results.push({ name: `${project.meta.name}_${course.name}${suffix}.png`, blob })
@@ -396,6 +390,8 @@ async function renderPage(
   controlMap: Map<string, Control>,
   options: ImageExportOptions,
   descSheet?: DescSheetInfo,
+  hasSubmaps = false,
+  submapIndex = 0,
 ): Promise<Blob> {
   const canvasW = Math.round(pw * pxPerMm)
   const canvasH = Math.round(ph * pxPerMm)
@@ -428,99 +424,22 @@ async function renderPage(
   // Build course ink SVG
   const dims = dimsFor(spec, app)
   const sf = specScaleFactor(spec, printScale)
-  const annColor = IOF_PURPLE
   const courseInk = app.color || (course?.color ?? IOF_PURPLE)
+  const offsetToMm = (pt: MapPoint) => mapToMm(pt, project.map, printScale)
 
-  const pageAnns = project.annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
-  let inkSvg = renderAnnotationInk(pageAnns, printScale, spec, annColor, 1, 'img', elongScale)
-
+  let inkSvg: string
   if (course) {
-    // Course-specific rendering
-    if (course.type === 'linear' && course.controls.length >= 2) {
-      const firstCc = course.controls[0]
-      if (firstCc.markedRoute && firstCc.legBendPoints?.length) {
-        const startCtrl = controlMap.get(firstCc.controlId)
-        if (startCtrl) {
-          inkSvg += renderPreStartRoute({
-            startPosition: toPage(startCtrl.position), startType: startCtrl.type,
-            dims, scale: sf, color: courseInk, appearance: app,
-            bendPoints: firstCc.legBendPoints.map(p => toPage(p)),
-            mapIssueT: firstCc.mapIssueT,
-          })
-        }
-      }
-      for (let i = 0; i < course.controls.length - 1; i++) {
-        const from = controlMap.get(course.controls[i].controlId)
-        const to = controlMap.get(course.controls[i + 1].controlId)
-        if (!from || !to) continue
-        const cc = course.controls[i + 1]
-        const isLastLeg = i === course.controls.length - 2
-        const effectiveMarkedRoute = cc.markedRoute
-          || (isLastLeg && course.finishType === 'taped' ? 'full' as const
-            : isLastLeg && course.finishType === 'funnel' ? 'partial' as const
-            : undefined)
-        if (effectiveMarkedRoute === 'partial' && cc.markedRouteEnd) {
-          const isFunnelFinish = isLastLeg && course.finishType === 'funnel' && !cc.markedRoute
-          inkSvg += renderPartialLeg({
-            from: toPage(from.position), to: toPage(to.position),
-            divider: toPage(cc.markedRouteEnd),
-            fromType: from.type, toType: to.type,
-            dims, scale: sf, color: courseInk, appearance: app,
-            bendPoints: cc.legBendPoints?.map(p => toPage(p)),
-            navBendPoints: cc.legNavBendPoints?.map(p => toPage(p)),
-            isFunnelFinish,
-          })
-        } else {
-          inkSvg += renderLeg({
-            from: toPage(from.position), to: toPage(to.position),
-            fromType: from.type, toType: to.type,
-            dims, scale: sf, color: courseInk, appearance: app,
-            bendPoints: cc.legBendPoints?.map(p => toPage(p)),
-            gaps: cc.legGaps, markedRoute: effectiveMarkedRoute,
-          })
-        }
-      }
-    }
-
-    const seqMap = course.type === 'linear' ? buildSequenceMap(course, project.controls) : null
-    const drawn = new Set<string>()
-    const submaps = computeSubmaps(course)
-    const hasSubmaps = submaps.length > 1
-    const lastCcId = course.controls[course.controls.length - 1]?.controlId
-
-    for (const cc of course.controls) {
-      if (drawn.has(cc.controlId)) continue
-      drawn.add(cc.controlId)
-      const ctrl = controlMap.get(cc.controlId)
-      if (!ctrl) continue
-      const pos = toPage(ctrl.position)
-      const isExchange = !!cc.exchangeMode && !(hasSubmaps && cc.controlId === lastCcId)
-      let sAngle = 0
-      if (ctrl.type === 'start' || isExchange) {
-        const ccIdx = course.controls.findIndex(c => c.controlId === cc.controlId)
-        const nextCtrl = ccIdx >= 0 ? controlMap.get(course.controls[ccIdx + 1]?.controlId) : undefined
-        if (nextCtrl) {
-          sAngle = ctrl.type === 'start'
-            ? startTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
-            : exchangeTriangleAngle(toPage(ctrl.position), toPage(nextCtrl.position))
-        }
-      }
-      let label = ''
-      if (ctrl.type === 'control') {
-        label = getLabel(ctrl, seqMap)
-        if (course.showPoints && ctrl.points != null) label += ` [${ctrl.points}]`
-      }
-      const lo = cc.labelOffset ?? ctrl.labelOffset
-      const loMm = lo ? mapToMm(lo, project.map, printScale) : undefined
-      inkSvg += renderControlSymbol({
-        type: ctrl.type, position: pos, dims, scale: sf,
-        color: courseInk, appearance: app, isExchange,
-        gaps: ctrl.gaps, rotation: sAngle,
-        label, labelOffset: loMm,
-      })
-    }
+    inkSvg = buildCourseInkSvg({
+      pageCourse: course, controls: project.controls, controlMap,
+      annotations: project.annotations, toPage, offsetToMm,
+      printScale, spec, app, dims, sf, color: courseInk, elongScale,
+      idPrefix: 'img', hasSubmaps, submapIndex,
+      labelSubmapStart: project.labelSubmapStart,
+    })
   } else {
     // All-controls page
+    const pageAnns = project.annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
+    inkSvg = renderAnnotationInk(pageAnns, printScale, spec, IOF_PURPLE, 1, 'img', elongScale)
     const colorMap = options.allControlsMulticolor ? assignControlColors(project.controls) : null
     for (const ctrl of project.controls) {
       const pos = toPage(ctrl.position)
@@ -530,7 +449,7 @@ async function renderPage(
         color: ctrlColor, appearance: app,
         gaps: ctrl.gaps,
         label: defaultControlLabel(ctrl),
-        labelOffset: ctrl.labelOffset ? mapToMm(ctrl.labelOffset, project.map, printScale) : undefined,
+        labelOffset: ctrl.labelOffset ? offsetToMm(ctrl.labelOffset) : undefined,
       })
     }
   }
@@ -555,6 +474,7 @@ async function renderPage(
   }
 
   // North arrows (not part of overprint compositing)
+  const pageAnns = project.annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
   const northSvg = renderNorthArrows(pageAnns, printScale, spec, 1)
   if (northSvg) {
     const svgXml = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}" viewBox="0 0 ${pw} ${ph}">${northSvg}</svg>`
