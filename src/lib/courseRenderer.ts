@@ -361,9 +361,35 @@ export function renderOutOfBoundsArea(points: MapPoint[], mapScale: number, spec
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
   const sp = d.hatchSpace
   const dashArray = boundaryMarking === 'intermittent' ? ` stroke-dasharray="${d.oobMarkDash} ${d.oobMarkGap}"` : ''
+  const clipId = `${patternId}-clip`
 
-  let svg = `<defs><pattern id="${esc(patternId)}" width="${sp}" height="${sp}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${sp}" stroke="${color}" stroke-width="${d.hatchW / 0.707}"/><line x1="0" y1="0" x2="${sp}" y2="0" stroke="${color}" stroke-width="${d.hatchW / 0.707}"/></pattern></defs>`
-  svg += `<path d="${pathD}" fill="url(#${esc(patternId)})" stroke="${boundaryMarking !== 'none' ? color : 'none'}" stroke-width="${boundaryMarking !== 'none' ? d.oobMarkW : 0}"${dashArray} stroke-linejoin="round"/>`
+  // Bounding box of the polygon
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of points) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+  }
+  const pad = sp
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad
+  const diag = Math.hypot(maxX - minX, maxY - minY)
+
+  // Explicit hatch lines clipped to the polygon (works in both browser SVG and svg2pdf.js)
+  let svg = `<defs><clipPath id="${esc(clipId)}"><path d="${pathD}"/></clipPath></defs>`
+  svg += `<g clip-path="url(#${esc(clipId)})">`
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+  const hw = d.hatchW
+  const nLines = Math.ceil(diag / sp)
+  for (let i = -nLines; i <= nLines; i++) {
+    const offset = i * sp
+    // +45° lines
+    svg += `<line x1="${cx + offset - diag}" y1="${cy - diag}" x2="${cx + offset + diag}" y2="${cy + diag}" stroke="${color}" stroke-width="${hw}"/>`
+    // -45° lines
+    svg += `<line x1="${cx + offset + diag}" y1="${cy - diag}" x2="${cx + offset - diag}" y2="${cy + diag}" stroke="${color}" stroke-width="${hw}"/>`
+  }
+  svg += '</g>'
+  if (boundaryMarking !== 'none') {
+    svg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="${d.oobMarkW}"${dashArray} stroke-linejoin="round"/>`
+  }
   return svg
 }
 
@@ -472,13 +498,14 @@ export function renderAnnotationInk(
   color: string,
   unitScale: number,
   patternIdPrefix: string,
+  elongationScale = 1,
 ): string {
   let svg = ''
   for (const ann of annotations) {
     if (ann.type === 'forbidden_route') {
       svg += renderForbiddenRoute(ann.points, mapScale, spec, color, unitScale)
     } else if (ann.type === 'crossing_point' && ann.points[0]) {
-      svg += renderCrossingPoint(ann.points[0], ann.rotation ?? 0, ann.elongation ?? 0, mapScale, spec, color, unitScale)
+      svg += renderCrossingPoint(ann.points[0], ann.rotation ?? 0, (ann.elongation ?? 0) * elongationScale, mapScale, spec, color, unitScale)
     } else if (ann.type === 'out_of_bounds') {
       svg += renderOutOfBoundsArea(ann.points, mapScale, spec, color, `${patternIdPrefix}-oob-${ann.id}`, unitScale, ann.boundaryMarking ?? 'none')
     } else if (ann.type === 'oob_boundary') {
