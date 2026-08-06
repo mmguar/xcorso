@@ -400,6 +400,10 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           const pos = layout.overlayPositions?.[o.id] ?? o.position
           shifted[o.id] = { x: pos.x + dx, y: pos.y + dy }
         }
+        for (const a of p.annotations.filter(a => a.type === 'north_arrow' && a.points[0])) {
+          const pos = layout.overlayPositions?.[a.id] ?? a.points[0]
+          shifted[a.id] = { x: pos.x + dx, y: pos.y + dy }
+        }
         layout.overlayPositions = shifted
       })
     },
