@@ -18,7 +18,7 @@ import {
   startTriangleAngle,
   exchangeTriangleAngle,
 } from './symbolGeometry'
-import { walkPath, clipPolyline, clipPolylineEnd, polylineLength, smoothPathD, interpolatePolyline, flattenSmooth } from './geometry'
+import { walkPath, clipPolyline, clipPolylineEnd, polylineLength, smoothPathD, interpolatePolyline, flattenSmooth, normalizeDeg } from './geometry'
 import { darkenHex } from './color'
 import { formatScaleBarDistance, scaleBarLayoutMm } from './distance'
 import { measureTextWidth } from './textMeasure'
@@ -67,7 +67,13 @@ export function renderControlSymbol(opts: ControlRenderOpts): string {
       const side = dims.startSide * sf
       const pts = startTriangleVertices({ x, y }, side, rotation).map(p => `${p.x},${p.y}`).join(' ')
       const perimeter = side * 3
-      const dash = gaps?.length ? circleGapDashArray(gaps, perimeter) : null
+      // Polygon stroke starts at V0 (apex, 270° unrotated) and winds CCW — remap
+      // gap angles from the click coordinate system (0°=east, CW) to match.
+      const triGaps = gaps?.map(g => ({
+        startAngle: normalizeDeg(270 + rotation - g.endAngle),
+        endAngle: normalizeDeg(270 + rotation - g.startAngle),
+      }))
+      const dash = triGaps?.length ? circleGapDashArray(triGaps, perimeter) : null
       s += `<polygon points="${pts}" fill="none" stroke="${strokeColor}" stroke-width="${sw}"${dashAttr(dash)} stroke-linejoin="round"${extraAttrs}/>`
     } else if (type === 'finish') {
       const rOuter = dims.finishROuter * sf

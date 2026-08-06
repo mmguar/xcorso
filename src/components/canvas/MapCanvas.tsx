@@ -751,7 +751,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       // Coalesce the DOM write into a single rAF — trackpad pinch / momentum
       // scroll fire many wheel events per frame, and one syncTransform per frame
       // is enough. (Shares pendingRaf with the pointer-move path.)
-      if (!pendingRaf) pendingRaf = requestAnimationFrame(() => { pendingRaf = 0; syncTransform() })
+      if (!pendingRaf) pendingRaf = requestAnimationFrame(() => { pendingRaf = 0; syncTransform(); syncGapRingRadius() })
       if (wheelTimer) clearTimeout(wheelTimer)
       wheelTimer = setTimeout(() => {
         wheelTimer = null
@@ -920,6 +920,26 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
                 const mmX = (oPos.x - pageTLx) * mmPerMapU
                 const mmY = (oPos.y - pageTLy) * mmPerMapU
                 dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY, wMm: 0, hMm: 0, nx: mmX, ny: mmY }
+                dragLayoutElStarted = false
+                return
+              }
+            }
+          }
+
+          // Hit test north arrow annotations — same drag path as overlays
+          {
+            const mapPt = screenToMap(sx, sy, vpRef.current)
+            const upm = unitsPerMm(proj.map)
+            const annSpec = resolveSpec(proj.spec)
+            for (const ann of proj.annotations) {
+              if (ann.type !== 'north_arrow' || !ann.points[0]) continue
+              const pos = layout.overlayPositions?.[ann.id] ?? ann.points[0]
+              const h = northArrowHeight(upm, proj.map.scale, annSpec, ann.scale ?? 1)
+              if (Math.hypot(mapPt.x - pos.x, mapPt.y - pos.y) < h * 0.7) {
+                const mmPerMapU = pageW / pageWMap
+                const mmX = (pos.x - pageTLx) * mmPerMapU
+                const mmY = (pos.y - pageTLy) * mmPerMapU
+                dragLayoutEl = { element: `overlay:${ann.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY, wMm: 0, hMm: 0, nx: mmX, ny: mmY }
                 dragLayoutElStarted = false
                 return
               }
@@ -2038,6 +2058,20 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       setOobCursorPoint(cursor)
     }
 
+    function syncGapRingRadius() {
+      const g = gapRingRef.current
+      const circle = g?.firstElementChild as SVGCircleElement | null
+      if (!circle) return
+      const st = useStore.getState()
+      const proj = st.project
+      if (!proj) return
+      const course = st.editor.selectedCourseId ? proj.courses.find(c => c.id === st.editor.selectedCourseId) : null
+      const spec = resolveSpec(proj.spec, course?.spec)
+      const sf = symbolScaleFactor(spec, proj.map.scale)
+      const controlR = getSymbolDims(spec).controlR * unitsPerMm(proj.map) * sf * st.editor.appearance.controlScale * vpRef.current.scale
+      circle.setAttribute('r', String(controlR * st.editor.gapSize * Math.PI / 180 / 2))
+    }
+
     function updateGapRing(e: PointerEvent) {
       if (e.pointerType === 'touch') return
       const g = gapRingRef.current
@@ -2050,6 +2084,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
       g.setAttribute('transform', `translate(${sx},${sy})`)
+      syncGapRingRadius()
       g.style.display = ''
     }
     function onLeave() {
@@ -2146,6 +2181,10 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
   const topOverprintColors = loadedMap.topOverprintColors ?? []
   const belowHD = overprintMode === 'below' && !useRaster && loadedMap.type === 'svg' && topOverprintColors.length > 0
   const overprintT = overprintMode === 'none' || belowHD ? 0 : Math.max(0, Math.min(1, overprint))
+  const layoutOverlayPositions = layoutCourse?.layout
+    ? (submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout).overlayPositions
+    : undefined
+
   const annBase = {
     annotations,
     pendingPoints: pendingAnnotationPoints,
@@ -2154,6 +2193,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     map,
     spec: resolveSpec(projectSpec, selectedCourse?.spec),
     selectedAnnotationId,
+    posOverrides: layoutOverlayPositions,
   }
 
   return (

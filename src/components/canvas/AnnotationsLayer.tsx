@@ -28,9 +28,10 @@ interface Props {
   spec: EventSpec
   selectedAnnotationId: string | null
   render: 'ink' | 'chrome'
+  posOverrides?: Record<string, MapPoint>
 }
 
-export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId, render }: Props) {
+export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId, render, posOverrides }: Props) {
   useRenderTracker('AnnotationsLayer')
   const color = IOF_PURPLE
   const baseId = useId()
@@ -78,7 +79,7 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
 
       {annotations.filter(a => a.type === 'north_arrow').map(ann => {
         if (!ann.points[0]) return null
-        const center = ann.points[0]
+        const center = posOverrides?.[ann.id] ?? ann.points[0]
         const annScale = ann.scale ?? 1
         const rotation = ann.rotation ?? 0
         const arrowColor = ann.color ?? '#38bdf8'
