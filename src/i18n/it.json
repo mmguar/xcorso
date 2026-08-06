@@ -374,6 +374,7 @@
   "layout.noScaleCalibration": "La mappa non ha una scala calibrata. Usa lo strumento Misura Scala.",
   "layout.exportFailed": "Esportazione PDF fallita. Ricarica la pagina e riprova.",
   "layout.exportError": "Esportazione fallita: {{error}}",
+  "layout.export": "Esporta",
   "layout.exportPdf": "Esporta PDF",
   "layout.exporting": "Esportazione...",
   "layout.override": "sovrascrivi",

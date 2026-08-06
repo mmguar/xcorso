@@ -6,201 +6,29 @@
  */
 
 import { memo, useId } from 'react'
-import type { Annotation, MapConfig, MapPoint, EventSpec } from '../../types'
+import type { MapPoint, EventSpec } from '../../types'
 import { unitsPerMm, IOF_PURPLE } from '../../lib/courseUtils'
 import { symbolScaleFactor } from '../../lib/symbolSpec'
 import { useRenderTracker } from '../../lib/perf'
-import { walkPath } from '../../lib/geometry'
-import { darkenHex } from '../../lib/color'
+import { northArrowGeometry, northArrowHeight } from '../../lib/symbolGeometry'
 import {
-  annotationDims as dims,
-  crossingPointCurve,
-  northArrowGeometry,
-  northArrowHeight,
-  routeXMarkSegments,
-} from '../../lib/symbolGeometry'
+  renderForbiddenRoute,
+  renderCrossingPoint,
+  renderOutOfBoundsArea,
+  renderOobBoundary,
+  renderNorthArrow,
+} from '../../lib/courseRenderer'
 
 interface Props {
-  annotations: Annotation[]
+  annotations: import('../../types').Annotation[]
   pendingPoints: MapPoint[]
   pendingType: 'forbidden_route' | 'crossing_point' | 'out_of_bounds' | 'oob_boundary' | 'north_arrow' | null
   cursorPoint: MapPoint | null
-  map: MapConfig
+  map: import('../../types').MapConfig
   spec: EventSpec
   selectedAnnotationId: string | null
-  /**
-   * 'ink'   — the purple ISOM symbols (709/710/711) that participate in overprint.
-   * 'chrome' — north arrows, selection outlines and pending previews (never overprinted).
-   * The caller renders 'ink' twice (a solid pass + a multiply pass) to crossfade overprint.
-   */
   render: 'ink' | 'chrome'
 }
-
-// ── 711 Out-of-bounds route ──────────────────────────────────────────────────
-// Thin connecting line with X marks placed at regular intervals along the path.
-
-function ForbiddenRoute({ points, upm, scale, color, spec }: {
-  points: MapPoint[]; upm: number; scale: number; color: string; spec: EventSpec
-}) {
-  if (points.length < 2) return null
-  const d = dims(upm, scale, spec)
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  const marks = walkPath(points, d.routeXSpace)
-
-  return (
-    <g>
-      <path d={pathD} fill="none" stroke={color} strokeWidth={d.routeLineW}
-        strokeLinecap="round" strokeLinejoin="round" />
-      {marks.map((m, i) => {
-        const [s1, s2] = routeXMarkSegments(m, d.routeXArm)
-        return (
-          <g key={i}>
-            <line x1={s1[0].x} y1={s1[0].y} x2={s1[1].x} y2={s1[1].y}
-              stroke={color} strokeWidth={d.routeXW} strokeLinecap="round" />
-            <line x1={s2[0].x} y1={s2[0].y} x2={s2[1].x} y2={s2[1].y}
-              stroke={color} strokeWidth={d.routeXW} strokeLinecap="round" />
-          </g>
-        )
-      })}
-    </g>
-  )
-}
-
-// ── 710 Crossing point ───────────────────────────────────────────────────────
-// Two outward-curving arcs like )( marking a mandatory crossing.
-
-function CrossingPoint({ center, upm, scale, rotation, elongation, color, spec }: {
-  center: MapPoint; upm: number; scale: number; rotation: number; elongation: number; color: string; spec: EventSpec
-}) {
-  const { x, y } = center
-  const d = dims(upm, scale, spec)
-  const ext = Math.max(0, elongation * upm)
-  // Each half is a quadratic with control point (midX, ±ctrlY) ending tangent-vertical
-  // at the inner pinch (midX, ±ext), joined across the gap by a straight vertical line.
-  const { spread, midX, ctrlY, totalHH } = crossingPointCurve(d, ext)
-
-  const rightD =
-    `M ${x + spread} ${y - totalHH} Q ${x + midX} ${y - ctrlY - ext} ${x + midX} ${y - ext}` +
-    ` L ${x + midX} ${y + ext}` +
-    ` Q ${x + midX} ${y + ctrlY + ext} ${x + spread} ${y + totalHH}`
-  const leftD =
-    `M ${x - spread} ${y - totalHH} Q ${x - midX} ${y - ctrlY - ext} ${x - midX} ${y - ext}` +
-    ` L ${x - midX} ${y + ext}` +
-    ` Q ${x - midX} ${y + ctrlY + ext} ${x - spread} ${y + totalHH}`
-
-  return (
-    <g transform={`rotate(${rotation}, ${x}, ${y})`}>
-      <path d={rightD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
-      <path d={leftD} fill="none" stroke={color} strokeWidth={d.crossW} strokeLinecap="round" />
-    </g>
-  )
-}
-
-// ── 709 Out-of-bounds area ───────────────────────────────────────────────────
-// Crosshatched with 45° diagonal lines, with a boundary line.
-
-function OutOfBoundsArea({ points, upm, scale, color, patternId, spec, boundaryMarking }: {
-  points: MapPoint[]; upm: number; scale: number; color: string; patternId: string; spec: EventSpec; boundaryMarking: 'none' | 'continuous' | 'intermittent'
-}) {
-  if (points.length < 3) return null
-  const d = dims(upm, scale, spec)
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-  const sp = d.hatchSpace
-  const boundarySw = d.oobMarkW
-  const dashArray = boundaryMarking === 'intermittent' ? `${d.oobMarkDash} ${d.oobMarkGap}` : undefined
-
-  return (
-    <g>
-      <defs>
-        {/* Rotation is rigid, so the tile period IS the perpendicular line spacing —
-            must stay hatchSpace to match the PDF hatch in pdfExport.ts. */}
-        <pattern id={patternId} width={sp} height={sp}
-          patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1={0} y1={0} x2={0} y2={sp}
-            stroke={color} strokeWidth={d.hatchW/0.707} />
-          <line x1={0} y1={0} x2={sp} y2={0}
-            stroke={color} strokeWidth={d.hatchW/0.707} />
-        </pattern>
-      </defs>
-      <path d={pathD} fill={`url(#${patternId})`}
-        stroke={boundaryMarking !== 'none' ? color : 'none'}
-        strokeWidth={boundaryMarking !== 'none' ? boundarySw : 0}
-        strokeDasharray={dashArray}
-        strokeLinejoin="round" />
-    </g>
-  )
-}
-
-// ── OOB Boundary ────────────────────────────────────────────────────────────
-// A simple polyline with a 0.7 mm stroke (at base scale), drawn as overprint ink.
-
-function OobBoundary({ points, upm, scale, color, spec }: {
-  points: MapPoint[]; upm: number; scale: number; color: string; spec: EventSpec
-}) {
-  if (points.length < 2) return null
-  const d = dims(upm, scale, spec)
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  return (
-    <path d={pathD} fill="none" stroke={color} strokeWidth={d.boundaryW}
-      strokeLinecap="round" strokeLinejoin="round" />
-  )
-}
-
-// ── North Arrow ─────────────────────────────────────────────────────────────
-// Blue isosceles triangle (30° apex) pointing up with a white "N" inside.
-
-function NorthArrow({ center, upm, scale, annScale, rotation, color, textColor, spec, selected }: {
-  center: MapPoint; upm: number; scale: number; annScale: number; rotation: number; color: string; textColor: string; spec: EventSpec; selected: boolean
-}) {
-  const h = northArrowHeight(upm, scale, spec, annScale)
-  const sf = symbolScaleFactor(spec, scale)
-  const geo = northArrowGeometry(h, upm, sf)
-
-  const apexY  = center.y + geo.apexLocalY
-  const baseY  = center.y + geo.baseLocalY
-  const leftX  = center.x - geo.halfBase
-  const rightX = center.x + geo.halfBase
-
-  const points = `${center.x},${apexY} ${rightX},${baseY} ${leftX},${baseY}`
-
-  const fontSize = h * 0.45
-  const strokeW = 0.2 * upm * sf
-  const strokeColor = darkenHex(color)
-  const outlineW = dims(upm, scale, spec).northStrokeW
-
-  return (
-    <g transform={`rotate(${rotation}, ${center.x}, ${center.y})`}>
-      <polygon points={points} fill={color} stroke={strokeColor} strokeWidth={outlineW} strokeLinejoin="round" />
-      <text
-        x={center.x} y={center.y + h * 0.12}
-        textAnchor="middle" dominantBaseline="central"
-        fill={textColor} fontSize={fontSize} fontWeight="bold" fontFamily="sans-serif"
-        style={{ pointerEvents: 'none' }}
-      >
-        N
-      </text>
-      {selected && (
-        <>
-          {/* Rotation handle — bottom center */}
-          <circle
-            cx={center.x + geo.rotHandleLocalX} cy={center.y + geo.rotHandleLocalY}
-            r={geo.handleR}
-            fill={color} stroke="white" strokeWidth={strokeW}
-          />
-          {/* Resize handle — bottom-right corner */}
-          <rect
-            x={rightX - geo.handleR} y={baseY - geo.handleR}
-            width={geo.handleR * 2} height={geo.handleR * 2}
-            rx={strokeW * 2}
-            fill={color} stroke="white" strokeWidth={strokeW}
-          />
-        </>
-      )}
-    </g>
-  )
-}
-
-// ── Main component ───────────────────────────────────────────────────────────
 
 export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pendingPoints, pendingType, cursorPoint, map, spec, selectedAnnotationId, render }: Props) {
   useRenderTracker('AnnotationsLayer')
@@ -211,41 +39,32 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
 
   // ── Ink pass: the purple ISOM symbols (709/710/711) that overprint the map. ──
   if (render === 'ink') {
-    const inkSymbol = (ann: Annotation) => {
-      if (ann.type === 'crossing_point' && ann.points[0]) {
-        return (
-          <CrossingPoint key={ann.id} center={ann.points[0]} upm={upm} scale={scale}
-            rotation={ann.rotation ?? 0} elongation={ann.elongation ?? 0}
-            color={color} spec={spec} />
-        )
-      }
-      if (ann.type === 'forbidden_route') {
-        return <ForbiddenRoute key={ann.id} points={ann.points} upm={upm} scale={scale} color={color} spec={spec} />
-      }
-      if (ann.type === 'out_of_bounds') {
-        return (
-          <OutOfBoundsArea key={ann.id} points={ann.points} upm={upm} scale={scale} color={color}
-            patternId={`${baseId}-oob-${ann.id}`} spec={spec} boundaryMarking={ann.boundaryMarking ?? 'none'} />
-        )
-      }
-      if (ann.type === 'oob_boundary') {
-        return <OobBoundary key={ann.id} points={ann.points} upm={upm} scale={scale} color={color} spec={spec} />
-      }
-      return null
-    }
     return (
       <g style={{ pointerEvents: 'none' }}>
-        {annotations.filter(a => a.type !== 'north_arrow').map(inkSymbol)}
+        {annotations.filter(a => a.type !== 'north_arrow').map(ann => {
+          let svg = ''
+          if (ann.type === 'crossing_point' && ann.points[0]) {
+            svg = renderCrossingPoint(ann.points[0], ann.rotation ?? 0, (ann.elongation ?? 0) * upm, scale, spec, color, upm)
+          } else if (ann.type === 'forbidden_route') {
+            svg = renderForbiddenRoute(ann.points, scale, spec, color, upm)
+          } else if (ann.type === 'out_of_bounds') {
+            svg = renderOutOfBoundsArea(ann.points, scale, spec, color, `${baseId}-oob-${ann.id}`, upm, ann.boundaryMarking ?? 'none')
+          } else if (ann.type === 'oob_boundary') {
+            svg = renderOobBoundary(ann.points, scale, spec, color, upm)
+          }
+          if (!svg) return null
+          return <g key={ann.id} dangerouslySetInnerHTML={{ __html: svg }} />
+        })}
       </g>
     )
   }
 
   // ── Chrome pass: north arrows, selection outline, pending previews. ──────────
-  // North arrows are excluded from overprint (their white "N" would vanish under
-  // a multiply blend), so they live here at full opacity.
   const selectedOob = selectedAnnotationId
     ? annotations.find(a => a.id === selectedAnnotationId && a.type === 'out_of_bounds')
     : undefined
+
+  const sf = symbolScaleFactor(spec, scale)
 
   return (
     <g style={{ pointerEvents: 'none' }}>
@@ -257,45 +76,70 @@ export const AnnotationsLayer = memo(function AnnotationsLayer({ annotations, pe
         />
       )}
 
-      {annotations.filter(a => a.type === 'north_arrow').map(ann => ann.points[0] ? (
-        <NorthArrow key={ann.id} center={ann.points[0]} upm={upm} scale={scale}
-          annScale={ann.scale ?? 1} rotation={ann.rotation ?? 0}
-          color={ann.color ?? '#38bdf8'} textColor={ann.textColor ?? '#ffffff'}
-          spec={spec} selected={ann.id === selectedAnnotationId} />
-      ) : null)}
+      {annotations.filter(a => a.type === 'north_arrow').map(ann => {
+        if (!ann.points[0]) return null
+        const center = ann.points[0]
+        const annScale = ann.scale ?? 1
+        const rotation = ann.rotation ?? 0
+        const arrowColor = ann.color ?? '#38bdf8'
+        const textColor = ann.textColor ?? '#ffffff'
+        const selected = ann.id === selectedAnnotationId
 
-      {pendingPoints.length > 0 && pendingType === 'forbidden_route' && (
-        <g opacity={0.5}>
-          <ForbiddenRoute points={pendingPoints} upm={upm} scale={scale} color={color} spec={spec} />
-        </g>
-      )}
-      {pendingPoints.length >= 2 && pendingType === 'oob_boundary' && (
-        <g opacity={0.5}>
-          <OobBoundary points={pendingPoints} upm={upm} scale={scale} color={color} spec={spec} />
-        </g>
-      )}
-      {pendingPoints.length > 0 && pendingType === 'crossing_point' && (
-        <g opacity={0.5}>
-          <CrossingPoint center={pendingPoints[0]} upm={upm} scale={scale}
-            rotation={0} elongation={0} color={color} spec={spec} />
-        </g>
-      )}
+        const arrowSvg = renderNorthArrow(center, rotation, annScale, scale, spec, arrowColor, textColor, upm)
+
+        if (!selected) {
+          return <g key={ann.id} dangerouslySetInnerHTML={{ __html: arrowSvg }} />
+        }
+
+        // Selected: arrow + handles as JSX
+        const h = northArrowHeight(upm, scale, spec, annScale)
+        const geo = northArrowGeometry(h, upm, sf)
+        const strokeW = 0.2 * upm * sf
+
+        return (
+          <g key={ann.id}>
+            <g dangerouslySetInnerHTML={{ __html: arrowSvg }} />
+            <g transform={`rotate(${rotation}, ${center.x}, ${center.y})`}>
+              {/* Rotation handle — bottom center */}
+              <circle
+                cx={center.x + geo.rotHandleLocalX} cy={center.y + geo.rotHandleLocalY}
+                r={geo.handleR}
+                fill={arrowColor} stroke="white" strokeWidth={strokeW}
+              />
+              {/* Resize handle — bottom-right corner */}
+              <rect
+                x={center.x + geo.halfBase - geo.handleR} y={center.y + geo.baseLocalY - geo.handleR}
+                width={geo.handleR * 2} height={geo.handleR * 2}
+                rx={strokeW * 2}
+                fill={arrowColor} stroke="white" strokeWidth={strokeW}
+              />
+            </g>
+          </g>
+        )
+      })}
+
+      {pendingPoints.length > 0 && pendingType === 'forbidden_route' && (() => {
+        const svg = renderForbiddenRoute(pendingPoints, scale, spec, color, upm)
+        return svg ? <g opacity={0.5} dangerouslySetInnerHTML={{ __html: svg }} /> : null
+      })()}
+      {pendingPoints.length >= 2 && pendingType === 'oob_boundary' && (() => {
+        const svg = renderOobBoundary(pendingPoints, scale, spec, color, upm)
+        return svg ? <g opacity={0.5} dangerouslySetInnerHTML={{ __html: svg }} /> : null
+      })()}
+      {pendingPoints.length > 0 && pendingType === 'crossing_point' && (() => {
+        const svg = renderCrossingPoint(pendingPoints[0], 0, 0, scale, spec, color, upm)
+        return svg ? <g opacity={0.5} dangerouslySetInnerHTML={{ __html: svg }} /> : null
+      })()}
       {pendingPoints.length >= 1 && pendingType === 'out_of_bounds' && (() => {
         const pts = cursorPoint ? [...pendingPoints, cursorPoint] : pendingPoints
-        return pts.length >= 3 ? (
-          <g opacity={0.5}>
-            <OutOfBoundsArea points={pts} upm={upm} scale={scale} color={color}
-              patternId={`${baseId}-oob-pending`} spec={spec} boundaryMarking="none" />
-          </g>
-        ) : null
+        if (pts.length < 3) return null
+        const svg = renderOutOfBoundsArea(pts, scale, spec, color, `${baseId}-oob-pending`, upm, 'none')
+        return svg ? <g opacity={0.5} dangerouslySetInnerHTML={{ __html: svg }} /> : null
       })()}
-      {pendingPoints.length > 0 && pendingType === 'north_arrow' && (
-        <g opacity={0.5}>
-          <NorthArrow center={pendingPoints[0]} upm={upm} scale={scale}
-            annScale={1} rotation={0} color="#38bdf8" textColor="#ffffff"
-            spec={spec} selected={false} />
-        </g>
-      )}
+      {pendingPoints.length > 0 && pendingType === 'north_arrow' && (() => {
+        const svg = renderNorthArrow(pendingPoints[0], 0, 1, scale, spec, '#38bdf8', '#ffffff', upm)
+        return svg ? <g opacity={0.5} dangerouslySetInnerHTML={{ __html: svg }} /> : null
+      })()}
     </g>
   )
 })

@@ -86,6 +86,21 @@ export function resolveSpec(projectSpec?: EventSpec, courseSpec?: EventSpec): Ev
   return courseSpec ?? projectSpec ?? 'isom-2017'
 }
 
+export function dimsFor(spec: EventSpec, app: { controlScale: number; lineWidth: number }): SymbolDims {
+  const d = getSymbolDims(spec)
+  if (app.controlScale === 1 && app.lineWidth === 1) return d
+  return {
+    ...d,
+    controlR: d.controlR * app.controlScale,
+    startSide: d.startSide * app.controlScale,
+    finishROuter: d.finishROuter * app.controlScale,
+    finishRInner: d.finishRInner * app.controlScale,
+    labelH: d.labelH * app.controlScale,
+    strokeW: d.strokeW * app.lineWidth,
+    legW: d.legW * app.lineWidth,
+  }
+}
+
 export const MM_TO_PT = 72 / 25.4
 
 export interface AnnotationDims {

@@ -374,6 +374,7 @@
   "layout.noScaleCalibration": "Map has no scale calibration. Use the Measure Scale tool first.",
   "layout.exportFailed": "Export to PDF failed. Reload the page and try again.",
   "layout.exportError": "Export failed: {{error}}",
+  "layout.export": "Export",
   "layout.exportPdf": "Export PDF",
   "layout.exporting": "Exporting…",
   "layout.override": "override",
