@@ -251,6 +251,9 @@ export interface TextLabel {
   fontSizeMm: number         // font size in mm on paper (e.g. 3)
   color: string              // hex color
   bgAlpha: number            // 0 = transparent, 1 = opaque white
+  bold?: boolean
+  italic?: boolean
+  align?: 'left' | 'center' | 'right'
 }
 
 export interface ImageOverlay {

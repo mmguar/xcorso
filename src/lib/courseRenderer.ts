@@ -471,17 +471,27 @@ export function renderTextLabel(tl: TextLabel, unitScale: number): string {
   const fontSize = tl.fontSizeMm * s
   const lines = tl.text.split('\n')
   const lineHeight = fontSize * 1.25
-  const maxLineW = Math.max(...lines.map(l => measureTextWidth(l, fontSize)))
+  const measureFontSize = tl.bold ? fontSize * 1.08 : fontSize
+  const maxLineW = Math.max(...lines.map(l => measureTextWidth(l, measureFontSize)))
   const blockH = lineHeight * lines.length
   const pad = 0.15 * fontSize
+  const align = tl.align ?? 'left'
 
   let svg = ''
 
+  const bgX = align === 'right' ? tl.position.x - maxLineW - pad
+    : align === 'center' ? tl.position.x - maxLineW / 2 - pad
+    : tl.position.x - pad
+
   if (tl.bgAlpha > 0) {
-    svg += `<rect x="${tl.position.x - pad}" y="${tl.position.y - fontSize - pad}" width="${maxLineW + pad * 2}" height="${blockH + pad * 2}" fill="white" opacity="${tl.bgAlpha}" rx="${0.15 * fontSize}"/>`
+    svg += `<rect x="${bgX}" y="${tl.position.y - fontSize - pad}" width="${maxLineW + pad * 2}" height="${blockH + pad * 2}" fill="white" opacity="${tl.bgAlpha}" rx="${0.15 * fontSize}"/>`
   }
 
-  svg += `<text x="${tl.position.x}" y="${tl.position.y}" font-size="${fontSize}" font-family="Arial, sans-serif" fill="${tl.color}">`
+  const anchor = align === 'right' ? 'end' : align === 'center' ? 'middle' : 'start'
+  const weight = tl.bold ? ' font-weight="bold"' : ''
+  const style = tl.italic ? ' font-style="italic"' : ''
+
+  svg += `<text x="${tl.position.x}" y="${tl.position.y}" font-size="${fontSize}" font-family="Arial, sans-serif" fill="${tl.color}" text-anchor="${anchor}"${weight}${style}>`
   for (let i = 0; i < lines.length; i++) {
     svg += `<tspan x="${tl.position.x}" dy="${i === 0 ? 0 : lineHeight}">${esc(lines[i])}</tspan>`
   }

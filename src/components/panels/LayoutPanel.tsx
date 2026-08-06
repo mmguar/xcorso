@@ -370,6 +370,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
   const collapseLayoutCourse = useStore(s => s.collapseLayoutCourse)
   const setLayoutSubmap = useStore(s => s.setLayoutSubmap)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
+  const applyBorderToAllSubmaps = useStore(s => s.applyBorderToAllSubmaps)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
 
@@ -862,14 +863,24 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                         max={ph - 20 - cb.y}
                       />
                     </div>
-                    <button
-                      onClick={() => updateCourseLayout(courseId, {
-                        mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
-                      }, activeSubmap)}
-                      className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
-                    >
-                      {t('layout.recenter')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
+                        }, activeSubmap)}
+                        className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
+                      >
+                        {t('layout.recenter')}
+                      </button>
+                      {hasSubmaps && (
+                        <button
+                          onClick={() => applyBorderToAllSubmaps(courseId, activeSubmap)}
+                          className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors ml-auto"
+                        >
+                          {t('layout.applyToAllSubmaps')}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

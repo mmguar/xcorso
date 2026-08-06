@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Check, Trash2, X, RefreshCw } from 'lucide-react'
+import { Check, Trash2, X, RefreshCw, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT } from '../../i18n'
 import type { Annotation, ScaleBar, TextLabel, ImageOverlay } from '../../types'
@@ -174,6 +174,37 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
           onBlur={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
           className="w-full text-xs border rounded px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-orange-400"
         />
+      </div>
+
+      <div className="flex items-center gap-1.5 text-xs text-gray-600">
+        <button
+          onClick={() => updateTextLabel(tl.id, { bold: !tl.bold })}
+          className={`p-1 rounded border ${tl.bold ? 'bg-orange-100 border-orange-400 text-orange-700' : 'border-gray-300 hover:bg-gray-100'}`}
+          title={t('overlay.bold')}
+        >
+          <Bold size={13} />
+        </button>
+        <button
+          onClick={() => updateTextLabel(tl.id, { italic: !tl.italic })}
+          className={`p-1 rounded border ${tl.italic ? 'bg-orange-100 border-orange-400 text-orange-700' : 'border-gray-300 hover:bg-gray-100'}`}
+          title={t('overlay.italic')}
+        >
+          <Italic size={13} />
+        </button>
+        <div className="w-px h-4 bg-gray-300 mx-0.5" />
+        {(['left', 'center', 'right'] as const).map(a => {
+          const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
+          return (
+            <button
+              key={a}
+              onClick={() => updateTextLabel(tl.id, { align: a })}
+              className={`p-1 rounded border ${(tl.align ?? 'left') === a ? 'bg-orange-100 border-orange-400 text-orange-700' : 'border-gray-300 hover:bg-gray-100'}`}
+              title={t(`overlay.align${a[0].toUpperCase() + a.slice(1)}`)}
+            >
+              <Icon size={13} />
+            </button>
+          )
+        })}
       </div>
 
       <label className="flex items-center gap-2 text-xs text-gray-600">
