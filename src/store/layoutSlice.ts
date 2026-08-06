@@ -292,6 +292,21 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       }, 'Update layout')
     },
 
+    applyBorderToAllSubmaps: (courseId: string, submapIndex: number) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout) return false
+        const source = submapLayoutView(course.layout, submapIndex)
+        if (!source) return false
+        const border = source.mapBorder ? { ...source.mapBorder } : undefined
+        const targets = [course.layout, ...(course.layout.submapLayouts ?? [])]
+        for (let i = 0; i < targets.length; i++) {
+          if (i === submapIndex) continue
+          targets[i].mapBorder = border ? { ...border } : undefined
+        }
+      }, 'Apply border to all submaps')
+    },
+
     moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
         const course = p.courses.find(c => c.id === courseId)

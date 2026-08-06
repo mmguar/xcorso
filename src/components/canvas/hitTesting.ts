@@ -579,9 +579,12 @@ export function findOverlayAt(screenX: number, screenY: number, vp: Viewport, pr
     const pos = posOverrides?.[tl.id] ?? tl.position
     const fontSize = tl.fontSizeMm * upm
     const lines = tl.text.split('\n')
-    const w = Math.max(...lines.map(l => measureTextWidth(l, fontSize)))
+    const mfs = tl.bold ? fontSize * 1.08 : fontSize
+    const w = Math.max(...lines.map(l => measureTextWidth(l, mfs)))
     const h = fontSize * 1.25 * lines.length
-    if (mapPt.x >= pos.x - hitSlop && mapPt.x <= pos.x + w + hitSlop &&
+    const align = tl.align ?? 'left'
+    const x0 = align === 'right' ? pos.x - w : align === 'center' ? pos.x - w / 2 : pos.x
+    if (mapPt.x >= x0 - hitSlop && mapPt.x <= x0 + w + hitSlop &&
         mapPt.y >= pos.y - fontSize - hitSlop && mapPt.y <= pos.y - fontSize + h + hitSlop) {
       return { id: tl.id, kind: 'text' }
     }

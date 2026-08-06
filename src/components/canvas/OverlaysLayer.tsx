@@ -42,12 +42,17 @@ function TextLabelChrome({ tl, map, printScaleOverride }: { tl: TextLabel; map: 
   const strokeW = 0.2 * upm
   const lines = tl.text.split('\n')
   const lineHeight = fontSize * 1.25
-  const maxLineW = Math.max(...lines.map(l => measureTextWidth(l, fontSize)))
+  const mfs = tl.bold ? fontSize * 1.08 : fontSize
+  const maxLineW = Math.max(...lines.map(l => measureTextWidth(l, mfs)))
   const blockH = lineHeight * lines.length
   const pad = 0.15 * fontSize
+  const align = tl.align ?? 'left'
+  const x0 = align === 'right' ? tl.position.x - maxLineW - pad
+    : align === 'center' ? tl.position.x - maxLineW / 2 - pad
+    : tl.position.x - pad
   return (
     <rect
-      x={tl.position.x - pad - strokeW * 2} y={tl.position.y - fontSize - pad - strokeW * 2}
+      x={x0 - strokeW * 2} y={tl.position.y - fontSize - pad - strokeW * 2}
       width={maxLineW + pad * 2 + strokeW * 4} height={blockH + pad * 2 + strokeW * 4}
       fill="none" stroke="#ea580c" strokeWidth={strokeW * 2}
       strokeDasharray={`${upm * 1} ${upm * 0.5}`}
