@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Check, Trash2, X, RefreshCw, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { Trash2, X, RefreshCw, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { useStore } from '../../store'
 import { useT } from '../../i18n'
 import type { Annotation, ScaleBar, TextLabel, ImageOverlay } from '../../types'
+import { unitsPerMm } from '../../lib/courseUtils'
+import { measureTextWidth } from '../../lib/textMeasure'
 
 function ScaleBarSettings({ sb }: { sb: ScaleBar }) {
   const t = useT()
@@ -128,6 +130,7 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
   const deleteTextLabel = useStore(s => s.deleteTextLabel)
   const setSelectedOverlay = useStore(s => s.setSelectedOverlay)
   const beginMoveOverlay = useStore(s => s.beginMoveOverlay)
+  const map = useStore(s => s.project!.map)
 
   const beginEdit = useStore(s => s.beginEdit)
   const [text, setText] = useState(tl.text)
@@ -155,23 +158,16 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
       </div>
 
       <div className="flex flex-col gap-1 text-xs text-gray-600">
-        <div className="flex items-center justify-between">
-          <span>{t('overlay.text')}</span>
-          {text !== tl.text && (
-            <button
-              onClick={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
-              className="flex items-center gap-0.5 text-[10px] text-orange-600 hover:text-orange-700 font-medium"
-            >
-              <Check size={11} />
-              {t('overlay.apply')}
-            </button>
-          )}
-        </div>
+        <span>{t('overlay.text')}</span>
         <textarea
           rows={3}
           value={text}
-          onChange={e => setText(e.target.value)}
-          onBlur={() => { if (text.trim()) updateTextLabel(tl.id, { text: text.trim() }); else setText(tl.text) }}
+          onFocus={() => beginEdit('Update text label')}
+          onChange={e => {
+            setText(e.target.value)
+            if (e.target.value.trim()) updateTextLabel(tl.id, { text: e.target.value }, true)
+          }}
+          onBlur={() => { if (!text.trim()) { setText(tl.text); updateTextLabel(tl.id, { text: tl.text }, true) } }}
           className="w-full text-xs border rounded px-1.5 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-orange-400"
         />
       </div>
@@ -197,7 +193,16 @@ function TextLabelSettings({ tl }: { tl: TextLabel }) {
           return (
             <button
               key={a}
-              onClick={() => updateTextLabel(tl.id, { align: a })}
+              onClick={() => {
+                const old = tl.align ?? 'left'
+                if (a === old) return
+                const frac = (v: string) => v === 'right' ? 1 : v === 'center' ? 0.5 : 0
+                const upm = unitsPerMm(map)
+                const fs = tl.fontSizeMm * upm * (tl.bold ? 1.08 : 1)
+                const w = Math.max(...tl.text.split('\n').map(l => measureTextWidth(l, fs)))
+                const dx = (frac(a) - frac(old)) * w
+                updateTextLabel(tl.id, { align: a, position: { x: tl.position.x + dx, y: tl.position.y } })
+              }}
               className={`p-1 rounded border ${(tl.align ?? 'left') === a ? 'bg-orange-100 border-orange-400 text-orange-700' : 'border-gray-300 hover:bg-gray-100'}`}
               title={t(`overlay.align${a[0].toUpperCase() + a.slice(1)}`)}
             >
