@@ -178,12 +178,9 @@ export const ControlsLayer = memo(function ControlsLayer({ controls, course: sel
 
         const labelOffset = cc?.labelOffset ?? control.labelOffset
 
-        let isExchange = false
-        if (selectedCourse) {
-          isExchange = !!cc?.exchangeMode && !(submapInfo && control.id === submapInfo.lastCcId)
-        } else {
-          isExchange = globalExchangeIds?.has(control.id) ?? false
-        }
+        const isExchange = selectedCourse
+          ? !!cc?.exchangeMode && !(submapInfo && control.id === submapInfo.lastCcId)
+          : globalExchangeIds?.has(control.id) ?? false
 
         const showCrosshair = !isCourseMode || control.id === draggingControlId
 
