@@ -1,0 +1,35 @@
+diff --git a/src/ocad-to-svg.js b/src/ocad-to-svg.js
+index 2f78ff9a6247386892ace1425bb796275385979b..6a4c9b9a5b3b2e1f3a0c1d2e4f5a6b7c8d9e0f1a 100644
+--- a/src/ocad-to-svg.js
++++ b/src/ocad-to-svg.js
+@@ -467,18 +467,19 @@ const objectToSvg = (options, symbols, object) => {
+       }
+ 
+       if (symbol.borderSym) {
+-        nodes.push(
+-          ...objectToSvg(
+-            {
+-              ...options,
+-              sym: symbol.borderSym,
+-              objType: LineObjectType,
+-              closePath: true,
+-            },
+-            symbols,
+-            object
+-          )
++        const borderNodes = objectToSvg(
++          {
++            ...options,
++            sym: symbol.borderSym,
++            objType: LineObjectType,
++            closePath: true,
++          },
++          symbols,
++          object
+         )
++        if (borderNodes) {
++          nodes.push(...borderNodes)
++        }
+       }
+ 
+       break
