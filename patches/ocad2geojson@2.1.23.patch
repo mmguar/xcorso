@@ -1,56 +1,8 @@
 diff --git a/src/ocad-to-svg.js b/src/ocad-to-svg.js
-index 2f78ff9a6247386892ace1425bb796275385979b..2d23395f58845e0fd3cb0cedef4a853b008b8d75 100644
+index 2f78ff9a6247386892ace1425bb796275385979b..6a4c9b9a5b3b2e1f3a0c1d2e4f5a6b7c8d9e0f1a 100644
 --- a/src/ocad-to-svg.js
 +++ b/src/ocad-to-svg.js
-@@ -5,6 +5,7 @@ const {
-   LineTextObjectType,
-   FormattedTextObjectType,
-   UnformattedTextObjectType,
-+  RectangleObjectType,
- } = require('./ocad-reader/object-types')
- const {
-   LineElementType,
-@@ -295,6 +296,39 @@ const usedSymbolNumbers = objects =>
- const objectToSvg = (options, symbols, object) => {
-   const symNum = options.sym || object.sym
-   const symbol = symbols[symNum]
-+
-+  // Rectangle objects (objType 7) have no parsed symbol — render directly
-+  // from the object's own color/lineWidth. These are layout elements (scale
-+  // bar frames, etc.); draw a stroked outline when lineWidth > 0, never fill.
-+  if ((options.objType || object.objType) === RectangleObjectType) {
-+    if (!object.lineWidth || object.lineWidth <= 0) return []
-+    const color = options.colors[object.col]
-+    if (!color || object.coordinates.length < 2) return []
-+
-+    const coords = object.coordinates
-+    const xs = coords.map(c => c[0])
-+    const ys = coords.map(c => c[1])
-+    const minX = Math.min(...xs)
-+    const maxX = Math.max(...xs)
-+    const minY = Math.min(...ys)
-+    const maxY = Math.max(...ys)
-+    const w = maxX - minX
-+    const h = maxY - minY
-+    if (w === 0 || h === 0) return []
-+
-+    return [{
-+      type: 'rect',
-+      attrs: {
-+        x: minX.toString(),
-+        y: (-maxY).toString(),
-+        width: w.toString(),
-+        height: h.toString(),
-+        style: `fill: none; stroke: ${color.rgb}; stroke-width: ${object.lineWidth};`,
-+      },
-+      order: color.renderOrder,
-+    }]
-+  }
-+
-   if (!symbol || (!options.exportHidden && symbol.isHidden())) return
- 
-   /** @type {SvgNodeDef[]} */
-@@ -467,18 +501,19 @@ const objectToSvg = (options, symbols, object) => {
+@@ -467,18 +467,19 @@ const objectToSvg = (options, symbols, object) => {
        }
  
        if (symbol.borderSym) {
