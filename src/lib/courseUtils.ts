@@ -246,3 +246,16 @@ export function generateAllPermutations(course: Course): CourseVariation[] {
     } satisfies CourseVariation
   })
 }
+
+/** Synthetic course wrapping all project controls, sorted by code. Used for
+ * all-controls clue sheets and PageOverlay tiling bounds. */
+export function buildAllControlsCourse(controls: Control[]): Course {
+  const sorted = [...controls].sort((a, b) => a.code - b.code)
+  return {
+    id: '__all_controls__',
+    name: 'All Controls',
+    type: 'linear',
+    color: '#ea580c',
+    controls: sorted.map(c => ({ id: c.id, controlId: c.id })),
+  }
+}

@@ -19,10 +19,10 @@ import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView, IOF_PURPLE } from '../../lib/courseUtils'
+import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView, buildAllControlsCourse, IOF_PURPLE } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec, Course } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { PAGE_SIZES, mmToMap, clueSheetHiddenRestartView } from '../../lib/pdfExport'
+import { PAGE_SIZES, mmToMap, clueSheetHiddenRestartView, ALL_CONTROLS_ID } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap, pxToMap,
@@ -32,14 +32,21 @@ import {
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
 } from './hitTesting'
 
+/** Resolve the active layout for a given layout target (course or all-controls). */
+function resolveLayoutTarget(proj: { courses: Course[]; allControlsLayout?: import('../../types').SubmapLayout }, courseId: string, submapIndex: number): import('../../types').SubmapLayout | undefined {
+  if (courseId === ALL_CONTROLS_ID) return proj.allControlsLayout
+  const c = proj.courses.find(c => c.id === courseId)
+  return c?.layout ? submapLayoutView(c.layout, submapIndex) : undefined
+}
+
 /** Effective print scale for overlay sizing: the active layout submap's scale
  * in layout mode, else the project-wide layout default. Undefined → map scale.
  * Must match the printScaleOverride passed to OverlaysLayer. */
 function overlayPrintScaleOf(st: ReturnType<typeof useStore.getState>): number | undefined {
   const proj = st.project!
   if (st.editor.layoutMode && st.editor.layoutCourseId) {
-    const lc = proj.courses.find(c => c.id === st.editor.layoutCourseId)
-    if (lc?.layout) return (submapLayoutView(lc.layout, st.editor.layoutSubmapIndex) ?? lc.layout).printScale
+    const layout = resolveLayoutTarget(proj, st.editor.layoutCourseId, st.editor.layoutSubmapIndex)
+    if (layout) return layout.printScale
   }
   return proj.layoutDefaults?.printScale
 }
@@ -392,7 +399,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
   const layoutSubmapIndex = useStore(s => s.editor.layoutSubmapIndex)
   const layoutSnapRequest = useStore(s => s.editor.layoutSnapRequest)
   const layoutCourse = useStore(s => {
-    if (!s.editor.layoutCourseId) return null
+    if (!s.editor.layoutCourseId || s.editor.layoutCourseId === ALL_CONTROLS_ID) return null
     return s.project?.courses.find(c => c.id === s.editor.layoutCourseId) ?? null
   })
 
@@ -468,12 +475,16 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
   // otherwise undo/redo paints one frame with the restored mapCenter but the old
   // viewport, which shows as a page jump before the correction lands.
   const prevLayoutRef = useRef<{ courseId: string | null; printScale: number; pageSize: string; orientation: string; snap: number } | null>(null)
+  const layoutTargetLayout = useStore(s => {
+    if (!s.editor.layoutMode || !s.editor.layoutCourseId || !s.project) return null
+    return resolveLayoutTarget(s.project, s.editor.layoutCourseId, s.editor.layoutSubmapIndex) ?? null
+  })
   useLayoutEffect(() => {
-    if (!layoutMode || !layoutCourse?.layout) {
+    if (!layoutMode || !layoutTargetLayout) {
       prevLayoutRef.current = null
       return
     }
-    const layout = submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout
+    const layout = layoutTargetLayout
     // Re-fit/recenter only when the page or scale changes, or on an explicit snap
     // request (entering layout mode, switching submap, and after undo/redo — see
     // store undo/redo). Plain map moves update mapCenter silently and keep the
@@ -509,7 +520,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       y: (overlap + height) / 2 - layout.mapCenter.y * desiredScale,
       scale: desiredScale,
     })
-  }, [layoutMode, layoutCourseId, layoutSubmapIndex, layoutCourse, map, layoutSnapRequest])
+  }, [layoutMode, layoutCourseId, layoutSubmapIndex, layoutTargetLayout, map, layoutSnapRequest])
 
   useEffect(() => {
     if (!layoutMode) return
@@ -622,10 +633,9 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     function commitBorderDrag(rect: { x: number; y: number; width: number; height: number } | null) {
       const st = useStore.getState()
       st.setLayoutDragPreview(null)
-      if (!rect || !st.editor.layoutCourseId) return
+      if (!rect || !st.editor.layoutCourseId || !st.project) return
       const smIdx = st.editor.layoutSubmapIndex
-      const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-      const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
+      const layout = resolveLayoutTarget(st.project, st.editor.layoutCourseId, smIdx)
       if (!layout?.mapBorder) return
       st.moveCourseLayout(st.editor.layoutCourseId, { mapBorder: { ...layout.mapBorder, ...rect } }, smIdx)
     }
@@ -636,15 +646,15 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     // overlap compensation, or each pan would nudge the page.
     function commitLayoutMapCenter() {
       const st = useStore.getState()
-      if (!st.editor.layoutMode || !st.editor.layoutCourseId) return
+      if (!st.editor.layoutMode || !st.editor.layoutCourseId || !st.project) return
       const rect = getRect()
       const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
       const overlap = mp ? Math.max(0, mp.getBoundingClientRect().bottom - rect.top) : 0
       const v = vpRef.current
       const centerX = (rect.width / 2 - v.x) / v.scale
       const centerY = ((overlap + rect.height) / 2 - v.y) / v.scale
-      const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-      const oldCenter = course?.layout ? submapLayoutView(course.layout, st.editor.layoutSubmapIndex)?.mapCenter : null
+      const layout = resolveLayoutTarget(st.project, st.editor.layoutCourseId, st.editor.layoutSubmapIndex)
+      const oldCenter = layout?.mapCenter ?? null
       if (!oldCenter || Math.abs(centerX - oldCenter.x) > 1 || Math.abs(centerY - oldCenter.y) > 1) {
         st.beginLayoutDrag()
         st.setLayoutMapCenter(st.editor.layoutCourseId, { x: centerX, y: centerY }, st.editor.layoutSubmapIndex)
@@ -835,14 +845,15 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const sx = e.clientX - rect.left
         const sy = e.clientY - rect.top
 
-        const course = proj.courses.find(c => c.id === state.editor.layoutCourseId)
         const smIdx = state.editor.layoutSubmapIndex
-        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
+        const isAC = state.editor.layoutCourseId === ALL_CONTROLS_ID
+        const course = isAC ? null : proj.courses.find(c => c.id === state.editor.layoutCourseId)
+        const layout = isAC ? proj.allControlsLayout : (course?.layout ? submapLayoutView(course.layout, smIdx) : undefined)
         // Course slice for this submap (for clue-sheet box sizing).
         const submapCourse = course
           ? (() => { const sm = computeSubmaps(course); return sm.length > 1 && sm[smIdx] ? { ...course, controls: sm[smIdx].controls } : course })()
           : undefined
-        if (layout && course && submapCourse) {
+        if (layout && (isAC || (course && submapCourse))) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
           const pageH = layout.orientation === 'landscape' ? base.w : base.h
@@ -870,20 +881,30 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           }
 
           // Hit test layout elements (clue sheet, title) — before border translate so elements on top of border margin are draggable
-          const sheetView = clueSheetPreviewView(course, smIdx, !!proj.clueSheetHideSubmapRestart, layout.clueSheetBreaks)
-          const breaks = sheetView.breaks
-          const trailingFlip = layoutTrailingFlip(course, smIdx)
           const elements: Array<{ key: string; el: { x: number; y: number; visible: boolean }; wMm: number; hMm: number }> = []
-          if (breaks && breaks.length > 0) {
-            const sizes = descriptionSheetPartSizes(sheetView.course, proj.controls, breaks, trailingFlip, proj.clueSheetFontSize)
-            const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
-            for (let i = 0; i < sizes.length; i++) {
-              const el = positions[i] ?? layout.clueSheet
-              elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
+          {
+            const sheetCourse = isAC
+              ? buildAllControlsCourse(proj.controls)
+              : (course && submapCourse)
+                ? clueSheetPreviewView(course, smIdx, !!proj.clueSheetHideSubmapRestart, layout.clueSheetBreaks).course
+                : null
+            const sheetBreaks = isAC
+              ? layout.clueSheetBreaks
+              : (course ? clueSheetPreviewView(course, smIdx, !!proj.clueSheetHideSubmapRestart, layout.clueSheetBreaks).breaks : undefined)
+            const trailingFlip = !isAC && course ? layoutTrailingFlip(course, smIdx) : false
+            if (sheetCourse) {
+              if (sheetBreaks && sheetBreaks.length > 0) {
+                const sizes = descriptionSheetPartSizes(sheetCourse, proj.controls, sheetBreaks, trailingFlip, proj.clueSheetFontSize)
+                const positions = [layout.clueSheet, ...(layout.clueSheetParts ?? [])]
+                for (let i = 0; i < sizes.length; i++) {
+                  const el = positions[i] ?? layout.clueSheet
+                  elements.push({ key: i === 0 ? 'clueSheet' : `clueSheetPart:${i - 1}`, el, wMm: sizes[i].width, hMm: sizes[i].height })
+                }
+              } else {
+                const sheet = descriptionSheetSize(sheetCourse, proj.controls, trailingFlip, proj.clueSheetFontSize)
+                elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
+              }
             }
-          } else {
-            const sheet = descriptionSheetSize(sheetView.course, proj.controls, trailingFlip, proj.clueSheetFontSize)
-            elements.push({ key: 'clueSheet', el: layout.clueSheet, wMm: sheet.width, hMm: sheet.height })
           }
           for (const { key, el, wMm, hMm } of elements) {
             if (!el.visible) continue
@@ -1230,9 +1251,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           dragBorderResizeStarted = true
         }
         const st = useStore.getState()
-        const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-        const smIdx = st.editor.layoutSubmapIndex
-        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
+        const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
         if (layout?.mapBorder) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
@@ -1265,9 +1284,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           dragBorderTranslateStarted = true
         }
         const st = useStore.getState()
-        const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-        const smIdx = st.editor.layoutSubmapIndex
-        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
+        const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
         if (layout?.mapBorder) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
@@ -1297,9 +1314,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           dragLayoutElStarted = true
         }
         const st = useStore.getState()
-        const course = st.project?.courses.find(c => c.id === st.editor.layoutCourseId)
-        const smIdx = st.editor.layoutSubmapIndex
-        const layout = course?.layout ? submapLayoutView(course.layout, smIdx) : undefined
+        const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
         if (layout) {
           const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
           const pageW = layout.orientation === 'landscape' ? base.h : base.w
@@ -1316,7 +1331,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             // store write; only clue sheets go through the cheap preview path.
             const newX = dragLayoutEl.ox + dx
             const newY = dragLayoutEl.oy + dy
-            scheduleDragMutation(() => st.updateLayoutElement(st.editor.layoutCourseId!, element, { x: newX, y: newY }, smIdx))
+            scheduleDragMutation(() => st.updateLayoutElement(st.editor.layoutCourseId!, element, { x: newX, y: newY }, st.editor.layoutSubmapIndex))
           } else {
             // Clamp onto the page so the sheet can't be dragged off and lost.
             const newX = Math.max(0, Math.min(pageW - dragLayoutEl.wMm, dragLayoutEl.ox + dx))
@@ -2181,9 +2196,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
   const topOverprintColors = loadedMap.topOverprintColors ?? []
   const belowHD = overprintMode === 'below' && !useRaster && loadedMap.type === 'svg' && topOverprintColors.length > 0
   const overprintT = overprintMode === 'none' || belowHD ? 0 : Math.max(0, Math.min(1, overprint))
-  const layoutOverlayPositions = layoutCourse?.layout
-    ? (submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout).overlayPositions
-    : undefined
+  const layoutOverlayPositions = layoutTargetLayout?.overlayPositions
 
   const annBase = {
     annotations,
@@ -2405,13 +2418,23 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
 
       {/* Layout mode page overlay (border mask) */}
       {/* eslint-disable-next-line react-hooks/refs -- reading cached DOM rect / recording the rendered vp is harmless */}
-      {layoutMode && layoutCourse?.layout && (() => {
-        const submaps = computeSubmaps(layoutCourse)
-        const submapLayout = submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout
-        const submapCourse = submaps.length > 1 && submaps[layoutSubmapIndex]
-          ? { ...layoutCourse, controls: submaps[layoutSubmapIndex].controls }
+      {layoutMode && layoutTargetLayout && (() => {
+        const isAC = layoutCourseId === ALL_CONTROLS_ID
+        const submapLayout = layoutTargetLayout
+        // For all-controls, synthesize a minimal Course for PageOverlay tiling bounds
+        const submapCourse: Course = isAC
+          ? { id: ALL_CONTROLS_ID, name: '', type: 'linear' as const, color: '#ea580c', controls: controls.map(c => ({ id: c.id, controlId: c.id })) }
+          : (() => {
+              const submaps = computeSubmaps(layoutCourse!)
+              return submaps.length > 1 && submaps[layoutSubmapIndex]
+                ? { ...layoutCourse!, controls: submaps[layoutSubmapIndex].controls }
+                : layoutCourse!
+            })()
+        const sheetView = isAC
+          ? { course: buildAllControlsCourse(controls), breaks: submapLayout.clueSheetBreaks }
           : layoutCourse
-        const sheetView = clueSheetPreviewView(layoutCourse, layoutSubmapIndex, clueSheetHideSubmapRestart, submapLayout.clueSheetBreaks)
+            ? clueSheetPreviewView(layoutCourse, layoutSubmapIndex, clueSheetHideSubmapRestart, submapLayout.clueSheetBreaks)
+            : { course: submapCourse, breaks: undefined }
         pageOverlayVpRef.current = vp
         return (
           <div ref={pageOverlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', transformOrigin: '0 0', willChange: 'transform' }}>
@@ -2424,7 +2447,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               course={submapCourse}
               controls={controls}
               cellSize={clueSheetFontSize}
-              trailingFlip={layoutTrailingFlip(layoutCourse, layoutSubmapIndex)}
+              trailingFlip={!isAC && layoutCourse ? layoutTrailingFlip(layoutCourse, layoutSubmapIndex) : false}
               clueSheetCourse={sheetView.course}
               clueSheetBreaks={sheetView.breaks}
               projectSpec={projectSpec}
@@ -2437,13 +2460,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       <svg key="above-border" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <g ref={aboveBorderGRef} style={{ willChange: 'transform', transformOrigin: '0 0' }}>
           {(() => {
-            // Drags write through submapLayoutView(layout, layoutSubmapIndex)
-            // (see layoutSlice), so render from the same view — reading the
-            // top-level layout here would show submap 0's positions while
-            // edits land invisibly on the active submap.
-            const layoutView = layoutCourse?.layout
-              ? submapLayoutView(layoutCourse.layout, layoutSubmapIndex) ?? layoutCourse.layout
-              : undefined
+            const layoutView = layoutTargetLayout
             return (
               <OverlaysLayer
                 scaleBars={scaleBars}
