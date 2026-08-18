@@ -1,0 +1,382 @@
+diff --git a/src/ocad-reader/rectangle-symbol.js b/src/ocad-reader/rectangle-symbol.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..401f74002d335d481775551fb6bdbeb00a44fb42
+--- /dev/null
++++ b/src/ocad-reader/rectangle-symbol.js
+@@ -0,0 +1,48 @@
++const { Symbol10, Symbol11 } = require('./symbol')
++
++class RectangleSymbol10 extends Symbol10 {
++  constructor(reader) {
++    super(reader)
++    this.type = 7
++    this.lineColor = reader.readSmallInt()
++    this.lineWidth = reader.readSmallInt()
++    this.lineStyle = reader.readSmallInt()
++  }
++}
++
++// Field order per OOM's RectangleSymbolV11 (ocd_types_v11.h)
++class RectangleSymbol11 extends Symbol11 {
++  constructor(reader) {
++    super(reader)
++    // Symbol11 reads 64 fewer bytes than OOM's BaseSymbolV11 (description is 64 vs 128 bytes)
++    reader.skip(64)
++    this.type = 7
++    this.lineColor = reader.readWord()
++    this.lineWidth = reader.readWord()
++    this.cornerRadius = reader.readWord()
++    this.gridFlags = reader.readWord()
++    this.cellWidth = reader.readWord()
++    this.cellHeight = reader.readWord()
++    reader.skip(4) // reserved[2]
++    this.unnumberedCells = reader.readWord()
++    // Utf8PascalString<3>: 1 byte length + 3 bytes chars
++    const unnumLen = reader.readByte()
++    let unnumText = ''
++    for (let i = 0; i < 3; i++) {
++      const c = reader.readByte()
++      if (i < unnumLen) unnumText += String.fromCharCode(c)
++    }
++    this.unnumberedText = unnumText
++    this.lineStyle = reader.readWord()
++    reader.skip(32) // reserved Utf8PascalString<31>
++    reader.skip(2)  // reserved
++    this.fontSize = reader.readWord()
++  }
++}
++
++module.exports = {
++  10: RectangleSymbol10,
++  11: RectangleSymbol11,
++  12: RectangleSymbol11,
++  2018: RectangleSymbol11,
++}
+diff --git a/src/ocad-reader/symbol-index.js b/src/ocad-reader/symbol-index.js
+index df891ed0913cd2cbc1e8031d6a09ddf58cd5c668..5ac5cff17704e988fc81afb2ec3d63e0bf2d92ec 100644
+--- a/src/ocad-reader/symbol-index.js
++++ b/src/ocad-reader/symbol-index.js
+@@ -2,6 +2,7 @@ const PointSymbol = require('./point-symbol')
+ const LineSymbol = require('./line-symbol')
+ const AreaSymbol = require('./area-symbol')
+ const TextSymbol = require('./text-symbol')
++const RectangleSymbol = require('./rectangle-symbol')
+ const {
+   PointSymbolType,
+   LineSymbolType,
+@@ -90,12 +91,8 @@ module.exports = class SymbolIndexBlock {
+           )
+           return null
+         case RectangleSymbolType:
+-          this.warnings.push(
+-            `Ignoring rectangle symbol ${reader.buffer.readInt32LE(
+-              offset + 4
+-            )}.`
+-          )
+-          return null
++          Cls = RectangleSymbol[this.version]
++          break
+         default:
+           throw new Error(`Unknown symbol type ${type}`)
+       }
+diff --git a/src/ocad-to-geojson.js b/src/ocad-to-geojson.js
+index b28ab756c582da6567cc1f1cdbc3d2ed04559dcb..91845abe0df0f770a54a3e7e4e5702087b2c164a 100644
+--- a/src/ocad-to-geojson.js
++++ b/src/ocad-to-geojson.js
+@@ -9,6 +9,7 @@ const {
+   UnformattedTextObjectType,
+   FormattedTextObjectType,
+   LineTextObjectType,
++  RectangleObjectType,
+ } = require('./ocad-reader/object-types')
+ const {
+   LineElementType,
+@@ -149,6 +150,12 @@ const tObjectToGeoJson = (options, symbols, object, i) => {
+         coordinates: coordinatesToRings(object.coordinates),
+       }
+       break
++    case RectangleObjectType:
++      geometry = {
++        type: 'Polygon',
++        coordinates: coordinatesToRings(object.coordinates),
++      }
++      break
+     case UnformattedTextObjectType:
+     case FormattedTextObjectType:
+     case LineTextObjectType: {
+diff --git a/src/ocad-to-svg.js b/src/ocad-to-svg.js
+index 2f78ff9a6247386892ace1425bb796275385979b..d092623526403224b692684fbcf5706f5b476d95 100644
+--- a/src/ocad-to-svg.js
++++ b/src/ocad-to-svg.js
+@@ -5,6 +5,7 @@ const {
+   LineTextObjectType,
+   FormattedTextObjectType,
+   UnformattedTextObjectType,
++  RectangleObjectType,
+ } = require('./ocad-reader/object-types')
+ const {
+   LineElementType,
+@@ -25,6 +26,7 @@ const TdPoly = require('./ocad-reader/td-poly')
+ const {
+   HorizontalAlignCenter,
+   HorizontalAlignLeft,
++  HorizontalAlignRight,
+   VerticalAlignTop,
+   VerticalAlignBottom,
+ } = require('./ocad-reader/text-symbol')
+@@ -467,24 +469,195 @@ const objectToSvg = (options, symbols, object) => {
+       }
+ 
+       if (symbol.borderSym) {
++        const borderNodes = objectToSvg(
++          {
++            ...options,
++            sym: symbol.borderSym,
++            objType: LineObjectType,
++            closePath: true,
++          },
++          symbols,
++          object
++        )
++        if (borderNodes) {
++          nodes.push(...borderNodes)
++        }
++      }
++
++      break
++    }
++    case RectangleObjectType: {
++      if (symbol.lineWidth > 0) {
+         nodes.push(
+-          ...objectToSvg(
+-            {
+-              ...options,
+-              sym: symbol.borderSym,
+-              objType: LineObjectType,
+-              closePath: true,
+-            },
+-            symbols,
+-            object
++          lineToPath(
++            object.coordinates,
++            symbol.lineWidth,
++            options.colors[symbol.lineColor],
++            null,
++            symbol.lineStyle,
++            true
+           )
+         )
+       }
+ 
++      if (
++        symbol.gridFlags & 1 &&
++        symbol.cellWidth > 0 &&
++        symbol.cellHeight > 0
++      ) {
++        const cs = object.coordinates
++        const xs = cs.map(c => c[0])
++        const ys = cs.map(c => c[1])
++        const left = Math.min(...xs)
++        const right = Math.max(...xs)
++        const top = Math.max(...ys)
++        const bottom = Math.min(...ys)
++        const w = right - left
++        const h = top - bottom
++        const nCellsX = Math.max(1, Math.round(w / symbol.cellWidth))
++        const nCellsY = Math.max(1, Math.round(h / symbol.cellHeight))
++        const cw = w / nCellsX
++        const ch = h / nCellsY
++        const color = options.colors[symbol.lineColor]
++        // ponytail: inner grid uses 0.15mm = 15 units line width per OOM
++        const innerWidth = 15
++
++        for (let x = 1; x < nCellsX; x++) {
++          const lx = left + x * cw
++          nodes.push(
++            lineToPath(
++              [new TdPoly(lx, bottom, 0, 0), new TdPoly(lx, top, 0, 0)],
++              innerWidth,
++              color,
++              null,
++              0
++            )
++          )
++        }
++        for (let y = 1; y < nCellsY; y++) {
++          const ly = bottom + y * ch
++          nodes.push(
++            lineToPath(
++              [new TdPoly(left, ly, 0, 0), new TdPoly(right, ly, 0, 0)],
++              innerWidth,
++              color,
++              null,
++              0
++            )
++          )
++        }
++
++        if (symbol.gridFlags & 2 && h >= ch / 2) {
++          // ponytail: OOM hardcodes 15pt Arial Bold for grid text; 1pt = 35.28 units (1/100 mm)
++          const fontSize = 15 * 35.2778
++          const numberFromBottom = !!(symbol.gridFlags & 4)
++          for (let gy = 0; gy < nCellsY; gy++) {
++            for (let gx = 0; gx < nCellsX; gx++) {
++              const cellNum = numberFromBottom
++                ? (nCellsY - 1 - gy) * nCellsX + gx + 1
++                : gy * nCellsX + gx + 1
++              const totalCells = nCellsX * nCellsY
++              const text =
++                cellNum > totalCells - symbol.unnumberedCells
++                  ? symbol.unnumberedText || ''
++                  : String(cellNum)
++              if (!text) continue
++              const tx = left + gx * cw + cw * 0.07
++              // OOM places grid text AlignTop at (0.04*ch + ascent - em) below
++              // the cell top, and AlignTop adds another ascent to reach the
++              // baseline (mapper: ocd_file_import.cpp, text_object.cpp:413).
++              // Arial Bold ascent = 1854/2048 em, rounded to FreeType pixels
++              // at OOM's 256px internal em: 232/256. So baseline offset =
++              // 0.04*ch + (2*232/256 - 1) * fontSize.
++              const ty =
++                top - gy * ch - ch * 0.04 - fontSize * ((2 * 232) / 256 - 1)
++              nodes.push({
++                type: 'text',
++                attrs: {
++                  x: tx.toString(),
++                  y: (-ty).toString(),
++                  fill: color.rgb,
++                  'font-family': 'Arial',
++                  'font-weight': 'bold',
++                  'font-size': fontSize.toString(),
++                },
++                children: [{ text }],
++                order: color.renderOrder,
++              })
++            }
++          }
++        }
++      }
++
++      break
++    }
++
++    case FormattedTextObjectType: {
++      if (symbol.type !== 4)
++        throw new Error('Symbol mismatch: text object with non-text symbol')
++
++      const fmtHAlign = symbol.getHorizontalAlignment()
++      const fmtFontSize = symbol.fontSize * 3.52778
++      const fmtLineHeight = fmtFontSize * 1.2
++      const fmtColor = options.colors[symbol.fontColor]
++
++      const fxs = object.coordinates.map(c => c[0])
++      const fys = object.coordinates.map(c => c[1])
++      const frameLeft = Math.min(...fxs)
++      const frameTop = Math.max(...fys)
++      const frameW = Math.max(...fxs) - frameLeft
++      const frameH = frameTop - Math.min(...fys)
++
++      let fmtTextX = 0
++      if (fmtHAlign === HorizontalAlignCenter) fmtTextX = frameW / 2
++      else if (fmtHAlign === HorizontalAlignRight) fmtTextX = frameW
++
++      const fmtLines = wrapText(
++        object.text,
++        frameW,
++        symbol.fontName,
++        fmtFontSize,
++        symbol.italic,
++        symbol.weight
++      )
++      const fmtNode = {
++        type: 'g',
++        attrs: {
++          transform: `translate(${frameLeft}, ${-frameTop})`,
++        },
++        children: [
++          {
++            type: 'text',
++            attrs: {
++              fill: fmtColor.rgb,
++              'font-family': symbol.fontName,
++              'font-style': symbol.italic ? 'italic' : '',
++              'font-weight': symbol.weight > 400 ? 'bold' : '',
++              'font-size': fmtFontSize.toString(),
++            },
++            children: fmtLines.map((l, i) => ({
++              type: 'tspan',
++              attrs: {
++                x: fmtTextX,
++                y: `${fmtLineHeight + i * fmtLineHeight}`,
++                'text-anchor':
++                  fmtHAlign === HorizontalAlignCenter
++                    ? 'middle'
++                    : fmtHAlign === HorizontalAlignLeft
++                      ? 'start'
++                      : 'end',
++              },
++              children: [{ text: l }],
++            })),
++          },
++        ],
++        order: fmtColor.renderOrder,
++      }
++      nodes.push(fmtNode)
+       break
+     }
++
+     case UnformattedTextObjectType:
+-    case FormattedTextObjectType:
+     case LineTextObjectType: {
+       if (symbol.type !== 4)
+         throw new Error('Symbol mismatch: text object with non-text symbol')
+@@ -505,7 +678,7 @@ const objectToSvg = (options, symbols, object) => {
+           'font-family': symbol.fontName,
+           'font-style': symbol.italic ? 'italic' : '',
+           'font-weight': symbol.weight > 400 ? 'bold' : '',
+-          'font-size': fontSize.toString(), // pt to millimeters * 10
++          'font-size': fontSize.toString(),
+         },
+         children: ocadTextToSvg(
+           object.coordinates[0],
+@@ -816,6 +989,40 @@ const offsetLineCoordinates = (coordinates, offset, isArea) => {
+   }
+ }
+ 
++// ponytail: word-wrap for formatted text frames; canvas measureText when available, else ~0.52em
++let _wrapCtx = null
++function wrapText(text, maxWidth, fontFamily, fontSize, italic, weight) {
++  const paragraphs = text.split('\n')
++  const lines = []
++  let ctx = _wrapCtx
++  if (!ctx && typeof OffscreenCanvas !== 'undefined') {
++    ctx = new OffscreenCanvas(1, 1).getContext('2d')
++    _wrapCtx = ctx
++  }
++  const fontStr = `${italic ? 'italic ' : ''}${weight > 400 ? 'bold ' : ''}${fontSize}px ${fontFamily}`
++  if (ctx) ctx.font = fontStr
++
++  for (const para of paragraphs) {
++    const words = para.split(/\s+/).filter(Boolean)
++    if (!words.length) { lines.push(''); continue }
++    let line = words[0]
++    for (let i = 1; i < words.length; i++) {
++      const test = line + ' ' + words[i]
++      const w = ctx
++        ? ctx.measureText(test).width
++        : test.length * fontSize * 0.52
++      if (w > maxWidth) {
++        lines.push(line)
++        line = words[i]
++      } else {
++        line = test
++      }
++    }
++    lines.push(line)
++  }
++  return lines
++}
++
+ const ocadTextToSvg = (
+   coord,
+   s,
