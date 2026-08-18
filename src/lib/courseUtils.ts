@@ -247,6 +247,74 @@ export function generateAllPermutations(course: Course): CourseVariation[] {
   })
 }
 
+export function clueSheetHiddenRestartView(
+  controls: CourseControl[],
+  breaks: number[] | undefined,
+): { controls: CourseControl[]; breaks: number[] | undefined } {
+  return {
+    controls: controls.slice(1),
+    breaks: breaks?.map(b => b - 1).filter(b => b > 0),
+  }
+}
+
+// ─── Page plan ────────────────────────────────────────────────────────────
+
+export interface PagePlan {
+  pageCourse: Course
+  clueSheetCourse: Course
+  sheetBreaks: number[] | undefined
+  seqOffset: number
+  restartControlId: string | undefined
+  trailingFlip: boolean
+  trailingExchange: boolean
+}
+
+export function buildPagePlan(
+  course: Course,
+  submapIndex: number,
+  controls: Control[],
+  hideSubmapRestart: boolean,
+  sheetBreaks: number[] | undefined,
+): PagePlan {
+  const submaps = computeSubmaps(course)
+  const hasSubmaps = submaps.length > 1
+  const submap = hasSubmaps ? submaps[submapIndex] : submaps[0]
+
+  const pageCourse = hasSubmaps
+    ? { ...course, controls: submap.controls, name: `${course.name} - ${submap.index + 1}` }
+    : course
+
+  let seqOffset = 0
+  let restartControlId: string | undefined
+  let clueSheetControls = submap.controls
+  let breaks = sheetBreaks
+
+  if (hasSubmaps && submap.index > 0) {
+    const cMap = controlsById(controls)
+    seqOffset = submaps.slice(0, submap.index).reduce((s, sm) =>
+      s + sm.controls.filter(c => cMap.get(c.controlId)?.type === 'control').length, 0)
+    if (hideSubmapRestart) {
+      ;({ controls: clueSheetControls, breaks } = clueSheetHiddenRestartView(submap.controls, breaks))
+    }
+    const firstCtrl = cMap.get(submap.controls[0]?.controlId)
+    if (firstCtrl) restartControlId = firstCtrl.id
+  }
+
+  const clueSheetCourse = clueSheetControls !== submap.controls
+    ? { ...pageCourse, controls: clueSheetControls }
+    : pageCourse
+
+  let trailingFlip = false
+  let trailingExchange = false
+  if (hasSubmaps && submap.index < submaps.length - 1) {
+    const lastCc = submap.controls[submap.controls.length - 1]
+    if (lastCc?.exchangeMode === 'flip') trailingFlip = true
+    else if (lastCc?.exchangeMode === 'exchange') trailingExchange = true
+  }
+
+  return { pageCourse, clueSheetCourse, sheetBreaks: breaks, seqOffset, restartControlId, trailingFlip, trailingExchange }
+}
+
 /** Synthetic course wrapping all project controls, sorted by code. Used for
  * all-controls clue sheets and PageOverlay tiling bounds. */
 export function buildAllControlsCourse(controls: Control[]): Course {
