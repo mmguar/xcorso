@@ -19,10 +19,10 @@ import { PageOverlay } from './PageOverlay'
 import type { LoadedMap } from '../../lib/mapLoader'
 import { rasterizeSvgOverprint } from '../../lib/mapLoader'
 import { ScaleInputDialog } from '../ScaleInputDialog'
-import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView, buildAllControlsCourse, IOF_PURPLE } from '../../lib/courseUtils'
+import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, submapLayoutView, buildAllControlsCourse, IOF_PURPLE, buildPagePlan } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec, Course } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { mmToMap, pageDimsFor, clueSheetHiddenRestartView, ALL_CONTROLS_ID } from '../../lib/pdfExport'
+import { mmToMap, pageDimsFor, ALL_CONTROLS_ID } from '../../lib/pdfExport'
 import { NumericInput } from '../ui/NumericInput'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
@@ -62,28 +62,6 @@ function overlayUpmOf(st: ReturnType<typeof useStore.getState>): number {
   return ps ? upm * ps / proj.map.scale : upm
 }
 
-/** Whether this submap's clue sheet gets a trailing map-flip row — must match
- * the export's logic (pdfExport) so on-map preview boxes size identically. */
-function layoutTrailingFlip(course: Course, submapIndex: number): boolean {
-  const submaps = computeSubmaps(course)
-  if (submaps.length <= 1 || submapIndex >= submaps.length - 1) return false
-  const controls = submaps[submapIndex]?.controls
-  const mode = controls?.[controls.length - 1]?.exchangeMode
-  return mode === 'flip' || mode === 'exchange'
-}
-
-/** Clue-sheet course + breaks exactly as the export prints them: the submap's
- * control slice, minus the restart row (with shifted breaks) when
- * project.clueSheetHideSubmapRestart is set. */
-function clueSheetPreviewView(course: Course, submapIndex: number, hideRestart: boolean, breaks: number[] | undefined): { course: Course; breaks: number[] | undefined } {
-  const submaps = computeSubmaps(course)
-  const isSub = submaps.length > 1 && submaps[submapIndex] != null
-  let controls = isSub ? submaps[submapIndex].controls : course.controls
-  if (isSub && submapIndex > 0 && hideRestart) {
-    ;({ controls, breaks } = clueSheetHiddenRestartView(controls, breaks))
-  }
-  return { course: controls === course.controls ? course : { ...course, controls }, breaks }
-}
 import type { MeasurePointHit } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 import { computeCourseDistances, resolveCourseLength, formatDistance, legKey } from '../../lib/distance'
@@ -827,10 +805,8 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const isAC = state.editor.layoutCourseId === ALL_CONTROLS_ID
         const course = isAC ? null : proj.courses.find(c => c.id === state.editor.layoutCourseId)
         const layout = isAC ? proj.allControlsLayout : (course?.layout ? submapLayoutView(course.layout, smIdx) : undefined)
-        // Course slice for this submap (for clue-sheet box sizing).
-        const submapCourse = course
-          ? (() => { const sm = computeSubmaps(course); return sm.length > 1 && sm[smIdx] ? { ...course, controls: sm[smIdx].controls } : course })()
-          : undefined
+        const plan = course ? buildPagePlan(course, smIdx, proj.controls, !!proj.clueSheetHideSubmapRestart, layout?.clueSheetBreaks) : null
+        const submapCourse = plan?.pageCourse
         if (layout && (isAC || (course && submapCourse))) {
           const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, proj.map, layout.printScale).x
@@ -861,13 +837,11 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           {
             const sheetCourse = isAC
               ? buildAllControlsCourse(proj.controls)
-              : (course && submapCourse)
-                ? clueSheetPreviewView(course, smIdx, !!proj.clueSheetHideSubmapRestart, layout.clueSheetBreaks).course
-                : null
+              : plan ? plan.clueSheetCourse : null
             const sheetBreaks = isAC
               ? layout.clueSheetBreaks
-              : (course ? clueSheetPreviewView(course, smIdx, !!proj.clueSheetHideSubmapRestart, layout.clueSheetBreaks).breaks : undefined)
-            const trailingFlip = !isAC && course ? layoutTrailingFlip(course, smIdx) : false
+              : plan?.sheetBreaks
+            const trailingFlip = plan ? (plan.trailingFlip || plan.trailingExchange) : false
             if (sheetCourse) {
               if (sheetBreaks && sheetBreaks.length > 0) {
                 const sizes = descriptionSheetPartSizes(sheetCourse, proj.controls, sheetBreaks, trailingFlip, proj.clueSheetFontSize)
@@ -2391,20 +2365,15 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       {layoutMode && layoutTargetLayout && (() => {
         const isAC = layoutCourseId === ALL_CONTROLS_ID
         const submapLayout = layoutTargetLayout
-        // For all-controls, synthesize a minimal Course for PageOverlay tiling bounds
+        const plan = !isAC && layoutCourse ? buildPagePlan(layoutCourse, layoutSubmapIndex, controls, clueSheetHideSubmapRestart, submapLayout.clueSheetBreaks) : null
         const submapCourse: Course = isAC
           ? { id: ALL_CONTROLS_ID, name: '', type: 'linear' as const, color: '#ea580c', controls: controls.map(c => ({ id: c.id, controlId: c.id })) }
-          : (() => {
-              const submaps = computeSubmaps(layoutCourse!)
-              return submaps.length > 1 && submaps[layoutSubmapIndex]
-                ? { ...layoutCourse!, controls: submaps[layoutSubmapIndex].controls }
-                : layoutCourse!
-            })()
+          : plan!.pageCourse
         const sheetView = isAC
           ? { course: buildAllControlsCourse(controls), breaks: submapLayout.clueSheetBreaks }
-          : layoutCourse
-            ? clueSheetPreviewView(layoutCourse, layoutSubmapIndex, clueSheetHideSubmapRestart, submapLayout.clueSheetBreaks)
-            : { course: submapCourse, breaks: undefined }
+          : plan
+            ? { course: plan.clueSheetCourse, breaks: plan.sheetBreaks }
+            : { course: submapCourse, breaks: undefined as number[] | undefined }
         pageOverlayVpRef.current = vp
         return (
           <div ref={pageOverlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', transformOrigin: '0 0', willChange: 'transform' }}>
@@ -2417,7 +2386,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               course={submapCourse}
               controls={controls}
               cellSize={clueSheetFontSize}
-              trailingFlip={!isAC && layoutCourse ? layoutTrailingFlip(layoutCourse, layoutSubmapIndex) : false}
+              trailingFlip={plan ? (plan.trailingFlip || plan.trailingExchange) : false}
               clueSheetCourse={sheetView.course}
               clueSheetBreaks={sheetView.breaks}
               projectSpec={projectSpec}

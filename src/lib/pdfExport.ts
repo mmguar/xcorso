@@ -2,12 +2,12 @@
 // the store statically import page-geometry helpers from this module, so the
 // runtime library is loaded on demand in exportCoursePdf instead.
 import type { jsPDF } from 'jspdf'
-import type { Project, Course, Control, CourseControl, MapPoint, MapConfig, EventSpec, MapBorder, OverprintMode, AppearanceSettings } from '../types'
+import type { Project, Course, Control, MapPoint, MapConfig, EventSpec, MapBorder, OverprintMode, AppearanceSettings } from '../types'
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
 import type { DescSheetOpts } from './pdfDescriptionSheet'
-import { defaultControlLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, buildAllControlsCourse, IOF_PURPLE } from './courseUtils'
+import { defaultControlLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, buildAllControlsCourse, IOF_PURPLE, buildPagePlan } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength } from './distance'
 import { resolveSpec, getSymbolDims, dimsFor, symbolScaleFactor as specScaleFactor, controlSymbolRadiusMm, symbolLabelOffset } from './symbolSpec'
 import { distance } from './geometry'
@@ -591,18 +591,6 @@ export function checkFitForAllControls(
   }
 }
 
-/** Clue-sheet view when the submap restart control row is hidden
- * (project.clueSheetHideSubmapRestart): drop the first control and shift the
- * break indices, which are stored against the full submap control list. */
-export function clueSheetHiddenRestartView(
-  controls: CourseControl[],
-  breaks: number[] | undefined,
-): { controls: CourseControl[]; breaks: number[] | undefined } {
-  return {
-    controls: controls.slice(1),
-    breaks: breaks?.map(b => b - 1).filter(b => b > 0),
-  }
-}
 
 // ── Tiling ─────────────────────────────────────────────────────────────────
 
@@ -1057,52 +1045,15 @@ export async function exportCoursePdf(
       // Per-submap layout: each submap of an exchange/flip course is placed independently.
       const sLayout = layout ? (submapLayoutView(layout, submap.index) ?? layout) : undefined
       const courseScale = sLayout?.printScale ?? options.scaleOverrides?.[smKey] ?? options.scaleOverrides?.[oKey] ?? options.printScale
-      let seqOffset = 0
-      let restartControlId: string | undefined
-      let clueSheetControls = submap.controls
-      // Break indices are stored against the full submap control list; when the
-      // restart row is hidden they must shift with the sliced list.
-      let sheetBreaks = sLayout?.clueSheetBreaks
-      if (hasSubmaps && submap.index > 0) {
-        const cMap = controlsById(project.controls)
-        for (const cc of course.controls) {
-          const c = cMap.get(cc.controlId)
-          if (c?.type === 'control') seqOffset++
-          if (cc.id === submap.controls[0].id) break
-        }
-        if (project.clueSheetHideSubmapRestart) {
-          ;({ controls: clueSheetControls, breaks: sheetBreaks } =
-            clueSheetHiddenRestartView(submap.controls, sheetBreaks))
-        }
-        const firstCtrl = cMap.get(submap.controls[0].controlId)
-        if (firstCtrl) restartControlId = firstCtrl.id
-      }
-
-      const pageCourse = hasSubmaps
-        ? { ...course, controls: submap.controls, name: `${course.name} - ${submap.index + 1}` }
-        : course
-      const clueSheetCourse = clueSheetControls !== submap.controls
-        ? { ...pageCourse, controls: clueSheetControls }
-        : pageCourse
+      const plan = buildPagePlan(course, submap.index, project.controls, !!project.clueSheetHideSubmapRestart, sLayout?.clueSheetBreaks)
+      const { pageCourse, clueSheetCourse, sheetBreaks, seqOffset, restartControlId, trailingFlip, trailingExchange } = plan
 
       const sOrient = sLayout?.orientation ?? options.orientation
       const { w: cpw, h: cph } = pageDimsFor(sLayout?.pageSize ?? options.pageSize, sOrient)
       const cOrientFlag = sOrient === 'landscape' ? 'l' : 'p'
-      // Border-clamped so the tile grid matches checkTilingForCourseObj's page
-      // count. ponytail: tiles still center on the page, an off-center border
+      // ponytail: tiles still center on the page, an off-center border
       // shifts the crop slightly — center tiles inside the border if it matters.
       const { w: cPrintableW, h: cPrintableH } = printableSize(cpw, cph, sLayout?.mapBorder)
-
-      let trailingFlip = false
-      let trailingExchange = false
-      if (hasSubmaps && submap.index < submaps.length - 1) {
-        const lastCc = submap.controls[submap.controls.length - 1]
-        if (lastCc?.exchangeMode === 'flip') {
-          trailingFlip = true
-        } else if (lastCc?.exchangeMode === 'exchange') {
-          trailingExchange = true
-        }
-      }
 
       // Each submap centers on its own controls (or its stored mapCenter).
       const bounds = courseBoundsMm(pageCourse, project.controls, project.map, courseScale, project.spec)

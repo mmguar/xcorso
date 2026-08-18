@@ -2,12 +2,12 @@ import type { Project, Course, Control, MapPoint, AppearanceSettings, EventSpec,
 import type { LoadedMap } from './mapLoader'
 import {
   mapToMm, courseBoundsMm, MARGIN, ALL_CONTROLS_ID, pageDimsFor,
-  assignControlColors, MULTICOLOR_PALETTE, clueSheetHiddenRestartView,
+  assignControlColors, MULTICOLOR_PALETTE,
 } from './pdfExport'
 import { resolveSpec, dimsFor, symbolScaleFactor as specScaleFactor } from './symbolSpec'
 import {
   IOF_PURPLE, controlsById, computeSubmaps,
-  submapLayoutView, defaultControlLabel,
+  submapLayoutView, defaultControlLabel, buildPagePlan,
 } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength } from './distance'
 import { descriptionSheetSize, descriptionSheetPartSizes, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
@@ -258,11 +258,10 @@ export async function exportCourseImages(
     const submaps = computeSubmaps(course)
 
     for (const submap of submaps) {
-      const pageCourse = submaps.length > 1
-        ? { ...course, controls: submap.controls, name: `${course.name} - ${submap.index + 1}` }
-        : course
-
       const sLayout = course.layout ? (submapLayoutView(course.layout, submap.index) ?? course.layout) : undefined
+      const plan = buildPagePlan(course, submap.index, project.controls, !!project.clueSheetHideSubmapRestart, sLayout?.clueSheetBreaks)
+      const { pageCourse, clueSheetCourse, sheetBreaks, seqOffset, restartControlId, trailingFlip, trailingExchange } = plan
+
       const courseScale = sLayout?.printScale ?? options.scaleOverrides?.[course.id] ?? options.printScale
       const courseSpec = resolveSpec(project.spec, course.spec)
       const elongScale = project.map.scale > 0 ? project.map.scale / courseScale : 1
@@ -293,30 +292,10 @@ export async function exportCourseImages(
       const descMode = course.layout?.descMode ?? 'none'
       let descSheetInfo: DescSheetInfo | undefined
       if (descMode !== 'none' && pageCourse.controls.length > 0) {
-        let clueSheetControls = submap.controls
-        let sheetBreaks = sLayout?.clueSheetBreaks
-        let seqOffset = 0
-        let restartControlId: string | undefined
-        if (hasSubmaps && submap.index > 0) seqOffset = submaps.slice(0, submap.index).reduce((s, sm) => s + sm.controls.filter(c => controlMap.get(c.controlId)?.type === 'control').length, 0)
-        if (project.clueSheetHideSubmapRestart && hasSubmaps && submap.index > 0) {
-          const r = clueSheetHiddenRestartView(submap.controls, sheetBreaks)
-          clueSheetControls = r.controls; sheetBreaks = r.breaks
-          const firstCtrl = controlMap.get(submap.controls[0]?.controlId)
-          if (firstCtrl) restartControlId = firstCtrl.id
-        }
-        const clueSheetCourse = clueSheetControls !== submap.controls
-          ? { ...pageCourse, controls: clueSheetControls } : pageCourse
         const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
         const sheetTotal = hasSubmaps
           ? resolveCourseLength(course, computeCourseDistances(course, project.controls, project.map, project.measuredLegs))
           : resolveCourseLength(course, dist)
-
-        let trailingFlip = false, trailingExchange = false
-        if (hasSubmaps && submap.index < submaps.length - 1) {
-          const lastCc = submap.controls[submap.controls.length - 1]
-          if (lastCc?.exchangeMode === 'flip') trailingFlip = true
-          else if (lastCc?.exchangeMode === 'exchange') trailingExchange = true
-        }
 
         const sheetPos = sLayout?.clueSheet ?? { x: MARGIN, y: MARGIN }
         descSheetInfo = {
