@@ -1,6 +1,6 @@
 import type { MapPoint, CourseLayout, SubmapLayout, LayoutElementPosition, LayoutDefaults, MapBorder, Course, Control, CourseControl, MapConfig } from '../types'
 import type { SetState, GetState, StoreHelpers, LayoutDragPreview } from './types'
-import { MARGIN, PAGE_SIZES, mmToMap } from '../lib/pdfExport'
+import { MARGIN, PAGE_SIZES, mmToMap, ALL_CONTROLS_ID } from '../lib/pdfExport'
 import { controlsById, computeSubmaps, submapLayoutView } from '../lib/courseUtils'
 
 /** Swap border dimensions (and margins) when page orientation changes. */
@@ -137,6 +137,42 @@ function controlsCenter(
   }
 }
 
+function defaultAllControlsLayout(get: GetState): SubmapLayout {
+  const project = get().project!
+  const map = project.map
+  const defaults = getLayoutDefaults(get)
+  const layout: SubmapLayout = {
+    pageSize: defaults.pageSize,
+    orientation: defaults.orientation,
+    printScale: defaults.printScale,
+    mapCenter: { x: map.width / 2, y: map.height / 2 },
+    clueSheet: { x: MARGIN, y: MARGIN, visible: false },
+  }
+  if (defaults.mapBorder) {
+    layout.mapBorder = { ...defaults.mapBorder }
+  }
+  if (project.controls.length > 0) {
+    layout.mapCenter = allControlsCenter(project.controls, map, layout)
+  }
+  return layout
+}
+
+function allControlsCenter(
+  controls: Control[],
+  map: MapConfig,
+  layout: { pageSize: SubmapLayout['pageSize']; orientation: SubmapLayout['orientation']; printScale: number; mapBorder?: MapBorder },
+): MapPoint {
+  const positions = controls.map(c => c.position)
+  if (positions.length === 0) return { x: map.width / 2, y: map.height / 2 }
+  const xs = positions.map(p => p.x)
+  const ys = positions.map(p => p.y)
+  const off = borderCenterOffset(layout, map)
+  return {
+    x: (Math.min(...xs) + Math.max(...xs)) / 2 + off.x,
+    y: (Math.min(...ys) + Math.max(...ys)) / 2 + off.y,
+  }
+}
+
 /** Build a fresh SubmapLayout for an additional submap, inheriting page/scale/border from submap 0. */
 function makeSubmapLayout(template: SubmapLayout, controls: CourseControl[], controlMap: Map<string, Control>, map: MapConfig): SubmapLayout {
   return {
@@ -185,6 +221,33 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       const state = get()
       const project = state.project
       if (!project) return
+
+      if (courseId === ALL_CONTROLS_ID) {
+        if (!project.allControlsLayout) {
+          h.mutateProjectSilent(p => {
+            if (!p.allControlsLayout) p.allControlsLayout = defaultAllControlsLayout(get)
+          })
+        }
+        set(state => ({
+          editor: {
+            ...state.editor,
+            layoutMode: true,
+            layoutCourseId: ALL_CONTROLS_ID,
+            layoutSubmapIndex: 0,
+            selectedSubmapIndex: null,
+            measureMode: false,
+            measureCourseId: null,
+            selectedCourseId: null,
+            courseViewMode: 'all-controls',
+            selectedControlId: null,
+            selectedOverlayId: null,
+            selectedAnnotationId: null,
+            activeTool: 'select',
+            pendingAnnotationPoints: [],
+          },
+        }))
+        return
+      }
 
       const course = project.courses.find(c => c.id === courseId)
       if (!course) return
@@ -262,6 +325,19 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     updateCourseLayout: (courseId: string, updates: Partial<SubmapLayout & Pick<CourseLayout, 'included' | 'descMode'>>, submapIndex = 0) => {
       h.mutateProject(p => {
+        if (courseId === ALL_CONTROLS_ID) {
+          if (!p.allControlsLayout) return false
+          const target = p.allControlsLayout
+          const { included: _i, descMode: _d, ...submapUpdates } = updates
+          const prev = { pageSize: target.pageSize, orientation: target.orientation }
+          Object.assign(target, submapUpdates)
+          if (submapUpdates.pageSize != null || submapUpdates.orientation != null) {
+            if (target.mapBorder) {
+              target.mapBorder = adjustMapBorderForLayoutChange(target.mapBorder, prev, { pageSize: target.pageSize, orientation: target.orientation })
+            }
+          }
+          return
+        }
         const course = p.courses.find(c => c.id === courseId)
         if (!course?.layout) return false
         ensureSubmapLayouts(course, p.map, controlsById(p.controls))
@@ -292,8 +368,28 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
       }, 'Update layout')
     },
 
+    applyBorderToAllSubmaps: (courseId: string, submapIndex: number) => {
+      h.mutateProject(p => {
+        const course = p.courses.find(c => c.id === courseId)
+        if (!course?.layout) return false
+        const source = submapLayoutView(course.layout, submapIndex)
+        if (!source) return false
+        const border = source.mapBorder ? { ...source.mapBorder } : undefined
+        const targets = [course.layout, ...(course.layout.submapLayouts ?? [])]
+        for (let i = 0; i < targets.length; i++) {
+          if (i === submapIndex) continue
+          targets[i].mapBorder = border ? { ...border } : undefined
+        }
+      }, 'Apply border to all submaps')
+    },
+
     moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
+        if (courseId === ALL_CONTROLS_ID) {
+          if (!p.allControlsLayout) return false
+          Object.assign(p.allControlsLayout, updates)
+          return
+        }
         const course = p.courses.find(c => c.id === courseId)
         if (!course?.layout) return false
         const target = submapLayoutView(course.layout, submapIndex)
@@ -358,6 +454,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
           cascade(course.layout)
           for (const sl of course.layout.submapLayouts ?? []) cascade(sl)
         }
+        if (p.allControlsLayout) cascade(p.allControlsLayout)
       }, 'Update layout defaults')
     },
 
@@ -383,22 +480,21 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     setLayoutMapCenter: (courseId: string, center: MapPoint, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return false
-        const layout = submapLayoutView(course.layout, submapIndex)
+        const layout = courseId === ALL_CONTROLS_ID
+          ? p.allControlsLayout
+          : (() => { const c = p.courses.find(c => c.id === courseId); return c?.layout ? submapLayoutView(c.layout, submapIndex) : undefined })()
         if (!layout) return false
         const dx = center.x - layout.mapCenter.x
         const dy = center.y - layout.mapCenter.y
         layout.mapCenter = center
-        // Overlays are page-relative in layout mode: shift every overlay by the
-        // pan delta, seeding from the project position for overlays never
-        // individually moved — otherwise they slide with the map until the
-        // first manual drag gives them an override entry.
-        // New object reference so the memoized OverlaysLayer re-renders.
         const shifted: Record<string, MapPoint> = {}
         for (const o of [...p.scaleBars, ...p.textLabels, ...p.imageOverlays]) {
           const pos = layout.overlayPositions?.[o.id] ?? o.position
           shifted[o.id] = { x: pos.x + dx, y: pos.y + dy }
+        }
+        for (const a of p.annotations.filter(a => a.type === 'north_arrow' && a.points[0])) {
+          const pos = layout.overlayPositions?.[a.id] ?? a.points[0]
+          shifted[a.id] = { x: pos.x + dx, y: pos.y + dy }
         }
         layout.overlayPositions = shifted
       })
@@ -406,9 +502,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     updateLayoutElement: (courseId: string, element: string, pos: Partial<LayoutElementPosition>, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return false
-        const layout = submapLayoutView(course.layout, submapIndex)
+        const layout = courseId === ALL_CONTROLS_ID
+          ? p.allControlsLayout
+          : (() => { const c = p.courses.find(c => c.id === courseId); return c?.layout ? submapLayoutView(c.layout, submapIndex) : undefined })()
         if (!layout) return false
         if (element === 'clueSheet') {
           Object.assign(layout.clueSheet, pos)
@@ -442,9 +538,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     addClueSheetBreak: (courseId: string, controlIndex: number, submapIndex = 0) => {
       h.mutateProject(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return false
-        const layout = submapLayoutView(course.layout, submapIndex)
+        const layout = courseId === ALL_CONTROLS_ID
+          ? p.allControlsLayout
+          : (() => { const c = p.courses.find(c => c.id === courseId); return c?.layout ? submapLayoutView(c.layout, submapIndex) : undefined })()
         if (!layout) return false
         const breaks = layout.clueSheetBreaks ?? []
         if (breaks.includes(controlIndex)) return false
@@ -452,12 +548,14 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         const insertPos = newBreaks.indexOf(controlIndex)
         const parts = layout.clueSheetParts ?? []
         const newParts = [...parts]
-        const { w: pw } = pageDimensions(layout.pageSize, layout.orientation)
-        newParts.splice(insertPos, 0, {
-          x: Math.min(layout.clueSheet.x + 60, pw - 40),
-          y: layout.clueSheet.y,
-          visible: true,
-        })
+        const { w: pw, h: ph } = pageDimensions(layout.pageSize, layout.orientation)
+        const allPos = [layout.clueSheet, ...newParts]
+        const prevPos = allPos[insertPos] ?? layout.clueSheet
+        let nx = prevPos.x + 60
+        let ny = prevPos.y
+        if (nx > pw - 40) { nx = layout.clueSheet.x; ny = prevPos.y + 40 }
+        ny = Math.min(ny, ph - 10)
+        newParts.splice(insertPos, 0, { x: nx, y: ny, visible: true })
         layout.clueSheetBreaks = newBreaks
         layout.clueSheetParts = newParts
       }, 'Add clue sheet break')
@@ -465,9 +563,9 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     removeClueSheetBreak: (courseId: string, breakIndex: number, submapIndex = 0) => {
       h.mutateProject(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return false
-        const layout = submapLayoutView(course.layout, submapIndex)
+        const layout = courseId === ALL_CONTROLS_ID
+          ? p.allControlsLayout
+          : (() => { const c = p.courses.find(c => c.id === courseId); return c?.layout ? submapLayoutView(c.layout, submapIndex) : undefined })()
         if (!layout?.clueSheetBreaks) return false
         const breaks = [...layout.clueSheetBreaks]
         breaks.splice(breakIndex, 1)
@@ -480,11 +578,10 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     setLayoutOverlayPosition: (courseId: string, overlayId: string, position: MapPoint, submapIndex = 0) => {
       h.mutateProjectSilent(p => {
-        const course = p.courses.find(c => c.id === courseId)
-        if (!course?.layout) return false
-        const layout = submapLayoutView(course.layout, submapIndex)
+        const layout = courseId === ALL_CONTROLS_ID
+          ? p.allControlsLayout
+          : (() => { const c = p.courses.find(c => c.id === courseId); return c?.layout ? submapLayoutView(c.layout, submapIndex) : undefined })()
         if (!layout) return false
-        // New object reference so the memoized OverlaysLayer re-renders.
         layout.overlayPositions = { ...layout.overlayPositions, [overlayId]: position }
       })
     },
@@ -495,8 +592,20 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
 
     resetLayoutCenter: (courseId: string, submapIndex = 0) => {
       const project = get().project
-      const course = project?.courses.find(c => c.id === courseId)
-      if (!project || !course?.layout) return
+      if (!project) return
+      if (courseId === ALL_CONTROLS_ID) {
+        const layout = project.allControlsLayout
+        if (!layout) return
+        const center = allControlsCenter(project.controls, project.map, layout)
+        h.mutateProject(p => {
+          if (!p.allControlsLayout) return false
+          p.allControlsLayout.mapCenter = center
+        }, 'Reset layout center')
+        set(s => ({ editor: { ...s.editor, layoutSnapRequest: s.editor.layoutSnapRequest + 1 } }))
+        return
+      }
+      const course = project.courses.find(c => c.id === courseId)
+      if (!course?.layout) return
       const layout = submapLayoutView(course.layout, submapIndex)
       if (!layout) return
       const submaps = computeSubmaps(course)

@@ -251,6 +251,9 @@ export interface TextLabel {
   fontSizeMm: number         // font size in mm on paper (e.g. 3)
   color: string              // hex color
   bgAlpha: number            // 0 = transparent, 1 = opaque white
+  bold?: boolean
+  italic?: boolean
+  align?: 'left' | 'center' | 'right'
 }
 
 export interface ImageOverlay {
@@ -316,6 +319,8 @@ export interface Project {
   allControlsLinkId?: boolean
   /** Tile the all-controls PDF page across multiple pages when it doesn't fit. */
   allControlsTiling?: boolean
+  /** Per-page layout for the all-controls map (page size, orientation, scale, border, etc.). */
+  allControlsLayout?: SubmapLayout
   locked?: boolean
 }
 

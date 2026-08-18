@@ -5,9 +5,10 @@ import { useStore } from '../../store'
 import {
   PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
   checkFitForCourseObj, checkTilingForCourseObj, suggestFitScaleForCourseObj,
-  checkFitForAllControls,
+  checkFitForAllControls, ALL_CONTROLS_ID,
 } from '../../lib/pdfExport'
-import { defaultControlLabel, computeSubmaps, submapLayoutView } from '../../lib/courseUtils'
+import { exportCourseImages } from '../../lib/imageExport'
+import { defaultControlLabel, computeSubmaps, submapLayoutView, buildAllControlsCourse } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
 import { setDescTranslator } from '../../lib/pdfDescriptionSheet'
 import { getLayoutDefaults } from '../../store/layoutSlice'
@@ -355,6 +356,423 @@ function GeneralSection() {
   )
 }
 
+function AllControlsCard({ allControls, setAllControls, acFit }: {
+  allControls: boolean
+  setAllControls: (v: boolean) => void
+  acFit: ReturnType<typeof checkFitForAllControls>
+}) {
+  const t = useT()
+  const project = useStore(s => s.project!)
+  const defaults = getLayoutDefaults(useStore.getState)
+  const acLayout = project.allControlsLayout
+  const layoutCourseId = useStore(s => s.editor.layoutCourseId)
+  const enterLayoutMode = useStore(s => s.enterLayoutMode)
+  const collapseLayoutCourse = useStore(s => s.collapseLayoutCourse)
+  const updateCourseLayout = useStore(s => s.updateCourseLayout)
+  const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
+  const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
+  const setAllControlsFlags = useStore(s => s.setAllControlsFlags)
+  const allControlsMulticolor = project.allControlsMulticolor ?? false
+  const allControlsLinkId = project.allControlsLinkId ?? false
+  const allControlsTiling = project.allControlsTiling ?? false
+
+  const isActive = layoutCourseId === ALL_CONTROLS_ID
+
+  const effectivePageSize = acLayout?.pageSize ?? defaults.pageSize
+  const effectiveOrientation = acLayout?.orientation ?? defaults.orientation
+  const effectivePrintScale = acLayout?.printScale ?? defaults.printScale
+
+  const isPageSizeOverride = acLayout != null && acLayout.pageSize !== defaults.pageSize
+  const isOrientationOverride = acLayout != null && acLayout.orientation !== defaults.orientation
+  const isScaleOverride = acLayout != null && acLayout.printScale !== defaults.printScale
+  const isBorderOverride = acLayout != null && (
+    (!!acLayout.mapBorder !== !!defaults.mapBorder) ||
+    (acLayout.mapBorder && defaults.mapBorder && (
+      acLayout.mapBorder.x !== defaults.mapBorder.x ||
+      acLayout.mapBorder.y !== defaults.mapBorder.y ||
+      acLayout.mapBorder.color !== defaults.mapBorder.color ||
+      acLayout.mapBorder.strokeWidth !== defaults.mapBorder.strokeWidth
+    ))
+  )
+
+  const effectiveBorder = acLayout?.mapBorder
+
+  function handleClick() {
+    if (isActive) {
+      collapseLayoutCourse()
+    } else {
+      enterLayoutMode(ALL_CONTROLS_ID)
+    }
+  }
+
+  return (
+    <div className={`rounded-lg border overflow-hidden transition-colors ${
+      !allControls ? 'border-gray-100 bg-gray-50/50' : isActive ? 'border-orange-200' : 'border-gray-200'
+    }`}>
+      {/* Header row */}
+      <div className={`flex items-center gap-2 px-3 py-2 ${!allControls ? 'opacity-50' : ''}`}>
+        <input
+          type="checkbox"
+          checked={allControls}
+          onChange={e => setAllControls(e.target.checked)}
+          className="accent-orange-600 shrink-0"
+        />
+        <button
+          onClick={handleClick}
+          className={`flex items-center gap-2 flex-1 min-w-0 text-left transition-colors rounded px-1 -mx-1 ${
+            isActive ? 'bg-orange-50' : 'hover:bg-gray-50'
+          }`}
+        >
+          {isActive
+            ? <ChevronDown size={12} className="text-gray-400 shrink-0" />
+            : <ChevronRight size={12} className="text-gray-400 shrink-0" />}
+          <div className="w-3 h-3 rounded-full shrink-0 bg-orange-600" />
+          <span className="text-sm font-medium text-gray-800 flex-1">{t('layout.allControls')}</span>
+        </button>
+        {allControls && acFit && (
+          <span className={`text-[10px] shrink-0 tabular-nums ${
+            acFit.fits && acFit.fitsAtCenter !== false ? 'text-green-600' : 'text-amber-600'
+          }`}>
+            {acFit.fits
+              ? (acFit.fitsAtCenter !== false ? t('layout.fits') : t('layout.canFit'))
+              : `${Math.round(acFit.widthMm)}×${Math.round(acFit.heightMm)}mm`}
+          </span>
+        )}
+      </div>
+
+      {/* Summary line (collapsed, non-active) */}
+      {allControls && acLayout && !isActive && (isPageSizeOverride || isOrientationOverride || isScaleOverride) && (
+        <div className="px-3 pb-1.5 -mt-1">
+          <span className="text-[10px] text-orange-500 tabular-nums">
+            {PAGE_SIZES[effectivePageSize]?.label} · {effectiveOrientation === 'landscape' ? 'L' : 'P'} · 1:{effectivePrintScale.toLocaleString()} *
+          </span>
+        </div>
+      )}
+
+      {/* Expanded section */}
+      {isActive && allControls && acLayout && (
+        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-gray-100 bg-orange-50/30">
+          {/* Page size */}
+          <div>
+            <SectionLabel>{t('layout.pageSize')}{isPageSizeOverride && <OverrideTag />}</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {PAGE_SIZE_KEYS.map(key => (
+                <button
+                  key={key}
+                  onClick={() => updateCourseLayout(ALL_CONTROLS_ID, { pageSize: key })}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    acLayout.pageSize === key
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {PAGE_SIZES[key].label}
+                </button>
+              ))}
+              {isPageSizeOverride && (
+                <button
+                  onClick={() => updateCourseLayout(ALL_CONTROLS_ID, { pageSize: defaults.pageSize })}
+                  className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
+                >
+                  {t('common.reset')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Orientation */}
+          <div>
+            <SectionLabel>{t('layout.orientation')}{isOrientationOverride && <OverrideTag />}</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {(['portrait', 'landscape'] as const).map(o => (
+                <button
+                  key={o}
+                  onClick={() => updateCourseLayout(ALL_CONTROLS_ID, { orientation: o })}
+                  className={`px-2 py-1 text-[11px] rounded capitalize transition-colors ${
+                    acLayout.orientation === o
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {t('layout.' + o)}
+                </button>
+              ))}
+              {isOrientationOverride && (
+                <button
+                  onClick={() => updateCourseLayout(ALL_CONTROLS_ID, { orientation: defaults.orientation })}
+                  className="text-[10px] text-orange-600 hover:text-orange-800 ml-1"
+                >
+                  {t('common.reset')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Print scale */}
+          <div>
+            <SectionLabel>{t('layout.printScale')}{isScaleOverride && <OverrideTag />}</SectionLabel>
+            <div className="flex items-center gap-2 mt-1">
+              <ScaleInput
+                value={acLayout.printScale}
+                onChange={v => updateCourseLayout(ALL_CONTROLS_ID, { printScale: v })}
+              />
+              {isScaleOverride && (
+                <button
+                  onClick={() => updateCourseLayout(ALL_CONTROLS_ID, { printScale: defaults.printScale })}
+                  className="text-[10px] text-orange-600 hover:text-orange-800"
+                >
+                  {t('common.reset')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Fit warning + tiling */}
+          {acFit && !acFit.fits && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1.5">
+              <p className="text-[11px] text-amber-700">{t('layout.doesntFit')}</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allControlsTiling}
+                  onChange={e => setAllControlsFlags({ tiling: e.target.checked })}
+                  className="accent-orange-600"
+                />
+                <span className="text-[11px] text-amber-700">
+                  {t('layout.tilePages')}
+                  {acFit.totalPages > 1 && (
+                    <span className="text-amber-500"> {t('layout.tileInfo', { cols: acFit.cols, rows: acFit.rows })}</span>
+                  )}
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* Map border */}
+          {(() => {
+            const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
+            const pw = effectiveOrientation === 'landscape' ? base.h : base.w
+            const ph = effectiveOrientation === 'landscape' ? base.w : base.h
+            const cb = effectiveBorder
+            return (
+              <div>
+                <SectionLabel>{t('layout.mapBorder')}{isBorderOverride && <OverrideTag />}</SectionLabel>
+                <div className="flex items-center gap-2 mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!cb}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          const db = defaults.mapBorder
+                          updateCourseLayout(ALL_CONTROLS_ID, {
+                            mapBorder: db
+                              ? { ...db }
+                              : { color: '#ea580c', strokeWidth: 0.35, x: MARGIN, y: MARGIN, width: pw - 2 * MARGIN, height: ph - 2 * MARGIN },
+                          })
+                        } else {
+                          updateCourseLayout(ALL_CONTROLS_ID, { mapBorder: undefined })
+                        }
+                      }}
+                      className="accent-orange-600"
+                    />
+                    <span className="text-xs text-gray-600">{t('layout.enabled')}</span>
+                  </label>
+                  {cb && (
+                    <>
+                      <input
+                        type="color"
+                        value={cb.color}
+                        onChange={e => updateCourseLayout(ALL_CONTROLS_ID, {
+                          mapBorder: { ...cb, color: e.target.value },
+                        })}
+                        className="w-6 h-6 rounded border border-gray-200 cursor-pointer p-0"
+                      />
+                      <MmInput
+                        value={cb.strokeWidth}
+                        onChange={v => updateCourseLayout(ALL_CONTROLS_ID, {
+                          mapBorder: { ...cb, strokeWidth: v },
+                        })}
+                        max={20}
+                      />
+                    </>
+                  )}
+                  {isBorderOverride && (
+                    <button
+                      onClick={() => {
+                        if (defaults.mapBorder) {
+                          updateCourseLayout(ALL_CONTROLS_ID, { mapBorder: { ...defaults.mapBorder } })
+                        } else {
+                          updateCourseLayout(ALL_CONTROLS_ID, { mapBorder: undefined })
+                        }
+                      }}
+                      className="text-[10px] text-orange-600 hover:text-orange-800 ml-auto"
+                    >
+                      {t('common.reset')}
+                    </button>
+                  )}
+                </div>
+                {cb && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 w-10">{t('layout.left')}</span>
+                      <MmInput
+                        value={cb.x}
+                        onChange={v => updateCourseLayout(ALL_CONTROLS_ID, {
+                          mapBorder: { ...cb, x: v, width: pw - v - (pw - cb.x - cb.width) },
+                        })}
+                        max={pw - 20 - (pw - cb.x - cb.width)}
+                      />
+                      <span className="text-[10px] text-gray-500 w-10 text-right">{t('layout.right')}</span>
+                      <MmInput
+                        value={Math.round((pw - cb.x - cb.width) * 10) / 10}
+                        onChange={v => updateCourseLayout(ALL_CONTROLS_ID, {
+                          mapBorder: { ...cb, width: pw - cb.x - v },
+                        })}
+                        max={pw - 20 - cb.x}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-500 w-10">{t('layout.top')}</span>
+                      <MmInput
+                        value={cb.y}
+                        onChange={v => updateCourseLayout(ALL_CONTROLS_ID, {
+                          mapBorder: { ...cb, y: v, height: ph - v - (ph - cb.y - cb.height) },
+                        })}
+                        max={ph - 20 - (ph - cb.y - cb.height)}
+                      />
+                      <span className="text-[10px] text-gray-500 w-10 text-right">{t('layout.bottom')}</span>
+                      <MmInput
+                        value={Math.round((ph - cb.y - cb.height) * 10) / 10}
+                        onChange={v => updateCourseLayout(ALL_CONTROLS_ID, {
+                          mapBorder: { ...cb, height: ph - cb.y - v },
+                        })}
+                        max={ph - 20 - cb.y}
+                      />
+                    </div>
+                    <button
+                      onClick={() => updateCourseLayout(ALL_CONTROLS_ID, {
+                        mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
+                      })}
+                      className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
+                    >
+                      {t('layout.recenter')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Clue sheet */}
+          <div>
+            <SectionLabel>{t('layout.clueSheet')}</SectionLabel>
+            <div className="flex gap-1 mt-1">
+              {(['none', 'on-map'] as const).map(o => (
+                <button
+                  key={o}
+                  onClick={() => updateCourseLayout(ALL_CONTROLS_ID, { clueSheet: { ...acLayout.clueSheet, visible: o === 'on-map' } })}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    (acLayout.clueSheet.visible ? 'on-map' : 'none') === o
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300'
+                  }`}
+                >
+                  {t(o === 'none' ? 'layout.descNone' : 'layout.descOnMap')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Clue sheet breaks */}
+          {acLayout.clueSheet.visible && (() => {
+            const acCourse = buildAllControlsCourse(project.controls)
+            const controlMap = new Map(project.controls.map((c: Control) => [c.id, c]))
+            const resolved = acCourse.controls
+              .map(cc => controlMap.get(cc.controlId))
+              .filter((c): c is Control => c != null)
+            if (resolved.length < 3) return null
+
+            const breaks = acLayout.clueSheetBreaks ?? []
+            const breakSet = new Set(breaks)
+            const eligible = resolved
+              .map((ctrl, i) => ({ ctrl, i }))
+              .filter(({ i }) => i > 0 && i < resolved.length - 1 && !breakSet.has(i))
+            const partCount = breaks.length + 1
+            const boundaries = [0, ...breaks, resolved.length]
+
+            return (
+              <div className="ml-3 space-y-1.5">
+                {breaks.length > 0 && (
+                  <div className="space-y-1">
+                    {Array.from({ length: partCount }, (_, p) => {
+                      const start = boundaries[p]
+                      const end = boundaries[p + 1] - 1
+                      const startLabel = defaultControlLabel(resolved[start])
+                      const endLabel = defaultControlLabel(resolved[end])
+                      return (
+                        <div key={p} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                          <span className="tabular-nums">{t('layout.part', { n: p + 1 })}</span>
+                          <span className="text-gray-400">{startLabel} &rarr; {endLabel}</span>
+                          {p > 0 && (
+                            <button
+                              onClick={() => removeClueSheetBreak(ALL_CONTROLS_ID, p - 1)}
+                              className="ml-auto w-4 h-4 rounded-full bg-gray-200 hover:bg-red-400 text-gray-500 hover:text-white flex items-center justify-center"
+                            >
+                              <X size={8} />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {eligible.length > 0 && (
+                  <select
+                    value=""
+                    onChange={e => {
+                      const idx = parseInt(e.target.value)
+                      if (!isNaN(idx)) addClueSheetBreak(ALL_CONTROLS_ID, idx)
+                    }}
+                    className="text-[11px] border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-500 focus:outline-none focus:border-orange-400 w-full"
+                  >
+                    <option value="">{t('layout.splitAfter')}</option>
+                    {eligible.map(({ ctrl, i }) => (
+                      <option key={i} value={i}>
+                        {defaultControlLabel(ctrl)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Options */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={allControlsMulticolor} onChange={e => setAllControlsFlags({ multicolor: e.target.checked })} className="accent-orange-600" />
+              {t('layout.multicolor')}
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={allControlsLinkId} onChange={e => setAllControlsFlags({ linkId: e.target.checked })} className="accent-orange-600" />
+              {t('layout.linkId')}
+            </label>
+          </div>
+
+          {/* Reset to all-controls center */}
+          <button
+            onClick={() => useStore.getState().resetLayoutCenter(ALL_CONTROLS_ID)}
+            className="text-[11px] text-gray-400 hover:text-orange-600 transition-colors"
+          >
+            {t('layout.resetCourseCenter')}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId: string; includedOverride?: boolean; onToggleIncluded?: () => void }) {
   const t = useT()
   const project = useStore(s => s.project!)
@@ -369,6 +787,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
   const collapseLayoutCourse = useStore(s => s.collapseLayoutCourse)
   const setLayoutSubmap = useStore(s => s.setLayoutSubmap)
   const updateCourseLayout = useStore(s => s.updateCourseLayout)
+  const applyBorderToAllSubmaps = useStore(s => s.applyBorderToAllSubmaps)
   const addClueSheetBreak = useStore(s => s.addClueSheetBreak)
   const removeClueSheetBreak = useStore(s => s.removeClueSheetBreak)
 
@@ -861,14 +1280,24 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
                         max={ph - 20 - cb.y}
                       />
                     </div>
-                    <button
-                      onClick={() => updateCourseLayout(courseId, {
-                        mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
-                      }, activeSubmap)}
-                      className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
-                    >
-                      {t('layout.recenter')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => updateCourseLayout(courseId, {
+                          mapBorder: { ...cb, x: (pw - cb.width) / 2, y: (ph - cb.height) / 2 },
+                        }, activeSubmap)}
+                        className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
+                      >
+                        {t('layout.recenter')}
+                      </button>
+                      {hasSubmaps && (
+                        <button
+                          onClick={() => applyBorderToAllSubmaps(courseId, activeSubmap)}
+                          className="text-[10px] text-gray-400 hover:text-orange-600 transition-colors ml-auto"
+                        >
+                          {t('layout.applyToAllSubmaps')}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -898,19 +1327,21 @@ export function LayoutPanel() {
   const scalable = canExportPdf(project.map)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'png'>('pdf')
   const [allControls, setAllControls] = useState(true)
-  const allControlsMulticolor = useStore(s => s.project!.allControlsMulticolor ?? false)
-  const allControlsLinkId = useStore(s => s.project!.allControlsLinkId ?? false)
-  const allControlsTiling = useStore(s => s.project!.allControlsTiling ?? false)
-  const setAllControlsFlags = useStore(s => s.setAllControlsFlags)
   const [viewerExclusions, setViewerExclusions] = useState<Set<string>>(new Set())
 
   const acDefaults = getLayoutDefaults(useStore.getState)
+  const acLayout = project.allControlsLayout
+  const acPageSize = acLayout?.pageSize ?? acDefaults.pageSize
+  const acOrientation = acLayout?.orientation ?? acDefaults.orientation
+  const acPrintScale = acLayout?.printScale ?? acDefaults.printScale
+  const acBorder = acLayout?.mapBorder
   const acFit = useMemo(() =>
     project.controls.length > 0
-      ? checkFitForAllControls(project.controls, project.map, acDefaults.pageSize, acDefaults.orientation, acDefaults.printScale, project.spec)
+      ? checkFitForAllControls(project.controls, project.map, acPageSize, acOrientation, acPrintScale, acBorder, acLayout?.mapCenter, project.spec)
       : null,
-    [project.controls, project.map, acDefaults.pageSize, acDefaults.orientation, acDefaults.printScale, project.spec],
+    [project.controls, project.map, acPageSize, acOrientation, acPrintScale, acBorder, acLayout?.mapCenter, project.spec],
   )
 
   useEffect(() => {
@@ -936,42 +1367,57 @@ export function LayoutPanel() {
         isViewer ? !viewerExclusions.has(c.id) : c.layout?.included !== false
       )
 
-      // Scale, clue-sheet positions, page size, border and centring are all read
-      // per-submap directly from each course's layout inside exportCoursePdf, so
-      // only the course-level description mode needs to be threaded through here.
-      const descModes: Record<string, DescMode> = {}
-      for (const c of includedCourses) {
-        if (!c.layout) continue
-        descModes[c.id] = c.layout.descMode ?? 'none'
-      }
-
-      const options: PdfExportOptions = {
-        pageSize: defaults.pageSize,
-        orientation: defaults.orientation,
-        printScale: defaults.printScale,
-        courseIds: includedCourses.map(c => c.id),
-        allControls,
-        allControlsMulticolor: allControls && allControlsMulticolor,
-        allControlsLinkId: allControls && allControlsLinkId,
-        tiling: allControls && (currentProject.allControlsTiling ?? false),
-        descModes,
-        appearance: useStore.getState().editor.appearance,
-        mapOpacity: defaults.mapOpacity,
-        mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
-        rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
-        mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
-        overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
-        overprintMode: currentProject.overprintMode ?? 'simulated',
-      }
+      const courseIds = includedCourses.map(c => c.id)
+      const currentMap = useStore.getState().loadedMap
 
       setDescTranslator(t)
-      const currentMap = useStore.getState().loadedMap
-      const blob = await exportCoursePdf(currentProject, options, currentMap)
-      downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+      if (exportFormat === 'png') {
+        const images = await exportCourseImages(currentProject, {
+          pageSize: defaults.pageSize,
+          orientation: defaults.orientation,
+          printScale: defaults.printScale,
+          courseIds,
+          allControls,
+          allControlsMulticolor: allControls && (currentProject.allControlsMulticolor ?? false),
+          allControlsLinkId: allControls && (currentProject.allControlsLinkId ?? false),
+          appearance: useStore.getState().editor.appearance,
+          mapOpacity: defaults.mapOpacity,
+          mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
+          overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
+          overprintMode: currentProject.overprintMode ?? 'simulated',
+        }, currentMap)
+        for (const { name, blob } of images) {
+          downloadBlob(blob, name.replace(/\s+/g, '_'))
+        }
+      } else {
+        const descModes: Record<string, DescMode> = {}
+        for (const c of includedCourses) {
+          if (!c.layout) continue
+          descModes[c.id] = c.layout.descMode ?? 'none'
+        }
+        const options: PdfExportOptions = {
+          pageSize: defaults.pageSize,
+          orientation: defaults.orientation,
+          printScale: defaults.printScale,
+          courseIds,
+          allControls,
+          allControlsMulticolor: allControls && (currentProject.allControlsMulticolor ?? false),
+          allControlsLinkId: allControls && (currentProject.allControlsLinkId ?? false),
+          tiling: allControls && (currentProject.allControlsTiling ?? false),
+          descModes,
+          appearance: useStore.getState().editor.appearance,
+          mapOpacity: defaults.mapOpacity,
+          mapRendering: loadedMap?.type === 'svg' ? defaults.mapRendering : undefined,
+          rasterDpi: defaults.mapRendering === 'raster' ? defaults.rasterDpi : undefined,
+          mapOverprint: defaults.mapRendering === 'raster' && !!defaults.mapOverprint,
+          overprint: (currentProject.overprintMode ?? 'simulated') === 'none' ? 0 : (currentProject.overprint ?? 1),
+          overprintMode: currentProject.overprintMode ?? 'simulated',
+        }
+        const blob = await exportCoursePdf(currentProject, options, currentMap)
+        downloadBlob(blob, `${currentProject.meta.name.replace(/\s+/g, '_')}_courses.pdf`)
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      // A stale dev/PWA page can fail to fetch the lazily-loaded pdf modules;
-      // only a reload picks up the fresh chunks.
       setExportError(/dynamically imported module|outdated optimize dep|Importing a module script failed/i.test(msg)
         ? t('layout.exportFailed')
         : t('layout.exportError', { error: msg }))
@@ -999,55 +1445,11 @@ export function LayoutPanel() {
         </span>
       </div>
 
-      {hasControls && (
-        <div className="rounded-lg border border-gray-200 overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-2">
-            <input
-              type="checkbox"
-              checked={allControls}
-              onChange={e => setAllControls(e.target.checked)}
-              className="accent-orange-600 shrink-0"
-            />
-            <div className="w-3 h-3 rounded-full shrink-0 bg-orange-600" />
-            <span className="text-sm font-medium text-gray-800 flex-1">{t('layout.allControls')}</span>
-            {allControls && acFit && (
-              <span className={`text-[10px] shrink-0 tabular-nums ${acFit.fits ? 'text-green-600' : 'text-amber-600'}`}>
-                {acFit.fits ? t('layout.fits') : `${Math.round(acFit.widthMm)}×${Math.round(acFit.heightMm)}mm`}
-              </span>
-            )}
-          </div>
-          {allControls && (
-            <div className="flex items-center gap-3 px-3 py-1.5 border-t border-gray-100 bg-gray-50">
-              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={allControlsMulticolor} onChange={e => setAllControlsFlags({ multicolor: e.target.checked })} className="accent-orange-600" />
-                {t('layout.multicolor')}
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={allControlsLinkId} onChange={e => setAllControlsFlags({ linkId: e.target.checked })} className="accent-orange-600" />
-                {t('layout.linkId')}
-              </label>
-            </div>
-          )}
-          {allControls && acFit && !acFit.fits && (
-            <div className="px-3 py-1.5 border-t border-gray-100 bg-amber-50">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={allControlsTiling}
-                  onChange={e => setAllControlsFlags({ tiling: e.target.checked })}
-                  className="accent-orange-600"
-                />
-                <span className="text-[11px] text-amber-700">
-                  {t('layout.tilePages')}
-                  {acFit.totalPages > 1 && (
-                    <span className="text-amber-500"> {t('layout.tileInfo', { cols: acFit.cols, rows: acFit.rows })}</span>
-                  )}
-                </span>
-              </label>
-            </div>
-          )}
-        </div>
-      )}
+      {hasControls && <AllControlsCard
+        allControls={allControls}
+        setAllControls={setAllControls}
+        acFit={acFit}
+      />}
 
       {courses.map(course => (
         <CourseCard
@@ -1072,14 +1474,24 @@ export function LayoutPanel() {
         {exportError && (
           <p className="text-[11px] text-red-600 mb-2">{exportError}</p>
         )}
-        <button
-          data-tour="export-pdf"
-          onClick={handleExport}
-          disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
-          className="w-full bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {exporting ? t('layout.exporting') : t('layout.exportPdf')}
-        </button>
+        <div className="flex gap-1.5">
+          <select
+            value={exportFormat}
+            onChange={e => setExportFormat(e.target.value as 'pdf' | 'png')}
+            className="border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white"
+          >
+            <option value="pdf">PDF</option>
+            <option value="png">PNG</option>
+          </select>
+          <button
+            data-tour="export-pdf"
+            onClick={handleExport}
+            disabled={!scalable || (includedCount === 0 && !allControls) || exporting}
+            className="flex-1 bg-orange-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {exporting ? t('layout.exporting') : t('layout.export')}
+          </button>
+        </div>
       </div>
     </div>
   )

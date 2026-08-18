@@ -53,5 +53,10 @@
     "typescript-eslint": "^8.58.2",
     "vite": "^8.0.10",
     "vitest": "^4.1.9"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "ocad2geojson": "patches/ocad2geojson.patch"
+    }
   }
 }

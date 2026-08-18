@@ -241,6 +241,7 @@ export interface AppActions {
   collapseLayoutCourse: () => void
   setLayoutSubmap: (index: number) => void
   updateCourseLayout: (courseId: string, updates: Partial<SubmapLayout & Pick<CourseLayout, 'included' | 'descMode'>>, submapIndex?: number) => void
+  applyBorderToAllSubmaps: (courseId: string, submapIndex: number) => void
   moveCourseLayout: (courseId: string, updates: Partial<SubmapLayout>, submapIndex?: number) => void
   updateLayoutDefaults: (updates: Partial<LayoutDefaults>) => void
   ensureAllCourseLayouts: () => void
