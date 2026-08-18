@@ -56,7 +56,7 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "ocad2geojson@2.1.23": "patches/ocad2geojson@2.1.23.patch"
+      "ocad2geojson": "patches/ocad2geojson.patch"
     }
   }
 }
