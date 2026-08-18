@@ -1,6 +1,16 @@
 import type { Control, ControlType, MapPoint } from '../types'
 import type { SetState, GetState, StoreHelpers } from './types'
+import type { Suggestion } from '../lib/mapFeatures'
 import { defaultControlLabel } from '../lib/courseUtils'
+
+// A close point/line feature is the control feature even when the control is
+// also inside an area (every control is inside *some* area). Only flag
+// ambiguity when two non-contained features genuinely compete.
+function shouldAutoFill(top: Suggestion, runner: Suggestion | undefined): boolean {
+  if (!runner) return true
+  if (!top.contained && runner.contained) return true
+  return top.distanceMm < runner.distanceMm * 0.5
+}
 
 function nextControlCode(controls: Control[], skipCodes?: number[]): number {
   const used = new Set(controls.filter(c => c.type === 'control').map(c => c.code))
@@ -147,10 +157,8 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       const suggestions = index.suggest(control.position, state.project.map.scale)
       if (suggestions.length === 0) return
       const top = suggestions[0]
-      const runner = suggestions[1]
-      // Auto-fill only when the top suggestion is within 1 mm AND clearly ahead
       if (top.distanceMm > 1) return
-      if (runner && top.distanceMm >= runner.distanceMm * 0.5) return
+      if (!shouldAutoFill(top, suggestions[1])) return
       h.mutateProject(p => {
         const c = p.controls.find(c => c.id === controlId)
         if (!c) return false
@@ -172,8 +180,7 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
         const suggestions = index.suggest(control.position, state.project.map.scale)
         if (suggestions.length === 0) { empty++; continue }
         const top = suggestions[0]
-        const runner = suggestions[1]
-        if (top.distanceMm > 1 || (runner && top.distanceMm >= runner.distanceMm * 0.5)) {
+        if (top.distanceMm > 1 || !shouldAutoFill(top, suggestions[1])) {
           ambiguous++; continue
         }
         fills.push({ id: control.id, code: top.code })
