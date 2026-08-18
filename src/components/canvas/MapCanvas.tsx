@@ -62,7 +62,6 @@ function overlayUpmOf(st: ReturnType<typeof useStore.getState>): number {
   return ps ? upm * ps / proj.map.scale : upm
 }
 
-import type { MeasurePointHit } from './hitTesting'
 import { handleGapTap, handleGapRebuildTap, handleGapRightClick, handleBendTap, handleBendRightClick } from './toolHandlers'
 import { computeCourseDistances, resolveCourseLength, formatDistance, legKey } from '../../lib/distance'
 import { projectOnPolyline, flattenSmooth } from '../../lib/geometry'
@@ -264,6 +263,14 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
       })}
     </g>
   )
+}
+
+interface ActiveDrag {
+  started: boolean
+  onStart(): void
+  onMove(e: PointerEvent): void
+  onCommit(e: PointerEvent): void
+  onCancel(): void
 }
 
 interface Props { loadedMap: LoadedMap }
@@ -554,15 +561,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       return rectCacheRef.current ?? div.getBoundingClientRect()
     }
 
-    let dragControlId: string | null = null
-    let dragOffset: { dx: number; dy: number } | null = null
-    let dragStarted = false
-    let dragOrigPos: { x: number; y: number } | null = null
-    // The dragged control is rendered in both the solid and multiply overprint
-    // passes; transform every copy so they move together.
-    let dragControlEls: SVGGElement[] = []
-    let pendingControlPos: { x: number; y: number } | null = null
-    let pendingControlRaf = 0
+    let activeDrag: ActiveDrag | null = null
 
     // Non-control drags mutate the store on every pointermove; touch/Pencil can
     // deliver 120 events/s and each set re-renders every canvas layer. Coalesce
@@ -619,55 +618,172 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       }
     }
 
-    let dragBend: { courseId: string; courseControlId: string; bendIndex: number; nav?: boolean } | null = null
-    let dragBendStarted = false
+    function makeLayoutElDrag(startX: number, startY: number, element: string, ox: number, oy: number, wMm: number, hMm: number): ActiveDrag {
+      let nx = ox, ny = oy
+      return {
+        started: false,
+        onStart() { useStore.getState().beginLayoutDrag() },
+        onMove(ev) {
+          const st = useStore.getState()
+          const lo = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
+          if (!lo) return
+          const { w: pw, h: ph } = pageDimsFor(lo.pageSize, lo.orientation)
+          const hwm = mmToMap({ x: pw / 2, y: 0 }, st.project!.map, lo.printScale).x
+          const mmToPx = (hwm * 2 * vpRef.current.scale) / pw
+          const dx = (ev.clientX - startX) / mmToPx
+          const dy = (ev.clientY - startY) / mmToPx
+          if (element.startsWith('overlay:')) {
+            const newX = ox + dx, newY = oy + dy
+            scheduleDragMutation(() => st.updateLayoutElement(st.editor.layoutCourseId!, element, { x: newX, y: newY }, st.editor.layoutSubmapIndex))
+          } else {
+            nx = Math.max(0, Math.min(pw - wMm, ox + dx))
+            ny = Math.max(0, Math.min(ph - hMm, oy + dy))
+            scheduleDragMutation(() => st.setLayoutDragPreview({ type: 'element', key: element, x: nx, y: ny }))
+          }
+        },
+        onCommit() {
+          if (!element.startsWith('overlay:')) {
+            const st = useStore.getState()
+            if (st.editor.layoutCourseId) {
+              st.updateLayoutElement(st.editor.layoutCourseId, element, { x: nx, y: ny }, st.editor.layoutSubmapIndex)
+            }
+            st.setLayoutDragPreview(null)
+          }
+        },
+        onCancel() {
+          if (!element.startsWith('overlay:')) useStore.getState().setLayoutDragPreview(null)
+        },
+      }
+    }
 
-    let dragMRE: { courseId: string; courseControlId: string } | null = null
-    let dragMREStarted = false
+    function makeRotationDrag(annId: string, center: MapPoint): ActiveDrag {
+      return {
+        started: false,
+        onStart() { useStore.getState().beginRotateAnnotation() },
+        onMove(ev) {
+          const rect = getRect()
+          const mp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+          const angle = Math.atan2(mp.x - center.x, -(mp.y - center.y)) * 180 / Math.PI
+          scheduleDragMutation(() => useStore.getState().rotateAnnotation(annId, angle))
+        },
+        onCommit() {},
+        onCancel() {},
+      }
+    }
 
-    let dragMapIssue: { courseId: string; courseControlId: string } | null = null
-    let dragMapIssueStarted = false
+    function makeControlDrag(hit: { id: string; position: { x: number; y: number } }, mapPt: { x: number; y: number }): ActiveDrag {
+      const id = hit.id
+      const offset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
+      let origPos: { x: number; y: number } | null = null
+      let controlEls: SVGGElement[] = []
+      let pendingPos: { x: number; y: number } | null = null
+      let raf = 0
+      return {
+        started: false,
+        onStart() {
+          const ctrl = useStore.getState().project?.controls.find(c => c.id === id)
+          useStore.getState().beginMoveControl(ctrl ? `Move ${defaultControlLabel(ctrl)}` : undefined)
+          useStore.getState().setDraggingControl(id)
+          origPos = ctrl ? { ...ctrl.position } : null
+          const sel = `[data-control-id="${id}"]`
+          controlEls = [courseGRef.current, courseMultGRef.current]
+            .map(g => g?.querySelector(sel) as SVGGElement | null)
+            .filter((el): el is SVGGElement => el != null)
+          dragLegsRef.current?.begin(id)
+        },
+        onMove(ev) {
+          const rect = getRect()
+          const mp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+          pendingPos = { x: mp.x - offset.dx, y: mp.y - offset.dy }
+          if (!raf) {
+            raf = requestAnimationFrame(() => {
+              raf = 0
+              if (pendingPos && origPos && controlEls.length) {
+                const dx = pendingPos.x - origPos.x
+                const dy = pendingPos.y - origPos.y
+                for (const el of controlEls) el.style.transform = `translate(${dx}px,${dy}px)`
+              }
+              if (pendingPos) dragLegsRef.current?.update(pendingPos)
+            })
+          }
+        },
+        onCommit(ev) {
+          if (raf) { cancelAnimationFrame(raf); raf = 0 }
+          const splitNewPos = pendingPos
+          const splitOrigPos = origPos
+          if (pendingPos) { useStore.getState().moveControl(id, pendingPos); pendingPos = null }
+          if (controlEls.length) { for (const el of controlEls) el.style.transform = ''; controlEls = [] }
+          dragLegsRef.current?.end()
+          origPos = null
+          useStore.getState().setDraggingControl(null)
+          if (splitNewPos && splitOrigPos) {
+            const st = useStore.getState()
+            const cid = st.editor.selectedCourseId
+            const proj = st.project
+            if (cid && proj) {
+              const containing = proj.courses.filter(c => c.controls.some(cc => cc.controlId === id))
+              const selCourse = containing.find(c => c.id === cid)
+              if (selCourse && containing.length >= 2) {
+                const rect = getRect()
+                setSplitPrompt({
+                  controlId: id, courseId: cid, courseName: selCourse.name, courseCount: containing.length,
+                  newPos: splitNewPos, origPos: splitOrigPos, sx: ev.clientX - rect.left, sy: ev.clientY - rect.top,
+                })
+              }
+            }
+          }
+        },
+        onCancel() {
+          if (raf) { cancelAnimationFrame(raf); raf = 0 }
+          if (pendingPos) { useStore.getState().moveControl(id, pendingPos); pendingPos = null }
+          if (controlEls.length) { for (const el of controlEls) el.style.transform = ''; controlEls = [] }
+          dragLegsRef.current?.end()
+          origPos = null
+          useStore.getState().setDraggingControl(null)
+        },
+      }
+    }
 
-    let dragMeasure: MeasurePointHit | null = null
-    let dragMeasureStarted = false
+    function makeMREDrag(hit: { courseId: string; courseControlId: string }): ActiveDrag {
+      const { courseId, courseControlId } = hit
+      return {
+        started: false,
+        onStart() { useStore.getState().beginMoveMarkedRouteEnd() },
+        onMove(ev) {
+          const rect = getRect()
+          const mp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+          scheduleDragMutation(() => useStore.getState().moveMarkedRouteEnd(courseId, courseControlId, mp))
+        },
+        onCommit() {},
+        onCancel() {},
+      }
+    }
 
-    let dragOverlay: { id: string; kind: 'scalebar' | 'text' | 'image'; dx: number; dy: number } | null = null
-    let dragOverlayStarted = false
-
-    let dragResize: { id: string; origWidthMap: number; origHeightMap: number; posX: number; posY: number } | null = null
-    let dragResizeStarted = false
-
-    let dragLabel: { courseId: string | null; courseControlId: string | null; controlId: string; dx: number; dy: number } | null = null
-    let dragLabelStarted = false
-
-    // nx/ny track the latest (clamped) position shown in the drag preview so
-    // pointerup can commit it to the project in a single mutation.
-    let dragLayoutEl: { element: string; sx: number; sy: number; ox: number; oy: number; wMm: number; hMm: number; nx: number; ny: number } | null = null
-    let dragLayoutElStarted = false
-
-    let dragBorderResize: { sx: number; sy: number; ox: number; oy: number; ow: number; oh: number; last: { x: number; y: number; width: number; height: number } | null } | null = null
-    let dragBorderResizeStarted = false
-
-    let dragBorderTranslate: { sx: number; sy: number; ox: number; oy: number; last: { x: number; y: number; width: number; height: number } | null } | null = null
-    let dragBorderTranslateStarted = false
-
-    let dragRotation: { annId: string; center: MapPoint } | null = null
-    let dragRotationStarted = false
-
-    let dragAnnotation: { annId: string; dx: number; dy: number } | null = null
-    let dragAnnotationStarted = false
-
-    let dragAnnResize: { annId: string; centerX: number; centerY: number; origScale: number; origHandleDist: number } | null = null
-    let dragAnnResizeStarted = false
-
-    let dragCrossElongate: { annId: string; centerX: number; centerY: number; baseHH: number } | null = null
-    let dragCrossElongateStarted = false
-
-    let dragOobVertex: { annId: string; vertexIndex: number } | null = null
-    let dragOobVertexStarted = false
-
-    let dragPendingVertex: { vertexIndex: number } | null = null
-    let dragPendingVertexStarted = false
+    function makeBendDrag(hit: { courseId: string; courseControlId: string; bendIndex: number; nav?: boolean }): ActiveDrag {
+      const { courseId, courseControlId, bendIndex, nav } = hit
+      return {
+        started: false,
+        onStart() {
+          const st = useStore.getState()
+          const course = st.project?.courses.find(c => c.id === courseId)
+          let label = 'Move bend'
+          if (course && st.project) {
+            const ci = course.controls.findIndex(cc => cc.id === courseControlId)
+            const from = ci >= 0 ? st.project.controls.find(c => c.id === course.controls[ci].controlId) : undefined
+            const to = ci >= 0 && ci + 1 < course.controls.length ? st.project.controls.find(c => c.id === course.controls[ci + 1].controlId) : undefined
+            if (from && to) label = `Move bend ${defaultControlLabel(from)}-${defaultControlLabel(to)} ${course.name}`
+          }
+          st.beginMoveLegBendPoint(label)
+        },
+        onMove(ev) {
+          const rect = getRect()
+          const mp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+          scheduleDragMutation(() => useStore.getState().moveLegBendPoint(courseId, courseControlId, bendIndex, mp, nav ? 'nav' : 'taped'))
+        },
+        onCommit() {},
+        onCancel() {},
+      }
+    }
 
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let longPressFired = false
@@ -826,8 +942,32 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             // Generous hit radius (2× the drawn handle) — finger-sized on touch.
             const HANDLE_HIT = 12
             if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
-              dragBorderResize = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y, ow: layout.mapBorder.width, oh: layout.mapBorder.height, last: null }
-              dragBorderResizeStarted = false
+              const brSx = e.clientX, brSy = e.clientY, brOx = layout.mapBorder.x, brOy = layout.mapBorder.y, brOw = layout.mapBorder.width, brOh = layout.mapBorder.height
+              let brLast: { x: number; y: number; width: number; height: number } | null = null
+              activeDrag = {
+                started: false,
+                onStart() { useStore.getState().beginLayoutDrag() },
+                onMove(ev) {
+                  const st = useStore.getState()
+                  const lo = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
+                  if (!lo?.mapBorder) return
+                  const { w: pw, h: ph } = pageDimsFor(lo.pageSize, lo.orientation)
+                  const hwm = mmToMap({ x: pw / 2, y: 0 }, st.project!.map, lo.printScale).x
+                  const pxToMm = pw / (hwm * 2 * vpRef.current.scale)
+                  const dw = (ev.clientX - brSx) * pxToMm
+                  const dh = (ev.clientY - brSy) * pxToMm
+                  const minSize = 20
+                  const nw = Math.max(minSize, Math.min(pw, brOw + dw * 2))
+                  const nh = Math.max(minSize, Math.min(ph, brOh + dh * 2))
+                  const nx = Math.max(0, brOx - (nw - brOw) / 2)
+                  const ny = Math.max(0, brOy - (nh - brOh) / 2)
+                  const rect = { x: nx, y: ny, width: Math.min(nw, pw - nx), height: Math.min(nh, ph - ny) }
+                  brLast = rect
+                  scheduleDragMutation(() => st.setLayoutDragPreview({ type: 'border', ...rect }))
+                },
+                onCommit() { commitBorderDrag(brLast) },
+                onCancel() { useStore.getState().setLayoutDragPreview(null) },
+              }
               return
             }
           }
@@ -865,8 +1005,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             const elW = wMm * mmToMapU * vpRef.current.scale
             const elH = hMm * mmToMapU * vpRef.current.scale
             if (sx >= elScreenX && sx <= elScreenX + elW && sy >= elScreenY && sy <= elScreenY + elH) {
-              dragLayoutEl = { element: key, sx: e.clientX, sy: e.clientY, ox: el.x, oy: el.y, wMm, hMm, nx: el.x, ny: el.y }
-              dragLayoutElStarted = false
+              activeDrag = makeLayoutElDrag(e.clientX, e.clientY, key, el.x, el.y, wMm, hMm)
               return
             }
           }
@@ -890,8 +1029,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
                 const mmPerMapU = pageW / pageWMap
                 const mmX = (oPos.x - pageTLx) * mmPerMapU
                 const mmY = (oPos.y - pageTLy) * mmPerMapU
-                dragLayoutEl = { element: `overlay:${overlayHit.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY, wMm: 0, hMm: 0, nx: mmX, ny: mmY }
-                dragLayoutElStarted = false
+                activeDrag = makeLayoutElDrag(e.clientX, e.clientY, `overlay:${overlayHit.id}`, mmX, mmY, 0, 0)
                 return
               }
             }
@@ -910,8 +1048,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
                 const mmPerMapU = pageW / pageWMap
                 const mmX = (pos.x - pageTLx) * mmPerMapU
                 const mmY = (pos.y - pageTLy) * mmPerMapU
-                dragLayoutEl = { element: `overlay:${ann.id}`, sx: e.clientX, sy: e.clientY, ox: mmX, oy: mmY, wMm: 0, hMm: 0, nx: mmX, ny: mmY }
-                dragLayoutElStarted = false
+                activeDrag = makeLayoutElDrag(e.clientX, e.clientY, `overlay:${ann.id}`, mmX, mmY, 0, 0)
                 return
               }
             }
@@ -934,8 +1071,30 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             const inPage = sx >= pageSx1 && sx <= pageSx2 && sy >= pageSy1 && sy <= pageSy2
             const inBorder = sx >= bSx1 && sx <= bSx2 && sy >= bSy1 && sy <= bSy2
             if (inPage && !inBorder) {
-              dragBorderTranslate = { sx: e.clientX, sy: e.clientY, ox: layout.mapBorder.x, oy: layout.mapBorder.y, last: null }
-              dragBorderTranslateStarted = false
+              const btSx = e.clientX, btSy = e.clientY, btOx = layout.mapBorder.x, btOy = layout.mapBorder.y
+              let btLast: { x: number; y: number; width: number; height: number } | null = null
+              activeDrag = {
+                started: false,
+                onStart() { useStore.getState().beginLayoutDrag() },
+                onMove(ev) {
+                  const st = useStore.getState()
+                  const lo = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
+                  if (!lo?.mapBorder) return
+                  const { w: pw, h: ph } = pageDimsFor(lo.pageSize, lo.orientation)
+                  const hwm = mmToMap({ x: pw / 2, y: 0 }, st.project!.map, lo.printScale).x
+                  const pxToMm = pw / (hwm * 2 * vpRef.current.scale)
+                  const dx = (ev.clientX - btSx) * pxToMm
+                  const dy = (ev.clientY - btSy) * pxToMm
+                  const bw = lo.mapBorder.width, bh = lo.mapBorder.height
+                  const nx = Math.max(0, Math.min(pw - bw, btOx + dx))
+                  const ny = Math.max(0, Math.min(ph - bh, btOy + dy))
+                  const rect = { x: nx, y: ny, width: bw, height: bh }
+                  btLast = rect
+                  scheduleDragMutation(() => st.setLayoutDragPreview({ type: 'border', ...rect }))
+                },
+                onCommit() { commitBorderDrag(btLast) },
+                onCancel() { useStore.getState().setLayoutDragPreview(null) },
+              }
               return
             }
           }
@@ -955,16 +1114,24 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           const hidden = new Set(state.editor.measureHiddenLegs)
           const ptHit = findMeasurePointAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current, proj, state.editor.measureCourseId, hidden)
           if (ptHit) {
-            dragMeasure = ptHit
-            dragMeasureStarted = false
-            // Touch has no right-click — long-press removes the handle.
+            const { fromControlId, toControlId, index } = ptHit
+            activeDrag = {
+              started: false,
+              onStart() { useStore.getState().beginMoveMeasurePoint() },
+              onMove(ev) {
+                const rect = getRect()
+                const mapPt = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+                scheduleDragMutation(() => useStore.getState().moveMeasurePoint(fromControlId, toControlId, index, mapPt))
+              },
+              onCommit() {},
+              onCancel() {},
+            }
             if (e.pointerType === 'touch') {
               longPressTimer = setTimeout(() => {
                 longPressTimer = null
                 longPressFired = true
-                useStore.getState().removeMeasurePoint(ptHit.fromControlId, ptHit.toControlId, ptHit.index)
-                dragMeasure = null
-                dragMeasureStarted = false
+                useStore.getState().removeMeasurePoint(fromControlId, toControlId, index)
+                activeDrag = null
               }, 500)
             }
           }
@@ -983,8 +1150,18 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         for (let i = 0; i < state.editor.pendingAnnotationPoints.length; i++) {
           const p = state.editor.pendingAnnotationPoints[i]
           if (Math.hypot(mapPt.x - p.x, mapPt.y - p.y) < handleR) {
-            dragPendingVertex = { vertexIndex: i }
-            dragPendingVertexStarted = false
+            const vi = i
+            activeDrag = {
+              started: false,
+              onStart() {},
+              onMove(ev) {
+                const rect = getRect()
+                const mp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+                scheduleDragMutation(() => useStore.getState().movePendingAnnotationPoint(vi, mp))
+              },
+              onCommit() {},
+              onCancel() {},
+            }
             return
           }
         }
@@ -1001,8 +1178,28 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           useStore.getState().addMapIssue(miHit.courseId, miHit.courseControlId)
           return
         } else if (miHit?.kind === 'bar') {
-          dragMapIssue = { courseId: miHit.courseId, courseControlId: miHit.courseControlId }
-          dragMapIssueStarted = false
+          const miCourseId = miHit.courseId, miCcId = miHit.courseControlId
+          activeDrag = {
+            started: false,
+            onStart() { useStore.getState().beginMoveMapIssue() },
+            onMove(ev) {
+              const rect = getRect()
+              const mp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top, vpRef.current)
+              const st = useStore.getState()
+              const course = st.project?.courses.find(c => c.id === miCourseId)
+              const cc = course?.controls.find(c => c.id === miCcId)
+              if (cc?.legBendPoints?.length && st.project) {
+                const startCtrl = st.project.controls.find(c => c.id === cc.controlId)
+                if (startCtrl) {
+                  const pts = flattenSmooth([...cc.legBendPoints, startCtrl.position])
+                  const t = projectOnPolyline(mp, pts)
+                  scheduleDragMutation(() => useStore.getState().moveMapIssue(miCourseId, miCcId, t))
+                }
+              }
+            },
+            onCommit() {},
+            onCancel() {},
+          }
           return
         }
       }
@@ -1012,14 +1209,10 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const sy = e.clientY - rect.top
         const mreHit = findMarkedRouteEndAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
         if (mreHit) {
-          dragMRE = mreHit
-          dragMREStarted = false
+          activeDrag = makeMREDrag(mreHit)
         } else {
           const bpHit = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
-          if (bpHit) {
-            dragBend = bpHit
-            dragBendStarted = false
-          }
+          if (bpHit) activeDrag = makeBendDrag(bpHit)
         }
       }
       if (activeTool === 'select' && pos.size === 1) {
@@ -1029,62 +1222,107 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         let handleHit = false
         const mreHitSel = findMarkedRouteEndAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
         if (mreHitSel) {
-          dragMRE = mreHitSel
-          dragMREStarted = false
+          activeDrag = makeMREDrag(mreHitSel)
           handleHit = true
         }
-        // Pre-start first bend handle + divider — always visible, allow dragging in select mode
         if (!handleHit) {
           const bpHitSel = findBendPointAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId)
           const selCrs = state.editor.selectedCourseId ? proj.courses.find(c => c.id === state.editor.selectedCourseId) : null
           if (bpHitSel && selCrs && bpHitSel.courseControlId === selCrs.controls[0]?.id && bpHitSel.bendIndex === 0) {
-            dragBend = bpHitSel
-            dragBendStarted = false
+            activeDrag = makeBendDrag(bpHitSel)
             handleHit = true
           }
         }
         const labelHit = !handleHit && findLabelAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale, state.editor.selectedSubmapIndex)
         if (labelHit) {
           const mapPt = screenToMap(sx, sy, vpRef.current)
-          dragLabel = { courseId: labelHit.courseId, courseControlId: labelHit.courseControlId, controlId: labelHit.controlId, dx: mapPt.x - labelHit.labelX, dy: mapPt.y - labelHit.labelY }
-          dragLabelStarted = false
+          const lCourseId = labelHit.courseId, lCcId = labelHit.courseControlId, lCtrlId = labelHit.controlId
+          const lDx = mapPt.x - labelHit.labelX, lDy = mapPt.y - labelHit.labelY
+          activeDrag = {
+            started: false,
+            onStart() {
+              const ctrl = useStore.getState().project?.controls.find(c => c.id === lCtrlId)
+              const name = ctrl ? defaultControlLabel(ctrl) : '?'
+              const courseName = lCourseId ? useStore.getState().project?.courses.find(c => c.id === lCourseId)?.name : undefined
+              const label = courseName ? `Move label ${name} ${courseName}` : `Move label ${name}`
+              if (lCourseId && lCcId) useStore.getState().beginMoveCourseLabel(label)
+              else useStore.getState().beginMoveControlLabel(label)
+              useStore.getState().setDraggingLabel(lCtrlId)
+            },
+            onMove(ev) {
+              const rect2 = getRect()
+              const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+              const ctrl = useStore.getState().project?.controls.find(c => c.id === lCtrlId)
+              if (ctrl) {
+                const offset = { x: mp.x - lDx - ctrl.position.x, y: mp.y - lDy - ctrl.position.y }
+                scheduleDragMutation(() => {
+                  if (lCourseId && lCcId) useStore.getState().moveCourseLabel(lCourseId, lCcId, offset)
+                  else useStore.getState().moveControlLabel(lCtrlId, offset)
+                })
+              }
+            },
+            onCommit() { useStore.getState().setDraggingLabel(null) },
+            onCancel() { useStore.getState().setDraggingLabel(null) },
+          }
         } else {
-          // Annotation/overlay handles take priority over controls
           const rotHit = findCrossingPointRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
           if (rotHit && rotHit.points[0]) {
-            dragRotation = { annId: rotHit.id, center: rotHit.points[0] }
-            dragRotationStarted = false
+            activeDrag = makeRotationDrag(rotHit.id, rotHit.points[0])
             return
           }
 
           const crossResizeHit = findCrossingPointResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
           if (crossResizeHit && crossResizeHit.points[0]) {
             const crUpm = unitsPerMm(proj.map)
-            const crSpec = resolveSpec(proj.spec)
-            const crSf = symbolScaleFactor(crSpec, proj.map.scale)
+            const crSf = symbolScaleFactor(resolveSpec(proj.spec), proj.map.scale)
             const crD = getAnnotationDims(crSf * crUpm)
-            // Handle sits crossH + 2·handleR beyond centre; subtract that so grabbing doesn't jump.
-            dragCrossElongate = { annId: crossResizeHit.id, centerX: crossResizeHit.points[0].x, centerY: crossResizeHit.points[0].y, baseHH: crD.crossH + 2 * crUpm }
-            dragCrossElongateStarted = false
+            const ceId = crossResizeHit.id, ceCx = crossResizeHit.points[0].x, ceCy = crossResizeHit.points[0].y, ceBaseHH = crD.crossH + 2 * crUpm
+            activeDrag = {
+              started: false,
+              onStart() { useStore.getState().beginElongateAnnotation() },
+              onMove(ev) {
+                const rect2 = getRect()
+                const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+                const proj2 = useStore.getState().project!
+                const rotation = (proj2.annotations.find(a => a.id === ceId)?.rotation ?? 0) * Math.PI / 180
+                const ddx = mp.x - ceCx, ddy = mp.y - ceCy
+                const projectedDist = ddx * (-Math.sin(rotation)) + ddy * Math.cos(rotation)
+                const upm = unitsPerMm(proj2.map)
+                const newElongation = Math.max(0, (projectedDist - ceBaseHH) / upm)
+                scheduleDragMutation(() => useStore.getState().elongateAnnotation(ceId, newElongation))
+              },
+              onCommit() {},
+              onCancel() {},
+            }
             return
           }
 
           const naRotHit = findNorthArrowRotationHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
           if (naRotHit && naRotHit.points[0]) {
-            dragRotation = { annId: naRotHit.id, center: naRotHit.points[0] }
-            dragRotationStarted = false
+            activeDrag = makeRotationDrag(naRotHit.id, naRotHit.points[0])
             return
           }
 
           const naResizeHit = findNorthArrowResizeHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
           if (naResizeHit && naResizeHit.points[0]) {
             const naUpm = unitsPerMm(proj.map)
-            const naSpec = resolveSpec(proj.spec)
-            const naH = northArrowHeight(naUpm, proj.map.scale, naSpec, naResizeHit.scale ?? 1)
+            const naH = northArrowHeight(naUpm, proj.map.scale, resolveSpec(proj.spec), naResizeHit.scale ?? 1)
             const geo = northArrowGeometry(naH, naUpm)
-            const origHandleDist = Math.hypot(geo.resizeHandleLocalX, geo.resizeHandleLocalY)
-            dragAnnResize = { annId: naResizeHit.id, centerX: naResizeHit.points[0].x, centerY: naResizeHit.points[0].y, origScale: naResizeHit.scale ?? 1, origHandleDist }
-            dragAnnResizeStarted = false
+            const arId = naResizeHit.id, arCx = naResizeHit.points[0].x, arCy = naResizeHit.points[0].y
+            const arOrigScale = naResizeHit.scale ?? 1, arOrigDist = Math.hypot(geo.resizeHandleLocalX, geo.resizeHandleLocalY)
+            activeDrag = {
+              started: false,
+              onStart() { useStore.getState().beginResizeAnnotation() },
+              onMove(ev) {
+                const rect2 = getRect()
+                const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+                const dist = Math.hypot(mp.x - arCx, mp.y - arCy)
+                const newScale = Math.max(0.3, arOrigScale * dist / arOrigDist)
+                scheduleDragMutation(() => useStore.getState().resizeAnnotation(arId, newScale))
+              },
+              onCommit() {},
+              onCancel() {},
+            }
             return
           }
 
@@ -1099,30 +1337,48 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
             const handleSy = handleMapY * vpRef.current.scale + vpRef.current.y
             const HANDLE_HIT = 1.5 * upmVal * vpRef.current.scale
             if (Math.abs(sx - handleSx) < HANDLE_HIT && Math.abs(sy - handleSy) < HANDLE_HIT) {
-              dragResize = {
-                id: selectedImg.id,
-                origWidthMap: selectedImg.widthMm * upmVal,
-                origHeightMap: selectedImg.heightMm * upmVal,
-                posX: selectedImg.position.x,
-                posY: selectedImg.position.y,
+              const irId = selectedImg.id, irPosX = selectedImg.position.x, irPosY = selectedImg.position.y
+              const irOrigW = selectedImg.widthMm * upmVal, irOrigH = selectedImg.heightMm * upmVal
+              activeDrag = {
+                started: false,
+                onStart() { useStore.getState().beginMoveOverlay() },
+                onMove(ev) {
+                  const rect2 = getRect()
+                  const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+                  const relX = mp.x - irPosX, relY = mp.y - irPosY
+                  const diagLen = Math.hypot(irOrigW, irOrigH)
+                  const proj2 = (relX * irOrigW + relY * irOrigH) / diagLen
+                  const st = useStore.getState()
+                  const upm2 = overlayUpmOf(st)
+                  const minMap = 5 * upm2
+                  const minProj = Math.hypot(minMap, minMap * (irOrigH / irOrigW))
+                  const scale = Math.max(minProj, proj2) / diagLen
+                  scheduleDragMutation(() => st.resizeImageOverlay(irId, irOrigW * scale / upm2, irOrigH * scale / upm2))
+                },
+                onCommit() {},
+                onCancel() {},
               }
-              dragResizeStarted = false
               return
             }
           }
 
-          // Out-of-bounds vertex handle (when selected)
           const oobVtx = findOobVertexHandle(sx, sy, vpRef.current, proj, state.editor.selectedAnnotationId)
           if (oobVtx) {
-            dragOobVertex = { annId: oobVtx.ann.id, vertexIndex: oobVtx.vertexIndex }
-            dragOobVertexStarted = false
+            const ovAnnId = oobVtx.ann.id, ovIdx = oobVtx.vertexIndex
+            activeDrag = {
+              started: false,
+              onStart() { useStore.getState().beginMoveAnnotationVertex() },
+              onMove(ev) {
+                const rect2 = getRect()
+                const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+                scheduleDragMutation(() => useStore.getState().moveAnnotationVertex(ovAnnId, ovIdx, mp))
+              },
+              onCommit() {},
+              onCancel() {},
+            }
             return
           }
 
-          // Annotations and overlays take priority over controls.
-          // Out-of-bounds areas are large fills, so they only drag once selected
-          // (a plain click selects them); crossing points and north arrows are
-          // small handle-like objects and drag directly.
           const annHit = findAnnotationAt(sx, sy, vpRef.current, proj)
           if (annHit && annHit.points[0]) {
             const draggable = annHit.type === 'crossing_point' || annHit.type === 'north_arrow'
@@ -1130,15 +1386,29 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               || (annHit.type === 'out_of_bounds' && annHit.id === state.editor.selectedAnnotationId)
             if (draggable) {
               const mapPt2 = screenToMap(sx, sy, vpRef.current)
-              dragAnnotation = { annId: annHit.id, dx: mapPt2.x - annHit.points[0].x, dy: mapPt2.y - annHit.points[0].y }
-              dragAnnotationStarted = false
+              const daId = annHit.id, daDx = mapPt2.x - annHit.points[0].x, daDy = mapPt2.y - annHit.points[0].y
+              activeDrag = {
+                started: false,
+                onStart() {
+                  const st = useStore.getState()
+                  const ann = st.project?.annotations.find(a => a.id === daId)
+                  st.beginMoveAnnotation(ann ? `Move ${ann.type.replace(/_/g, ' ')}` : undefined)
+                  st.setSelectedAnnotation(daId)
+                  st.setSelectedControl(null)
+                  st.setSelectedOverlay(null)
+                },
+                onMove(ev) {
+                  const rect2 = getRect()
+                  const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+                  scheduleDragMutation(() => useStore.getState().moveAnnotation(daId, { x: mp.x - daDx, y: mp.y - daDy }))
+                },
+                onCommit() {},
+                onCancel() {},
+              }
               return
             }
           }
 
-          // Pressing outside the selected out-of-bounds area — not on it and not
-          // on its vertex handles (ruled out above) — deselects it, whether the
-          // gesture ends up a tap or a pan.
           const selAnn = state.editor.selectedAnnotationId
             ? proj.annotations.find(a => a.id === state.editor.selectedAnnotationId)
             : null
@@ -1158,23 +1428,32 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
               oPos = proj.imageOverlays.find(o => o.id === overlayHit.id)?.position
             }
             if (oPos) {
-              dragOverlay = { id: overlayHit.id, kind: overlayHit.kind, dx: mapPt.x - oPos.x, dy: mapPt.y - oPos.y }
-              dragOverlayStarted = false
+              const olId = overlayHit.id, olKind = overlayHit.kind, olDx = mapPt.x - oPos.x, olDy = mapPt.y - oPos.y
+              activeDrag = {
+                started: false,
+                onStart() { useStore.getState().beginMoveOverlay() },
+                onMove(ev) {
+                  const rect2 = getRect()
+                  const mp = screenToMap(ev.clientX - rect2.left, ev.clientY - rect2.top, vpRef.current)
+                  const newPos = { x: mp.x - olDx, y: mp.y - olDy }
+                  scheduleDragMutation(() => {
+                    if (olKind === 'scalebar') useStore.getState().moveScaleBar(olId, newPos)
+                    else if (olKind === 'text') useStore.getState().moveTextLabel(olId, newPos)
+                    else useStore.getState().moveImageOverlay(olId, newPos)
+                  })
+                },
+                onCommit() {},
+                onCancel() {},
+              }
               return
             }
           }
 
-          // Controls. When a course is selected, only its own controls are
-          // draggable — controls belonging solely to other courses are locked
-          // (the gesture falls through to a pan), matching label drag behaviour.
           const hit = findControlAt(sx, sy, vpRef.current, proj, state.editor.selectedCourseId, state.editor.appearance.controlScale, 0, state.editor.selectedSubmapIndex)
           const selCourse = state.editor.selectedCourseId ? proj.courses.find(c => c.id === state.editor.selectedCourseId) : null
           const hitInCourse = hit && (!selCourse || selCourse.controls.some(cc => cc.controlId === hit.id))
           if (hit && hitInCourse) {
-            const mapPt = screenToMap(sx, sy, vpRef.current)
-            dragControlId = hit.id
-            dragOffset = { dx: mapPt.x - hit.position.x, dy: mapPt.y - hit.position.y }
-            dragStarted = false
+            activeDrag = makeControlDrag(hit, screenToMap(sx, sy, vpRef.current))
           }
         }
       }
@@ -1193,394 +1472,14 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         }
       }
 
-      if (dragBorderResize && pos.size === 1) {
-        if (!dragBorderResizeStarted) {
+      if (activeDrag && pos.size === 1) {
+        if (!activeDrag.started) {
           const start = down.get(e.pointerId)
           if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginLayoutDrag()
-          dragBorderResizeStarted = true
+          activeDrag.onStart()
+          activeDrag.started = true
         }
-        const st = useStore.getState()
-        const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
-        if (layout?.mapBorder) {
-          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
-          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
-          const pageWMap = halfWMap * 2
-          const pxToMm = pageW / (pageWMap * vpRef.current.scale)
-
-          const dw = (e.clientX - dragBorderResize.sx) * pxToMm
-          const dh = (e.clientY - dragBorderResize.sy) * pxToMm
-          const minSize = 20
-          const newW = Math.max(minSize, Math.min(pageW, dragBorderResize.ow + dw * 2))
-          const newH = Math.max(minSize, Math.min(pageH, dragBorderResize.oh + dh * 2))
-          const newX = dragBorderResize.ox - (newW - dragBorderResize.ow) / 2
-          const newY = dragBorderResize.oy - (newH - dragBorderResize.oh) / 2
-          const clampedX = Math.max(0, newX)
-          const clampedY = Math.max(0, newY)
-          const rect = { x: clampedX, y: clampedY, width: Math.min(newW, pageW - clampedX), height: Math.min(newH, pageH - clampedY) }
-          dragBorderResize.last = rect
-          scheduleDragMutation(() => st.setLayoutDragPreview({ type: 'border', ...rect }))
-        }
-        return
-      }
-
-      if (dragBorderTranslate && pos.size === 1) {
-        if (!dragBorderTranslateStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginLayoutDrag()
-          dragBorderTranslateStarted = true
-        }
-        const st = useStore.getState()
-        const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
-        if (layout?.mapBorder) {
-          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
-          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
-          const pageWMap = halfWMap * 2
-          const pxToMm = pageW / (pageWMap * vpRef.current.scale)
-
-          const dx = (e.clientX - dragBorderTranslate.sx) * pxToMm
-          const dy = (e.clientY - dragBorderTranslate.sy) * pxToMm
-          const bw = layout.mapBorder.width
-          const bh = layout.mapBorder.height
-          const newX = Math.max(0, Math.min(pageW - bw, dragBorderTranslate.ox + dx))
-          const newY = Math.max(0, Math.min(pageH - bh, dragBorderTranslate.oy + dy))
-          const rect = { x: newX, y: newY, width: bw, height: bh }
-          dragBorderTranslate.last = rect
-          scheduleDragMutation(() => st.setLayoutDragPreview({ type: 'border', ...rect }))
-        }
-        return
-      }
-
-      if (dragLayoutEl && pos.size === 1) {
-        if (!dragLayoutElStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginLayoutDrag()
-          dragLayoutElStarted = true
-        }
-        const st = useStore.getState()
-        const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
-        if (layout) {
-          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
-          const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
-          const pageWMap = halfWMap * 2
-          const mmToPx = (pageWMap * vpRef.current.scale) / pageW
-
-          const dx = (e.clientX - dragLayoutEl.sx) / mmToPx
-          const dy = (e.clientY - dragLayoutEl.sy) / mmToPx
-          const element = dragLayoutEl.element
-          if (element.startsWith('overlay:')) {
-            // Overlays live in OverlaysLayer (map coords) — keep the direct
-            // store write; only clue sheets go through the cheap preview path.
-            const newX = dragLayoutEl.ox + dx
-            const newY = dragLayoutEl.oy + dy
-            scheduleDragMutation(() => st.updateLayoutElement(st.editor.layoutCourseId!, element, { x: newX, y: newY }, st.editor.layoutSubmapIndex))
-          } else {
-            // Clamp onto the page so the sheet can't be dragged off and lost.
-            const newX = Math.max(0, Math.min(pageW - dragLayoutEl.wMm, dragLayoutEl.ox + dx))
-            const newY = Math.max(0, Math.min(pageH - dragLayoutEl.hMm, dragLayoutEl.oy + dy))
-            dragLayoutEl.nx = newX
-            dragLayoutEl.ny = newY
-            scheduleDragMutation(() => st.setLayoutDragPreview({ type: 'element', key: element, x: newX, y: newY }))
-          }
-        }
-        return
-      }
-
-      if (dragMeasure && pos.size === 1) {
-        if (!dragMeasureStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveMeasurePoint()
-          dragMeasureStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const { fromControlId, toControlId, index } = dragMeasure
-        scheduleDragMutation(() => useStore.getState().moveMeasurePoint(fromControlId, toControlId, index, mapPt))
-        return
-      }
-
-      if (dragMapIssue && pos.size === 1) {
-        if (!dragMapIssueStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveMapIssue()
-          dragMapIssueStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const { courseId, courseControlId } = dragMapIssue
-        const st = useStore.getState()
-        const course = st.project?.courses.find(c => c.id === courseId)
-        const cc = course?.controls.find(c => c.id === courseControlId)
-        if (cc?.legBendPoints?.length && st.project) {
-          const startCtrl = st.project.controls.find(c => c.id === cc.controlId)
-          if (startCtrl) {
-            const pts = flattenSmooth([...cc.legBendPoints, startCtrl.position])
-            const t = projectOnPolyline(mapPt, pts)
-            scheduleDragMutation(() => useStore.getState().moveMapIssue(courseId, courseControlId, t))
-          }
-        }
-        return
-      }
-
-      if (dragMRE && pos.size === 1) {
-        if (!dragMREStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveMarkedRouteEnd()
-          dragMREStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const { courseId, courseControlId } = dragMRE
-        scheduleDragMutation(() => useStore.getState().moveMarkedRouteEnd(courseId, courseControlId, mapPt))
-        return
-      }
-
-      if (dragBend && pos.size === 1) {
-        if (!dragBendStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          const _db = dragBend
-          const st = useStore.getState()
-          const _p = st.project
-          const _course = _p?.courses.find(c => c.id === _db.courseId)
-          let _bl = 'Move bend'
-          if (_course && _p) {
-            const _ci = _course.controls.findIndex(cc => cc.id === _db.courseControlId)
-            const _from = _ci >= 0 ? _p.controls.find(c => c.id === _course.controls[_ci].controlId) : undefined
-            const _to = _ci >= 0 && _ci + 1 < _course.controls.length ? _p.controls.find(c => c.id === _course.controls[_ci + 1].controlId) : undefined
-            if (_from && _to) _bl = `Move bend ${defaultControlLabel(_from)}-${defaultControlLabel(_to)} ${_course.name}`
-          }
-          st.beginMoveLegBendPoint(_bl)
-          dragBendStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const { courseId, courseControlId, bendIndex, nav } = dragBend
-        scheduleDragMutation(() => useStore.getState().moveLegBendPoint(courseId, courseControlId, bendIndex, mapPt, nav ? 'nav' : 'taped'))
-        return
-      }
-
-      if (dragLabel && pos.size === 1) {
-        if (!dragLabelStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          const _dl = dragLabel
-          const _lc = useStore.getState().project?.controls.find(c => c.id === _dl.controlId)
-          const _lcName = _lc ? defaultControlLabel(_lc) : '?'
-          const _courseName = _dl.courseId ? useStore.getState().project?.courses.find(c => c.id === _dl.courseId)?.name : undefined
-          const _ll = _courseName ? `Move label ${_lcName} ${_courseName}` : `Move label ${_lcName}`
-          if (_dl.courseId && _dl.courseControlId) useStore.getState().beginMoveCourseLabel(_ll)
-          else useStore.getState().beginMoveControlLabel(_ll)
-          dragLabelStarted = true
-          useStore.getState().setDraggingLabel(dragLabel.controlId)
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const ctrl = useStore.getState().project?.controls.find(c => c.id === dragLabel!.controlId)
-        if (ctrl) {
-          const offset = { x: mapPt.x - dragLabel.dx - ctrl.position.x, y: mapPt.y - dragLabel.dy - ctrl.position.y }
-          const { courseId, courseControlId, controlId } = dragLabel
-          scheduleDragMutation(() => {
-            if (courseId && courseControlId) {
-              useStore.getState().moveCourseLabel(courseId, courseControlId, offset)
-            } else {
-              useStore.getState().moveControlLabel(controlId, offset)
-            }
-          })
-        }
-        return
-      }
-
-      if (dragControlId && pos.size === 1) {
-        if (!dragStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          clearLongPress()
-          const _ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
-          useStore.getState().beginMoveControl(_ctrl ? `Move ${defaultControlLabel(_ctrl)}` : undefined)
-          useStore.getState().setDraggingControl(dragControlId)
-          dragStarted = true
-          const ctrl = useStore.getState().project?.controls.find(c => c.id === dragControlId)
-          dragOrigPos = ctrl ? { ...ctrl.position } : null
-          const sel = `[data-control-id="${dragControlId}"]`
-          dragControlEls = [courseGRef.current, courseMultGRef.current]
-            .map(g => g?.querySelector(sel) as SVGGElement | null)
-            .filter((el): el is SVGGElement => el != null)
-          dragLegsRef.current?.begin(dragControlId)
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        pendingControlPos = { x: mapPt.x - dragOffset!.dx, y: mapPt.y - dragOffset!.dy }
-        if (!pendingControlRaf) {
-          pendingControlRaf = requestAnimationFrame(() => {
-            pendingControlRaf = 0
-            if (pendingControlPos && dragOrigPos && dragControlEls.length) {
-              const dx = pendingControlPos.x - dragOrigPos.x
-              const dy = pendingControlPos.y - dragOrigPos.y
-              for (const el of dragControlEls) el.style.transform = `translate(${dx}px,${dy}px)`
-            }
-            if (pendingControlPos) {
-              dragLegsRef.current?.update(pendingControlPos)
-            }
-          })
-        }
-        return
-      }
-
-      if (dragAnnotation && pos.size === 1) {
-        if (!dragAnnotationStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          const st = useStore.getState()
-          const _ann = st.project?.annotations.find(a => a.id === dragAnnotation!.annId)
-          st.beginMoveAnnotation(_ann ? `Move ${_ann.type.replace(/_/g, ' ')}` : undefined)
-          st.setSelectedAnnotation(dragAnnotation.annId)
-          st.setSelectedControl(null)
-          st.setSelectedOverlay(null)
-          dragAnnotationStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const annPos = { x: mapPt.x - dragAnnotation.dx, y: mapPt.y - dragAnnotation.dy }
-        const movedAnnId = dragAnnotation.annId
-        scheduleDragMutation(() => useStore.getState().moveAnnotation(movedAnnId, annPos))
-        return
-      }
-
-      if (dragRotation && pos.size === 1) {
-        if (!dragRotationStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginRotateAnnotation()
-          dragRotationStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const dx = mapPt.x - dragRotation.center.x
-        const dy = mapPt.y - dragRotation.center.y
-        const angle = Math.atan2(dx, -dy) * 180 / Math.PI
-        const rotAnnId = dragRotation.annId
-        scheduleDragMutation(() => useStore.getState().rotateAnnotation(rotAnnId, angle))
-        return
-      }
-
-      if (dragAnnResize && pos.size === 1) {
-        if (!dragAnnResizeStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginResizeAnnotation()
-          dragAnnResizeStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const distFromCenter = Math.hypot(mapPt.x - dragAnnResize.centerX, mapPt.y - dragAnnResize.centerY)
-        const newScale = Math.max(0.3, dragAnnResize.origScale * distFromCenter / dragAnnResize.origHandleDist)
-        const resizeAnnId = dragAnnResize.annId
-        scheduleDragMutation(() => useStore.getState().resizeAnnotation(resizeAnnId, newScale))
-        return
-      }
-
-      if (dragCrossElongate && pos.size === 1) {
-        if (!dragCrossElongateStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginElongateAnnotation()
-          dragCrossElongateStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const proj2 = useStore.getState().project!
-        const rotation = (proj2.annotations.find(a => a.id === dragCrossElongate!.annId)?.rotation ?? 0) * Math.PI / 180
-        const dx = mapPt.x - dragCrossElongate.centerX
-        const dy = mapPt.y - dragCrossElongate.centerY
-        const projectedDist = dx * (-Math.sin(rotation)) + dy * Math.cos(rotation)
-        const upm = unitsPerMm(proj2.map)
-        const newElongation = Math.max(0, (projectedDist - dragCrossElongate.baseHH) / upm)
-        const elongAnnId = dragCrossElongate.annId
-        scheduleDragMutation(() => useStore.getState().elongateAnnotation(elongAnnId, newElongation))
-        return
-      }
-
-      if (dragPendingVertex && pos.size === 1) {
-        if (!dragPendingVertexStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          dragPendingVertexStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const pendingVertexIndex = dragPendingVertex.vertexIndex
-        scheduleDragMutation(() => useStore.getState().movePendingAnnotationPoint(pendingVertexIndex, mapPt))
-        return
-      }
-
-      if (dragOobVertex && pos.size === 1) {
-        if (!dragOobVertexStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveAnnotationVertex()
-          dragOobVertexStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const { annId: oobAnnId, vertexIndex: oobVertexIndex } = dragOobVertex
-        scheduleDragMutation(() => useStore.getState().moveAnnotationVertex(oobAnnId, oobVertexIndex, mapPt))
-        return
-      }
-
-      if (dragResize && pos.size === 1) {
-        if (!dragResizeStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveOverlay()
-          dragResizeStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const relX = mapPt.x - dragResize.posX
-        const relY = mapPt.y - dragResize.posY
-        const wOrig = dragResize.origWidthMap
-        const hOrig = dragResize.origHeightMap
-        const diagLen = Math.hypot(wOrig, hOrig)
-        const proj = (relX * wOrig + relY * hOrig) / diagLen
-        const st = useStore.getState()
-        const upmVal = overlayUpmOf(st)
-        const minMap = 5 * upmVal
-        const minProj = Math.hypot(minMap, minMap * (hOrig / wOrig))
-        const clampedProj = Math.max(minProj, proj)
-        const scale = clampedProj / diagLen
-        const newW = wOrig * scale / upmVal
-        const newH = hOrig * scale / upmVal
-        const resizeOverlayId = dragResize.id
-        scheduleDragMutation(() => st.resizeImageOverlay(resizeOverlayId, newW, newH))
-        return
-      }
-
-      if (dragOverlay && pos.size === 1) {
-        if (!dragOverlayStarted) {
-          const start = down.get(e.pointerId)
-          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= TAP_PX) return
-          useStore.getState().beginMoveOverlay()
-          dragOverlayStarted = true
-        }
-        const rect = getRect()
-        const mapPt = screenToMap(e.clientX - rect.left, e.clientY - rect.top, vpRef.current)
-        const newPos = { x: mapPt.x - dragOverlay.dx, y: mapPt.y - dragOverlay.dy }
-        const { id: overlayId, kind: overlayKind } = dragOverlay
-        scheduleDragMutation(() => {
-          if (overlayKind === 'scalebar') {
-            useStore.getState().moveScaleBar(overlayId, newPos)
-          } else if (overlayKind === 'text') {
-            useStore.getState().moveTextLabel(overlayId, newPos)
-          } else {
-            useStore.getState().moveImageOverlay(overlayId, newPos)
-          }
-        })
+        activeDrag.onMove(e)
         return
       }
 
@@ -1650,108 +1549,11 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       const wasMultiTouch = multiTouch
       multiTouch = false
 
-      // Apply the last coalesced drag mutation before the reset chain below
-      // clears the drag state it belongs to.
       flushDragMutation()
-
-      if (dragLayoutEl && dragLayoutElStarted) {
-        // Clue-sheet drags only previewed (editor state) — commit the final
-        // clamped position to the project now, in one mutation.
-        if (!dragLayoutEl.element.startsWith('overlay:')) {
-          const st = useStore.getState()
-          if (st.editor.layoutCourseId) {
-            st.updateLayoutElement(st.editor.layoutCourseId, dragLayoutEl.element, { x: dragLayoutEl.nx, y: dragLayoutEl.ny }, st.editor.layoutSubmapIndex)
-          }
-          st.setLayoutDragPreview(null)
-        }
-        dragLayoutEl = null; dragLayoutElStarted = false; return
+      if (activeDrag) {
+        if (activeDrag.started) { activeDrag.onCommit(e); activeDrag = null; return }
+        activeDrag = null
       }
-      dragLayoutEl = null; dragLayoutElStarted = false
-
-      if (dragLabel && dragLabelStarted) { useStore.getState().setDraggingLabel(null); dragLabel = null; dragLabelStarted = false; return }
-      dragLabel = null; dragLabelStarted = false
-
-      if (dragMeasure && dragMeasureStarted) { dragMeasure = null; dragMeasureStarted = false; return }
-      dragMeasure = null; dragMeasureStarted = false
-
-      if (dragMapIssue && dragMapIssueStarted) { dragMapIssue = null; dragMapIssueStarted = false; return }
-      dragMapIssue = null; dragMapIssueStarted = false
-
-      if (dragMRE && dragMREStarted) { dragMRE = null; dragMREStarted = false; return }
-      dragMRE = null; dragMREStarted = false
-
-      if (dragBend && dragBendStarted) { dragBend = null; dragBendStarted = false; return }
-      dragBend = null; dragBendStarted = false
-
-      if (dragControlId && dragStarted) {
-        if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
-        const splitId = dragControlId
-        const splitNewPos = pendingControlPos
-        const splitOrigPos = dragOrigPos
-        if (pendingControlPos) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
-        if (dragControlEls.length) { for (const el of dragControlEls) el.style.transform = ''; dragControlEls = [] }
-        dragLegsRef.current?.end()
-        dragOrigPos = null
-        useStore.getState().setDraggingControl(null)
-        dragControlId = null; dragOffset = null; dragStarted = false
-        // The drag above moved the control in *every* course it belongs to. If it
-        // is shared and the selected course holds it, offer to split it off into a
-        // new control for just that course (the move stays as the default).
-        if (splitNewPos && splitOrigPos) {
-          const st = useStore.getState()
-          const cid = st.editor.selectedCourseId
-          const proj = st.project
-          if (cid && proj) {
-            const containing = proj.courses.filter(c => c.controls.some(cc => cc.controlId === splitId))
-            const selCourse = containing.find(c => c.id === cid)
-            if (selCourse && containing.length >= 2) {
-              const rect = getRect()
-              setSplitPrompt({
-                controlId: splitId, courseId: cid, courseName: selCourse.name, courseCount: containing.length,
-                newPos: splitNewPos, origPos: splitOrigPos, sx: e.clientX - rect.left, sy: e.clientY - rect.top,
-              })
-            }
-          }
-        }
-        return
-      }
-      dragControlId = null; dragOffset = null; dragStarted = false
-
-      if (dragBorderResize && dragBorderResizeStarted) {
-        commitBorderDrag(dragBorderResize.last)
-        dragBorderResize = null; dragBorderResizeStarted = false; return
-      }
-      dragBorderResize = null; dragBorderResizeStarted = false
-
-      if (dragBorderTranslate && dragBorderTranslateStarted) {
-        commitBorderDrag(dragBorderTranslate.last)
-        dragBorderTranslate = null; dragBorderTranslateStarted = false; return
-      }
-      dragBorderTranslate = null; dragBorderTranslateStarted = false
-
-      if (dragAnnotation && dragAnnotationStarted) { dragAnnotation = null; dragAnnotationStarted = false; return }
-      dragAnnotation = null; dragAnnotationStarted = false
-
-      if (dragRotation && dragRotationStarted) { dragRotation = null; dragRotationStarted = false; return }
-      dragRotation = null; dragRotationStarted = false
-
-      if (dragAnnResize && dragAnnResizeStarted) { dragAnnResize = null; dragAnnResizeStarted = false; return }
-      dragAnnResize = null; dragAnnResizeStarted = false
-
-      if (dragCrossElongate && dragCrossElongateStarted) { dragCrossElongate = null; dragCrossElongateStarted = false; return }
-      dragCrossElongate = null; dragCrossElongateStarted = false
-
-      if (dragPendingVertex && dragPendingVertexStarted) { dragPendingVertex = null; dragPendingVertexStarted = false; return }
-      dragPendingVertex = null; dragPendingVertexStarted = false
-
-      if (dragOobVertex && dragOobVertexStarted) { dragOobVertex = null; dragOobVertexStarted = false; return }
-      dragOobVertex = null; dragOobVertexStarted = false
-
-      if (dragResize && dragResizeStarted) { dragResize = null; dragResizeStarted = false; return }
-      dragResize = null; dragResizeStarted = false
-
-      if (dragOverlay && dragOverlayStarted) { dragOverlay = null; dragOverlayStarted = false; return }
-      dragOverlay = null; dragOverlayStarted = false
 
       if (wasMultiTouch) return
       if (!start) return
@@ -1900,36 +1702,10 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     function onCancel(e: PointerEvent) {
       clearLongPress()
       flushDragMutation()
-      // A cancelled layout drag discards the preview — nothing was committed.
-      if (dragLayoutElStarted || dragBorderResizeStarted || dragBorderTranslateStarted) {
-        useStore.getState().setLayoutDragPreview(null)
+      if (activeDrag) {
+        if (activeDrag.started) activeDrag.onCancel()
+        activeDrag = null
       }
-      dragMeasure = null; dragMeasureStarted = false
-      dragLayoutEl = null; dragLayoutElStarted = false
-      if (dragLabelStarted) useStore.getState().setDraggingLabel(null)
-      dragLabel = null; dragLabelStarted = false
-      dragAnnResize = null; dragAnnResizeStarted = false
-      dragCrossElongate = null; dragCrossElongateStarted = false
-      dragOobVertex = null; dragOobVertexStarted = false
-      dragPendingVertex = null; dragPendingVertexStarted = false
-      dragBend = null; dragBendStarted = false
-      dragMRE = null; dragMREStarted = false
-      dragMapIssue = null; dragMapIssueStarted = false
-      dragOverlay = null; dragOverlayStarted = false
-      dragResize = null; dragResizeStarted = false
-      dragRotation = null; dragRotationStarted = false
-      dragAnnotation = null; dragAnnotationStarted = false
-      dragBorderResize = null; dragBorderResizeStarted = false
-      dragBorderTranslate = null; dragBorderTranslateStarted = false
-      if (dragStarted) {
-        if (pendingControlRaf) { cancelAnimationFrame(pendingControlRaf); pendingControlRaf = 0 }
-        if (pendingControlPos && dragControlId) { useStore.getState().moveControl(dragControlId, pendingControlPos); pendingControlPos = null }
-        if (dragControlEls.length) { for (const el of dragControlEls) el.style.transform = ''; dragControlEls = [] }
-        dragLegsRef.current?.end()
-        dragOrigPos = null
-        useStore.getState().setDraggingControl(null)
-      }
-      dragControlId = null; dragOffset = null; dragStarted = false
       pos.delete(e.pointerId)
       down.delete(e.pointerId)
       if (pos.size === 2) {
@@ -2066,7 +1842,6 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     return () => {
       if (wheelTimer) clearTimeout(wheelTimer)
       if (pendingRaf) cancelAnimationFrame(pendingRaf)
-      if (pendingControlRaf) cancelAnimationFrame(pendingControlRaf)
       div.removeEventListener('wheel',        onWheel)
       div.removeEventListener('pointerdown',  onDown)
       div.removeEventListener('pointermove',  onMove)
