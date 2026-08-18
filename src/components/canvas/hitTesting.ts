@@ -613,6 +613,12 @@ interface LabelHit {
   labelY: number
 }
 
+/** Estimated label bounding box (Arial approximation). Shared with the debug
+ *  hitbox overlay so what it draws is exactly what findLabelAt tests. */
+export function labelBoxSize(labelText: string, fontSize: number): { w: number; h: number } {
+  return { w: labelText.length * fontSize * 0.6, h: fontSize * 0.75 }
+}
+
 export function findLabelAt(screenX: number, screenY: number, vp: Viewport, project: Project, selectedCourseId: string | null, controlScale: number, selectedSubmapIndex: number | null = null): LabelHit | null {
   const course = selectedCourseId ? project.courses.find(c => c.id === selectedCourseId) : null
   if (selectedCourseId && !course) return null
@@ -665,8 +671,7 @@ export function findLabelAt(screenX: number, screenY: number, vp: Viewport, proj
     } else {
       labelText = defaultControlLabel(ctrl)
     }
-    const textW = labelText.length * fontSize * 0.6
-    const textH = fontSize * 0.75
+    const { w: textW, h: textH } = labelBoxSize(labelText, fontSize)
 
     if (screenX >= labelScreenX && screenX <= labelScreenX + textW &&
         screenY >= labelScreenY - textH && screenY <= labelScreenY) {

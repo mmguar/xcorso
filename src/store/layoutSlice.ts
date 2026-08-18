@@ -1,6 +1,6 @@
 import type { MapPoint, CourseLayout, SubmapLayout, LayoutElementPosition, LayoutDefaults, MapBorder, Course, Control, CourseControl, MapConfig } from '../types'
 import type { SetState, GetState, StoreHelpers, LayoutDragPreview } from './types'
-import { MARGIN, PAGE_SIZES, mmToMap, ALL_CONTROLS_ID } from '../lib/pdfExport'
+import { MARGIN, mmToMap, pageDimsFor, ALL_CONTROLS_ID } from '../lib/pdfExport'
 import { controlsById, computeSubmaps, submapLayoutView } from '../lib/courseUtils'
 
 /** Swap border dimensions (and margins) when page orientation changes. */
@@ -14,16 +14,8 @@ function flipMapBorder(border: MapBorder): MapBorder {
   }
 }
 
-function pageDimensions(pageSize: CourseLayout['pageSize'], orientation: CourseLayout['orientation']) {
-  const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
-  return {
-    w: orientation === 'landscape' ? base.h : base.w,
-    h: orientation === 'landscape' ? base.w : base.h,
-  }
-}
-
 function resizeMapBorderToPage(border: MapBorder, pageSize: CourseLayout['pageSize'], orientation: CourseLayout['orientation']): MapBorder {
-  const { w: pw, h: ph } = pageDimensions(pageSize, orientation)
+  const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
   const rightMargin = pw - border.x - border.width > 0 ? pw - border.x - border.width : border.x
   const bottomMargin = ph - border.y - border.height > 0 ? ph - border.y - border.height : border.y
   return {
@@ -57,7 +49,7 @@ function borderCenterOffset(
 ): MapPoint {
   const b = layout.mapBorder
   if (!b) return { x: 0, y: 0 }
-  const { w: pw, h: ph } = pageDimensions(layout.pageSize, layout.orientation)
+  const { w: pw, h: ph } = pageDimsFor(layout.pageSize, layout.orientation)
   return mmToMap({
     x: pw / 2 - (b.x + b.width / 2),
     y: ph / 2 - (b.y + b.height / 2),
@@ -67,7 +59,7 @@ function borderCenterOffset(
 /** Clamp clue sheet (part) positions onto the page so a page-size/orientation
  * change can't strand them outside the printable area. */
 function clampClueSheets(sl: SubmapLayout): void {
-  const { w: pw, h: ph } = pageDimensions(sl.pageSize, sl.orientation)
+  const { w: pw, h: ph } = pageDimsFor(sl.pageSize, sl.orientation)
   // ponytail: conservative 20mm footprint instead of measuring the sheet — keeps it grabbable
   const clampPos = (pos: LayoutElementPosition) => {
     pos.x = Math.min(Math.max(0, pos.x), pw - 20)
@@ -516,9 +508,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         } else if (element.startsWith('overlay:') && pos.x != null && pos.y != null) {
           const overlayId = element.slice('overlay:'.length)
           const map = p.map
-          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-          const pw = layout.orientation === 'landscape' ? base.h : base.w
-          const ph = layout.orientation === 'landscape' ? base.w : base.h
+          const { w: pw, h: ph } = pageDimsFor(layout.pageSize, layout.orientation)
           const hwMap = mmToMap({ x: pw / 2, y: 0 }, map, layout.printScale).x
           const hhMap = mmToMap({ x: 0, y: ph / 2 }, map, layout.printScale).y
           const mapPerMm = (hwMap * 2) / pw
@@ -548,7 +538,7 @@ export function createLayoutSlice(set: SetState, get: GetState, h: StoreHelpers)
         const insertPos = newBreaks.indexOf(controlIndex)
         const parts = layout.clueSheetParts ?? []
         const newParts = [...parts]
-        const { w: pw, h: ph } = pageDimensions(layout.pageSize, layout.orientation)
+        const { w: pw, h: ph } = pageDimsFor(layout.pageSize, layout.orientation)
         const allPos = [layout.clueSheet, ...newParts]
         const prevPos = allPos[insertPos] ?? layout.clueSheet
         let nx = prevPos.x + 60

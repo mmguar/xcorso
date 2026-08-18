@@ -1,7 +1,7 @@
 import type { Project, Course, Control, MapPoint, AppearanceSettings, EventSpec, OverprintMode } from '../types'
 import type { LoadedMap } from './mapLoader'
 import {
-  mapToMm, courseBoundsMm, PAGE_SIZES, MARGIN, ALL_CONTROLS_ID,
+  mapToMm, courseBoundsMm, MARGIN, ALL_CONTROLS_ID, pageDimsFor,
   assignControlColors, MULTICOLOR_PALETTE, clueSheetHiddenRestartView,
 } from './pdfExport'
 import { resolveSpec, dimsFor, symbolScaleFactor as specScaleFactor } from './symbolSpec'
@@ -158,7 +158,7 @@ async function rasterizeDescSheet(
       const p = parts[pi]
       if (p.width === 0 || p.height === 0) continue
       const tempDoc = new jsPDF({ unit: 'mm', format: [p.width, p.height] })
-      drawDescriptionSheetOverlayPart(tempDoc, info.course, controls, 0, 0, pi, info.breaks!, info.distanceM, info.textDescriptions, info.legDistances, info.trailingFlip, eventName, info.seqOffset, info.restartControlId, info.cellSize, info.inkColor, info.trailingExchange)
+      drawDescriptionSheetOverlayPart(tempDoc, info.course, controls, 0, 0, pi, info.breaks!, { ...info, eventName })
       const partCanvas = await pdfToCanvas(tempDoc, pxPerMm)
       if (partCanvas) rctx.drawImage(partCanvas, (pos.x - minX) * pxPerMm, (pos.y - minY) * pxPerMm)
     }
@@ -167,7 +167,7 @@ async function rasterizeDescSheet(
 
   const size = parts[0]
   const tempDoc = new jsPDF({ unit: 'mm', format: [size.width, size.height] })
-  drawDescriptionSheetOverlay(tempDoc, info.course, controls, 0, 0, info.distanceM, info.textDescriptions, info.legDistances, info.trailingFlip, eventName, info.seqOffset, info.restartControlId, info.cellSize, info.inkColor, info.trailingExchange)
+  drawDescriptionSheetOverlay(tempDoc, info.course, controls, 0, 0, { ...info, eventName })
   const sheetCanvas = await pdfToCanvas(tempDoc, pxPerMm)
   if (!sheetCanvas) return null
   resultCanvas.width = sheetCanvas.width
@@ -210,16 +210,12 @@ export async function exportCourseImages(
   const controlMap = controlsById(project.controls)
   const results: { name: string; blob: Blob }[] = []
 
-  const base = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4
   const pxPerMm = dpi / 25.4
 
   // ── All controls page ───────────────────────────────────────────────────
   if (options.allControls && project.controls.length > 0) {
     const acL = project.allControlsLayout
-    const acBase = acL ? (PAGE_SIZES[acL.pageSize] ?? PAGE_SIZES.a4) : base
-    const acOrient = acL?.orientation ?? options.orientation
-    const acPw = acOrient === 'landscape' ? acBase.h : acBase.w
-    const acPh = acOrient === 'landscape' ? acBase.w : acBase.h
+    const { w: acPw, h: acPh } = pageDimsFor(acL?.pageSize ?? options.pageSize, acL?.orientation ?? options.orientation)
     const acScale = acL?.printScale ?? options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
     const allCtrlSpec = resolveSpec(project.spec)
     const acSf = specScaleFactor(allCtrlSpec, acScale)
@@ -271,10 +267,7 @@ export async function exportCourseImages(
       const courseSpec = resolveSpec(project.spec, course.spec)
       const elongScale = project.map.scale > 0 ? project.map.scale / courseScale : 1
 
-      const sPageBase = sLayout ? (PAGE_SIZES[sLayout.pageSize] ?? PAGE_SIZES.a4) : base
-      const sOrient = sLayout?.orientation ?? options.orientation
-      const cpw = sOrient === 'landscape' ? sPageBase.h : sPageBase.w
-      const cph = sOrient === 'landscape' ? sPageBase.w : sPageBase.h
+      const { w: cpw, h: cph } = pageDimsFor(sLayout?.pageSize ?? options.pageSize, sLayout?.orientation ?? options.orientation)
 
       const bounds = courseBoundsMm(pageCourse, project.controls, project.map, courseScale, project.spec)
       if (!bounds && !sLayout) continue
@@ -366,7 +359,7 @@ export async function exportCourseImages(
           if (size.width > 0 && size.height > 0) {
             const { jsPDF } = await import('jspdf')
             const tempDoc = new jsPDF({ unit: 'mm', format: [size.width, size.height] })
-            drawDescriptionSheetOverlay(tempDoc, separateInfo.course, project.controls, 0, 0, separateInfo.distanceM, separateInfo.textDescriptions, separateInfo.legDistances, separateInfo.trailingFlip, project.meta.name, separateInfo.seqOffset, separateInfo.restartControlId, separateInfo.cellSize, separateInfo.inkColor, separateInfo.trailingExchange)
+            drawDescriptionSheetOverlay(tempDoc, separateInfo.course, project.controls, 0, 0, { ...separateInfo, eventName: project.meta.name })
             const sheetCanvas = await pdfToCanvas(tempDoc, pxPerMm)
             if (sheetCanvas) {
               const sheetBlob = await new Promise<Blob>((resolve, reject) => {

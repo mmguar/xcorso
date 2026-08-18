@@ -6,6 +6,7 @@ import type { Project, Course, Control, CourseControl, MapPoint, MapConfig, Even
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
+import type { DescSheetOpts } from './pdfDescriptionSheet'
 import { defaultControlLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, buildAllControlsCourse, IOF_PURPLE } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength } from './distance'
 import { resolveSpec, getSymbolDims, dimsFor, symbolScaleFactor as specScaleFactor, controlSymbolRadiusMm, symbolLabelOffset } from './symbolSpec'
@@ -462,7 +463,9 @@ export function assignControlColors(controls: Control[]): Map<string, number> {
   return result
 }
 
-function pageDimsFor(pageSize: string, orientation: 'portrait' | 'landscape'): { w: number; h: number } {
+/** Page dimensions in mm for a page size key + orientation (single source of
+ * the landscape swap — use this instead of hand-writing the ternary). */
+export function pageDimsFor(pageSize: string, orientation: 'portrait' | 'landscape'): { w: number; h: number } {
   const base = PAGE_SIZES[pageSize] ?? PAGE_SIZES.a4
   return orientation === 'landscape' ? { w: base.h, h: base.w } : { w: base.w, h: base.h }
 }
@@ -870,10 +873,8 @@ export async function exportCoursePdf(
   // All controls page (no legs, just control symbols with codes)
   if (options.allControls && project.controls.length > 0) {
     const acL = project.allControlsLayout
-    const acPageBase = acL ? (PAGE_SIZES[acL.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
     const acOrient = acL?.orientation ?? options.orientation
-    const acPw = acOrient === 'landscape' ? acPageBase.h : acPageBase.w
-    const acPh = acOrient === 'landscape' ? acPageBase.w : acPageBase.h
+    const { w: acPw, h: acPh } = pageDimsFor(acL?.pageSize ?? options.pageSize, acOrient)
     const acOrientFlag = acOrient === 'landscape' ? 'l' : 'p'
     const acScale = acL?.printScale ?? options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
     const { w: acPrintableW, h: acPrintableH } = printableSize(acPw, acPh, acL?.mapBorder)
@@ -993,12 +994,18 @@ export async function exportCoursePdf(
               for (let pi = 0; pi < acBreaks.length + 1; pi++) {
                 const partPos = partPositions[pi] ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > acPw || partPos.y < 0 || partPos.y > acPh) continue
-                drawDescriptionSheetOverlayPart(doc, acCourse, project.controls, partPos.x, partPos.y, pi, acBreaks, 0, undefined, undefined, false, project.meta.name, 0, undefined, project.clueSheetFontSize, project.clueSheetOverlayColor, false)
+                drawDescriptionSheetOverlayPart(doc, acCourse, project.controls, partPos.x, partPos.y, pi, acBreaks, {
+                  distanceM: 0, eventName: project.meta.name,
+                  cellSize: project.clueSheetFontSize, inkColor: project.clueSheetOverlayColor,
+                })
               }
             } else {
               const sheetPos = acL.clueSheet
               if (sheetPos.x >= 0 && sheetPos.x <= acPw && sheetPos.y >= 0 && sheetPos.y <= acPh) {
-                drawDescriptionSheetOverlay(doc, acCourse, project.controls, sheetPos.x, sheetPos.y, 0, undefined, undefined, false, project.meta.name, 0, undefined, project.clueSheetFontSize, project.clueSheetOverlayColor, false)
+                drawDescriptionSheetOverlay(doc, acCourse, project.controls, sheetPos.x, sheetPos.y, {
+                  distanceM: 0, eventName: project.meta.name,
+                  cellSize: project.clueSheetFontSize, inkColor: project.clueSheetOverlayColor,
+                })
               }
             }
           }
@@ -1008,20 +1015,7 @@ export async function exportCoursePdf(
     }
   }
 
-  const pendingSheets: Array<{
-    course: Course
-    distance: number
-    textDescriptions?: boolean
-    legDistances?: number[]
-    trailingFlip: boolean
-    trailingExchange: boolean
-    eventName: string
-    seqOffset: number
-    restartControlId?: string
-    cellSize?: number
-    inkColor?: string
-    inlineExchanges?: Map<string, 'exchange' | 'flip'>
-  }> = []
+  const pendingSheets: Array<{ course: Course } & DescSheetOpts> = []
 
   for (const course of courses) {
     const oKey = optionKey(course)
@@ -1068,10 +1062,8 @@ export async function exportCoursePdf(
         ? { ...pageCourse, controls: clueSheetControls }
         : pageCourse
 
-      const sPageBase = sLayout ? (PAGE_SIZES[sLayout.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
       const sOrient = sLayout?.orientation ?? options.orientation
-      const cpw = sOrient === 'landscape' ? sPageBase.h : sPageBase.w
-      const cph = sOrient === 'landscape' ? sPageBase.w : sPageBase.h
+      const { w: cpw, h: cph } = pageDimsFor(sLayout?.pageSize ?? options.pageSize, sOrient)
       const cOrientFlag = sOrient === 'landscape' ? 'l' : 'p'
       // Border-clamped so the tile grid matches checkTilingForCourseObj's page
       // count. ponytail: tiles still center on the page, an off-center border
@@ -1205,12 +1197,20 @@ export async function exportCoursePdf(
                   ?? partPositions[pi]
                   ?? { x: MARGIN, y: MARGIN }
                 if (partPos.x < 0 || partPos.x > cpw || partPos.y < 0 || partPos.y > cph) continue
-                drawDescriptionSheetOverlayPart(doc, clueSheetCourse, project.controls, partPos.x, partPos.y, pi, breaks, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor, trailingExchange)
+                drawDescriptionSheetOverlayPart(doc, clueSheetCourse, project.controls, partPos.x, partPos.y, pi, breaks, {
+                  distanceM: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs,
+                  trailingFlip, trailingExchange, eventName: project.meta.name, seqOffset, restartControlId,
+                  cellSize: project.clueSheetFontSize, inkColor: project.clueSheetOverlayColor,
+                })
               }
             } else {
               const sheetPos = options.sheetPositions?.[smKey] ?? options.sheetPositions?.[oKey] ?? sLayout?.clueSheet ?? { x: MARGIN, y: MARGIN }
               if (sheetPos.x >= 0 && sheetPos.x <= cpw && sheetPos.y >= 0 && sheetPos.y <= cph) {
-                drawDescriptionSheetOverlay(doc, clueSheetCourse, project.controls, sheetPos.x, sheetPos.y, sheetTotal, course.textDescriptions, dist.legs, trailingFlip, project.meta.name, seqOffset, restartControlId, project.clueSheetFontSize, project.clueSheetOverlayColor, trailingExchange)
+                drawDescriptionSheetOverlay(doc, clueSheetCourse, project.controls, sheetPos.x, sheetPos.y, {
+                  distanceM: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs,
+                  trailingFlip, trailingExchange, eventName: project.meta.name, seqOffset, restartControlId,
+                  cellSize: project.clueSheetFontSize, inkColor: project.clueSheetOverlayColor,
+                })
               }
             }
           }
@@ -1221,7 +1221,7 @@ export async function exportCoursePdf(
       if ((descMode === 'separate' || descMode === 'both') && clueSheetCourse.controls.length > 0 && (!hasSubmaps || project.clueSheetSplitSubmaps)) {
         const dist = computeCourseDistances(pageCourse, project.controls, project.map, project.measuredLegs)
         const sheetTotal = hasSubmaps ? fullCourseDistance : resolveCourseLength(course, dist)
-        pendingSheets.push({ course: clueSheetCourse, distance: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip, trailingExchange, eventName: project.meta.name, seqOffset, restartControlId, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor })
+        pendingSheets.push({ course: clueSheetCourse, distanceM: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip, trailingExchange, eventName: project.meta.name, seqOffset, restartControlId, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor })
       }
     }
 
@@ -1235,16 +1235,14 @@ export async function exportCoursePdf(
       }
       const dist = computeCourseDistances(course, project.controls, project.map, project.measuredLegs)
       const sheetTotal = resolveCourseLength(course, dist)
-      pendingSheets.push({ course, distance: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, trailingFlip: false, trailingExchange: false, eventName: project.meta.name, seqOffset: 0, restartControlId: undefined, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor, inlineExchanges })
+      pendingSheets.push({ course, distanceM: sheetTotal, textDescriptions: course.textDescriptions, legDistances: dist.legs, eventName: project.meta.name, cellSize: project.clueSheetFontSize, inkColor: project.clueSheetSeparateColor, inlineExchanges })
     }
   }
 
   // Tile clue sheets at the end — fill each page with as many copies as fit
   const TILE_GAP = 3
   for (const s of pendingSheets) {
-    const tilePageBase = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4
-    const tpw = options.orientation === 'landscape' ? tilePageBase.h : tilePageBase.w
-    const tph = options.orientation === 'landscape' ? tilePageBase.w : tilePageBase.h
+    const { w: tpw, h: tph } = pageDims(options)
     const tOrient = options.orientation === 'landscape' ? 'l' : 'p'
 
     const extraRows = s.inlineExchanges?.size ?? 0
@@ -1258,7 +1256,7 @@ export async function exportCoursePdf(
     if (size.height > ph - 2 * TILE_GAP) {
       doc.addPage([pw, ph], po)
       pageIndex++
-      drawDescriptionSheet(doc, s.course, project.controls, pw, ph, s.distance, s.textDescriptions, s.legDistances, s.trailingFlip, s.eventName, s.seqOffset, s.restartControlId, s.cellSize, s.inkColor, s.trailingExchange, s.inlineExchanges)
+      drawDescriptionSheet(doc, s.course, project.controls, pw, ph, s)
       continue
     }
 
@@ -1274,7 +1272,7 @@ export async function exportCoursePdf(
       for (let c = 0; c < cols; c++) {
         const x = startX + c * (size.width + TILE_GAP)
         const y = startY + r * (size.height + TILE_GAP)
-        drawDescriptionSheetOverlay(doc, s.course, project.controls, x, y, s.distance, s.textDescriptions, s.legDistances, s.trailingFlip, s.eventName, s.seqOffset, s.restartControlId, s.cellSize, s.inkColor, s.trailingExchange, s.inlineExchanges)
+        drawDescriptionSheetOverlay(doc, s.course, project.controls, x, y, s)
       }
     }
   }

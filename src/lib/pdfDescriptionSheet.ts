@@ -677,24 +677,31 @@ export function descriptionSheetPartSizes(
 
 // ── Draw overlay on existing page ───────────────────────────────────────────
 
+/** Optional knobs shared by every drawDescriptionSheet* entry point. */
+export interface DescSheetOpts {
+  distanceM?: number
+  textDescriptions?: boolean
+  legDistances?: number[]
+  trailingFlip?: boolean
+  eventName?: string
+  seqOffset?: number
+  restartControlId?: string
+  cellSize?: number
+  inkColor?: string
+  trailingExchange?: boolean
+  inlineExchanges?: Map<string, 'exchange' | 'flip'>
+}
+
 export function drawDescriptionSheetOverlay(
   doc: jsPDF,
   course: Course,
   controls: Control[],
   originX: number,
   originY: number,
-  distanceM?: number,
-  textDescriptions?: boolean,
-  legDistances?: number[],
-  trailingFlip?: boolean,
-  eventName?: string,
-  seqOffset?: number,
-  restartControlId?: string,
-  cellSize?: number,
-  inkColor?: string,
-  trailingExchange?: boolean,
-  inlineExchanges?: Map<string, 'exchange' | 'flip'>,
+  opts: DescSheetOpts = {},
 ) {
+  const { distanceM, textDescriptions, legDistances, trailingFlip, eventName,
+    seqOffset, restartControlId, cellSize, inkColor, trailingExchange, inlineExchanges } = opts
   setCellSize(cellSize)
   setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
@@ -755,17 +762,10 @@ export function drawDescriptionSheetOverlayPart(
   originY: number,
   partIndex: number,
   breaks: number[],
-  distanceM?: number,
-  textDescriptions?: boolean,
-  legDistances?: number[],
-  trailingFlip?: boolean,
-  eventName?: string,
-  seqOffset?: number,
-  restartControlId?: string,
-  cellSize?: number,
-  inkColor?: string,
-  trailingExchange?: boolean,
+  opts: DescSheetOpts = {},
 ) {
+  const { distanceM, textDescriptions, legDistances, trailingFlip, eventName,
+    seqOffset, restartControlId, cellSize, inkColor, trailingExchange } = opts
   setCellSize(cellSize)
   setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
@@ -838,18 +838,10 @@ export function drawDescriptionSheet(
   controls: Control[],
   pageW: number,
   pageH: number,
-  distanceM?: number,
-  textDescriptions?: boolean,
-  legDistances?: number[],
-  trailingFlip?: boolean,
-  eventName?: string,
-  seqOffset?: number,
-  restartControlId?: string,
-  cellSize?: number,
-  inkColor?: string,
-  trailingExchange?: boolean,
-  inlineExchanges?: Map<string, 'exchange' | 'flip'>,
+  opts: DescSheetOpts = {},
 ) {
+  const { distanceM, textDescriptions, legDistances, trailingFlip, eventName,
+    seqOffset, restartControlId, cellSize, inkColor, trailingExchange, inlineExchanges } = opts
   setCellSize(cellSize)
   setInkColor(inkColor)
   const resolved = resolveControls(course, controls)
