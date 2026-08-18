@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import type { LoadedMap } from '../lib/mapLoader'
 import type { CloudUser, VersionEntry, ShareRole } from '../lib/sync'
+import type { FeatureIndex } from '../lib/mapFeatures'
 
 export type CourseViewMode = 'single' | 'all-controls' | 'all-courses'
 
@@ -79,6 +80,8 @@ export interface AppState {
   localSaveFailed: boolean
   /** Another tab holds this project's web lock — edits may overwrite each other. */
   tabConflict: boolean
+  /** Lazily-built spatial index of OCAD map features (OCAD maps only). */
+  featureIndex: FeatureIndex | null
 }
 
 export interface AppActions {
@@ -105,6 +108,8 @@ export interface AppActions {
   updateControlLabel: (id: string, label: string) => void
   updateControlPoints: (id: string, points: number | undefined) => void
   updateControlDescription: (id: string, field: string, value: string | undefined) => void
+  autoFillDescription: (controlId: string) => Promise<void>
+  bulkAutoFillDescriptions: () => Promise<{ filled: number; ambiguous: number; empty: number }>
   updateSkipCodes: (codes: number[]) => void
   reassignControlIds: () => void
 
@@ -221,6 +226,7 @@ export interface AppActions {
   setPendingImage: (data: { dataUrl: string; filename: string; naturalWidth: number; naturalHeight: number } | null) => void
 
   setLoadedMap: (map: LoadedMap | null) => void
+  ensureFeatureIndex: () => Promise<FeatureIndex | null>
 
   setActiveTool: (tool: ActiveTool) => void
   setSelectedControl: (id: string | null) => void

@@ -195,6 +195,7 @@ export const useStore = create<Store>((set, get) => {
     projectRole: 'owner' as const,
     localSaveFailed: false,
     tabConflict: false,
+    featureIndex: null,
 
     // ── Project lifecycle ─────────────────────────────────────────────────
 
@@ -217,7 +218,7 @@ export const useStore = create<Store>((set, get) => {
         overprintMode: 'simulated',
       }
       const rev = get().projectRevision + 1
-      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], projectRevision: rev, loadedRevision: rev })
+      set({ projectId: id, project, mapFileData: mapData, loadedMap: null, featureIndex: null, undoStack: [], redoStack: [], projectRevision: rev, loadedRevision: rev })
       // An auto-sync armed for the previous project must not fire on this one
       // — it could even first-sync-create a cloud copy uninvited.
       if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
@@ -239,7 +240,7 @@ export const useStore = create<Store>((set, get) => {
       if (!project.imageOverlays) project.imageOverlays = []
       const projectId = id ?? get().projectId ?? crypto.randomUUID()
       const rev = get().projectRevision + 1
-      set({ projectId, project, mapFileData: mapData, loadedMap: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner', projectRevision: rev, loadedRevision: rev })
+      set({ projectId, project, mapFileData: mapData, loadedMap: null, featureIndex: null, undoStack: [], redoStack: [], editor: defaultEditor, syncStatus: 'idle', syncConflict: null, projectRole: role ?? 'owner', projectRevision: rev, loadedRevision: rev })
       // An auto-sync armed for the previous project must not fire on this one
       // — it could even first-sync-create a cloud copy uninvited.
       if (syncTimer) { clearTimeout(syncTimer); syncTimer = null }
@@ -303,6 +304,7 @@ export const useStore = create<Store>((set, get) => {
         project: cur,
         mapFileData: mapData,
         loadedMap: null,
+        featureIndex: null,
         projectRevision: projectRevision + 1,
         syncStatus: 'idle',
         undoStack: undoStack.map(e => ({ ...e, project: retarget(e.project) })),
@@ -324,6 +326,16 @@ export const useStore = create<Store>((set, get) => {
     // ── Map rendering ────────────────────────────────────────────────────
 
     setLoadedMap: (map) => set({ loadedMap: map }),
+
+    ensureFeatureIndex: async () => {
+      const state = get()
+      if (state.featureIndex) return state.featureIndex
+      if (!state.mapFileData || state.project?.map.type !== 'ocad') return null
+      const { buildFeatureIndex } = await import('../lib/mapFeatures')
+      const index = await buildFeatureIndex(state.mapFileData)
+      set({ featureIndex: index })
+      return index
+    },
 
     // ── Editor UI ─────────────────────────────────────────────────────────
 

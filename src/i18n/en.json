@@ -429,6 +429,8 @@
   "controlDesc.set": "Set",
   "controlDesc.dimensionHint": "Height/depth, size (W×H), or slope (e.g. 0.5 / 3)",
   "controlDesc.combinations": "Combinations",
+  "controlDesc.suggested": "Suggested from map",
+  "controlDesc.fillFromMap": "Fill from map",
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.reset": "Reset",

@@ -137,6 +137,63 @@ export function createControlsSlice(_set: SetState, get: GetState, h: StoreHelpe
       }, `Edit description ${ctrlName(id)}`)
     },
 
+    autoFillDescription: async (controlId: string) => {
+      const state = get()
+      if (!state.project || state.project.map.type !== 'ocad') return
+      const control = state.project.controls.find(c => c.id === controlId)
+      if (!control || control.description?.feature) return
+      const index = await get().ensureFeatureIndex()
+      if (!index) return
+      const suggestions = index.suggest(control.position, state.project.map.scale)
+      if (suggestions.length === 0) return
+      const top = suggestions[0]
+      const runner = suggestions[1]
+      // Auto-fill only when the top suggestion is within 1 mm AND clearly ahead
+      if (top.distanceMm > 1) return
+      if (runner && top.distanceMm >= runner.distanceMm * 0.5) return
+      h.mutateProject(p => {
+        const c = p.controls.find(c => c.id === controlId)
+        if (!c) return false
+        if (c.description?.feature) return false
+        if (!c.description) c.description = {}
+        c.description.feature = top.code
+      }, `Auto-fill description ${ctrlName(controlId)}`)
+    },
+
+    bulkAutoFillDescriptions: async (): Promise<{ filled: number; ambiguous: number; empty: number }> => {
+      const state = get()
+      if (!state.project || state.project.map.type !== 'ocad') return { filled: 0, ambiguous: 0, empty: 0 }
+      const index = await get().ensureFeatureIndex()
+      if (!index) return { filled: 0, ambiguous: 0, empty: 0 }
+      let filled = 0, ambiguous = 0, empty = 0
+      const fills: { id: string; code: string }[] = []
+      for (const control of state.project.controls) {
+        if (control.description?.feature) continue
+        const suggestions = index.suggest(control.position, state.project.map.scale)
+        if (suggestions.length === 0) { empty++; continue }
+        const top = suggestions[0]
+        const runner = suggestions[1]
+        if (top.distanceMm > 1 || (runner && top.distanceMm >= runner.distanceMm * 0.5)) {
+          ambiguous++; continue
+        }
+        fills.push({ id: control.id, code: top.code })
+      }
+      if (fills.length > 0) {
+        h.mutateProject(p => {
+          for (const { id, code } of fills) {
+            const c = p.controls.find(c => c.id === id)
+            if (!c) continue
+            if (!c.description) c.description = {}
+            if (!c.description.feature) {
+              c.description.feature = code
+              filled++
+            }
+          }
+        }, `Auto-fill ${fills.length} descriptions`)
+      }
+      return { filled, ambiguous, empty }
+    },
+
     updateSkipCodes: (codes: number[]) => {
       h.mutateProject(p => {
         if (codes.length > 0) p.skipCodes = codes

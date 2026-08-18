@@ -197,7 +197,11 @@ export const ControlDescriptionGrid = memo(function ControlDescriptionGrid({ cou
                 <td colSpan={8} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
                   {projectName}
                 </td>
-                {showExtraCol && <td />}
+                {showExtraCol && (
+                  <td className="pl-1.5 align-middle">
+                    {mapConfig.type === 'ocad' && !locked && <FillFromMapButton />}
+                  </td>
+                )}
               </tr>
               <tr>
                 <td colSpan={3} className={`${BORDER} text-center font-bold py-1 bg-gray-50`}>
@@ -496,6 +500,7 @@ function SortableDescRow({
             <SymbolPicker
               column={picker.column}
               current={ctrl.description?.[columnFields[picker.column]]}
+              controlId={ctrl.id}
               onSelect={(code) => {
                 updateControlDescription(ctrl.id, columnFields[picker.column], code)
                 setPicker(null)
@@ -1041,18 +1046,63 @@ function TapedRouteRow({ distText, mode, onSetMode, showExtraCol, locked }: {
   )
 }
 
+function FillFromMapButton() {
+  const t = useT()
+  const bulkAutoFill = useStore(s => s.bulkAutoFillDescriptions)
+  const [result, setResult] = useState<{ filled: number; ambiguous: number; empty: number } | null>(null)
+
+  return (
+    <span className="relative">
+      <button
+        onClick={async () => {
+          const r = await bulkAutoFill()
+          setResult(r)
+          setTimeout(() => setResult(null), 3000)
+        }}
+        className="text-[10px] text-orange-600 hover:text-orange-800 whitespace-nowrap"
+        title={t('controlDesc.fillFromMap')}
+      >
+        {t('controlDesc.fillFromMap')}
+      </button>
+      {result && (
+        <span className="absolute top-full right-0 mt-0.5 bg-white border border-gray-200 rounded shadow-sm px-1.5 py-0.5 text-[9px] text-gray-500 whitespace-nowrap z-20">
+          {result.filled} filled{result.ambiguous > 0 ? `, ${result.ambiguous} ambiguous` : ''}{result.empty > 0 ? `, ${result.empty} no feature` : ''}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function SymbolPicker({
-  column, current, onSelect, onClear, onClose,
+  column, current, onSelect, onClear, onClose, controlId,
 }: {
   column: IofColumn
   current?: string
   onSelect: (code: string) => void
   onClear: () => void
   onClose: () => void
+  controlId?: string
 }) {
   const t = useT()
   const symbols = getColumnSymbols(column)
   const [search, setSearch] = useState('')
+
+  // Suggestions for column D from the OCAD feature index
+  const [suggestions, setSuggestions] = useState<{ code: string; name: string; distanceMm: number }[]>([])
+  const mapType = useStore(s => s.project?.map.type)
+  const mapScale = useStore(s => s.project?.map.scale ?? 15000)
+  const ensureFeatureIndex = useStore(s => s.ensureFeatureIndex)
+  useEffect(() => {
+    if (column !== 'D' || mapType !== 'ocad' || !controlId) return
+    const ctrl = useStore.getState().project?.controls.find(c => c.id === controlId)
+    if (!ctrl) return
+    let cancelled = false
+    ensureFeatureIndex().then(index => {
+      if (cancelled || !index) return
+      setSuggestions(index.suggest(ctrl.position, mapScale))
+    })
+    return () => { cancelled = true }
+  }, [column, controlId, mapType, mapScale, ensureFeatureIndex])
   const currentIsDimension = column === 'F' && current != null && isDimensionText(current)
   const [dimValue, setDimValue] = useState(currentIsDimension ? current : '')
 
@@ -1123,6 +1173,30 @@ function SymbolPicker({
 
       {column === 'F' && (
         <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">{t('controlDesc.combinations')}</div>
+      )}
+
+      {suggestions.length > 0 && !search && (
+        <div className="mb-2">
+          <div className="text-[10px] text-gray-400 font-semibold uppercase px-1 mb-0.5">{t('controlDesc.suggested')}</div>
+          <div className="flex flex-wrap gap-0.5">
+            {suggestions.map(s => (
+              <button
+                key={s.code}
+                onClick={() => onSelect(s.code)}
+                className={`flex items-center gap-1 px-1.5 py-1 rounded border text-xs transition-colors ${
+                  current === s.code
+                    ? 'border-orange-400 bg-orange-50'
+                    : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                }`}
+                title={`${t('iof.' + s.code)} · ${s.distanceMm.toFixed(1)} mm`}
+              >
+                <IofSymbolIcon code={s.code} size={20} />
+                <span className="text-gray-500">{t('iof.' + s.code)}</span>
+                <span className="text-gray-300 text-[9px]">{s.distanceMm.toFixed(1)}mm</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {grouped ? (
