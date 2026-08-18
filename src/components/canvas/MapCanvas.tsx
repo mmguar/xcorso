@@ -716,6 +716,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           dragLegsRef.current?.end()
           origPos = null
           useStore.getState().setDraggingControl(null)
+          useStore.getState().autoFillDescription(id)
           if (splitNewPos && splitOrigPos) {
             const st = useStore.getState()
             const cid = st.editor.selectedCourseId
@@ -1651,9 +1652,9 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       }
 
       switch (activeTool) {
-        case 'place-start':   state.addControl('start',   mapPt); break
-        case 'place-finish':  state.addControl('finish',  mapPt); break
-        case 'place-control': state.addControl('control', mapPt); break
+        case 'place-start':   { const c = state.addControl('start',   mapPt); if (c) state.autoFillDescription(c.id); break }
+        case 'place-finish':  { const c = state.addControl('finish',  mapPt); if (c) state.autoFillDescription(c.id); break }
+        case 'place-control': { const c = state.addControl('control', mapPt); if (c) state.autoFillDescription(c.id); break }
         case 'forbidden-route': state.addAnnotationPoint(mapPt); break
         case 'out-of-bounds': state.addAnnotationPoint(mapPt); break
         case 'out-of-bounds-boundary': state.addAnnotationPoint(mapPt); break

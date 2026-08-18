@@ -429,6 +429,8 @@
   "controlDesc.set": "Imposta",
   "controlDesc.dimensionHint": "Altezza/profondità, dimensione (L×A), o pendenza (es. 0.5 / 3)",
   "controlDesc.combinations": "Combinazioni",
+  "controlDesc.suggested": "Suggeriti dalla carta",
+  "controlDesc.fillFromMap": "Compila dalla carta",
   "common.cancel": "Annulla",
   "common.delete": "Cancella",
   "common.reset": "Ripristina",
