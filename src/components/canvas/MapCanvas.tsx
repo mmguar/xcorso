@@ -22,7 +22,8 @@ import { ScaleInputDialog } from '../ScaleInputDialog'
 import { unitsPerMm, resolveVariation, defaultLabelOffset, buildSequenceMap, formatSequenceLabel, defaultControlLabel, computeSubmaps, submapLayoutView, buildAllControlsCourse, IOF_PURPLE } from '../../lib/courseUtils'
 import type { AnnotationType, MapPoint, Viewport, Control, MapConfig, AppearanceSettings, EventSpec, Course } from '../../types'
 import { resolveSpec, getSymbolDims, symbolScaleFactor, getAnnotationDims, controlSymbolRadiusMm } from '../../lib/symbolSpec'
-import { PAGE_SIZES, mmToMap, clueSheetHiddenRestartView, ALL_CONTROLS_ID } from '../../lib/pdfExport'
+import { mmToMap, pageDimsFor, clueSheetHiddenRestartView, ALL_CONTROLS_ID } from '../../lib/pdfExport'
+import { NumericInput } from '../ui/NumericInput'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 import {
   screenToMap, pxToMap,
@@ -30,6 +31,7 @@ import {
   findMeasureLegAt, findMeasurePointAt,
   findAnnotationAt, findOverlayAt, findLabelAt,
   findCrossingPointRotationHandle, findCrossingPointResizeHandle, findNorthArrowRotationHandle, findNorthArrowResizeHandle, findOobVertexHandle,
+  labelBoxSize,
 } from './hitTesting'
 
 /** Resolve the active layout for a given layout target (course or all-controls). */
@@ -92,32 +94,20 @@ const MIN_SCALE = 0.05
 const MAX_SCALE = 50
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
+/** Height of the mobile panel strip overlapping the canvas top (0 on desktop). */
+function mobilePanelOverlap(rectTop: number): number {
+  const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
+  return mp ? Math.max(0, mp.getBoundingClientRect().bottom - rectTop) : 0
+}
+
 function MapScaleInput({ scale }: { scale: number }) {
-  const [value, setValue] = useState(String(scale))
-  const prevScale = useRef(scale)
-  if (scale !== prevScale.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
-    prevScale.current = scale // eslint-disable-line react-hooks/refs
-    setValue(String(scale))
-  }
-  function commit() {
-    const v = parseInt(value)
-    if (v > 0 && isFinite(v) && v !== scale) {
-      useStore.getState().setMapScale(v, 'manual')
-    } else {
-      setValue(String(scale))
-    }
-  }
   return (
     <>
       <div className="w-px h-4 bg-gray-300" />
       <span className="text-[10px] text-gray-400 select-none">1:</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      <NumericInput
+        value={scale}
+        onCommit={v => useStore.getState().setMapScale(v, 'manual')}
         className="w-14 px-1 py-0.5 text-[11px] border border-gray-200 rounded focus:border-orange-400 focus:outline-none bg-white tabular-nums"
       />
     </>
@@ -286,8 +276,7 @@ function DebugHitboxes({ controls, map, vp, selectedCourseId, appearance, projec
         } else {
           labelText = defaultControlLabel(c)
         }
-        const textW = labelText.length * fontSize * 0.6
-        const textH = fontSize * 0.75
+        const { w: textW, h: textH } = labelBoxSize(labelText, fontSize)
         return (
           <rect key={`lhit-${c.id}`}
             x={lx} y={ly - textH}
@@ -500,12 +489,9 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     const { width, height } = rect
     // On mobile the panel overlaps the canvas top — fit and center the page in
     // the visible strip below it (same compensation as the centerRequest path).
-    const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
-    const overlap = mp ? Math.max(0, mp.getBoundingClientRect().bottom - rect.top) : 0
+    const overlap = mobilePanelOverlap(rect.top)
 
-    const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-    const pageW = layout.orientation === 'landscape' ? base.h : base.w
-    const pageH = layout.orientation === 'landscape' ? base.w : base.h
+    const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
     const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, map, layout.printScale).x
     const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, map, layout.printScale).y
     const pageWidthMapUnits = halfWMap * 2
@@ -549,13 +535,8 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
     if (!el) return
     const rect = el.getBoundingClientRect()
     const cx = rect.width / 2
-    let cy = rect.height / 2
     // On mobile, the panel overlaps the canvas top — shift center into visible area
-    const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
-    if (mp) {
-      const overlap = Math.max(0, mp.getBoundingClientRect().bottom - rect.top)
-      cy = (overlap + rect.height) / 2
-    }
+    const cy = (mobilePanelOverlap(rect.top) + rect.height) / 2
     const v = vpRef.current
     setVp({ ...v, x: cx - centerRequest.point.x * v.scale, y: cy - centerRequest.point.y * v.scale })
   }, [centerRequest])
@@ -648,8 +629,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
       const st = useStore.getState()
       if (!st.editor.layoutMode || !st.editor.layoutCourseId || !st.project) return
       const rect = getRect()
-      const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
-      const overlap = mp ? Math.max(0, mp.getBoundingClientRect().bottom - rect.top) : 0
+      const overlap = mobilePanelOverlap(rect.top)
       const v = vpRef.current
       const centerX = (rect.width / 2 - v.x) / v.scale
       const centerY = ((overlap + rect.height) / 2 - v.y) / v.scale
@@ -742,10 +722,8 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         // Anchor at the visible-strip centre, not the cursor: the page frame is
         // glued to the screen centre (commitLayoutMapCenter re-adopts it on
         // idle), so any other anchor would make the page jump there afterwards.
-        const mp = document.querySelector<HTMLElement>('[data-mobile-panel]')
-        const overlap = mp ? Math.max(0, mp.getBoundingClientRect().bottom - rect.top) : 0
         cx = rect.width / 2
-        cy = (overlap + rect.height) / 2
+        cy = (mobilePanelOverlap(rect.top) + rect.height) / 2
       }
       const v = vpRef.current
       const raw = e.deltaMode === 0 ? e.deltaY : e.deltaY * 30
@@ -854,9 +832,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
           ? (() => { const sm = computeSubmaps(course); return sm.length > 1 && sm[smIdx] ? { ...course, controls: sm[smIdx].controls } : course })()
           : undefined
         if (layout && (isAC || (course && submapCourse))) {
-          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-          const pageW = layout.orientation === 'landscape' ? base.h : base.w
-          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, proj.map, layout.printScale).x
 
           const halfHMap = mmToMap({ x: 0, y: pageH / 2 }, proj.map, layout.printScale).y
@@ -1253,9 +1229,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const st = useStore.getState()
         const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
         if (layout?.mapBorder) {
-          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-          const pageW = layout.orientation === 'landscape' ? base.h : base.w
-          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
           const pageWMap = halfWMap * 2
           const pxToMm = pageW / (pageWMap * vpRef.current.scale)
@@ -1286,9 +1260,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const st = useStore.getState()
         const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
         if (layout?.mapBorder) {
-          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-          const pageW = layout.orientation === 'landscape' ? base.h : base.w
-          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
           const pageWMap = halfWMap * 2
           const pxToMm = pageW / (pageWMap * vpRef.current.scale)
@@ -1316,9 +1288,7 @@ const layoutDefaultPrintScale = useStore(s => s.project!.layoutDefaults?.printSc
         const st = useStore.getState()
         const layout = st.project ? resolveLayoutTarget(st.project, st.editor.layoutCourseId!, st.editor.layoutSubmapIndex) : undefined
         if (layout) {
-          const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-          const pageW = layout.orientation === 'landscape' ? base.h : base.w
-          const pageH = layout.orientation === 'landscape' ? base.w : base.h
+          const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
           const halfWMap = mmToMap({ x: pageW / 2, y: 0 }, st.project!.map, layout.printScale).x
           const pageWMap = halfWMap * 2
           const mmToPx = (pageWMap * vpRef.current.scale) / pageW

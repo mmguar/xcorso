@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useT } from '../../i18n'
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore } from '../../store'
 import {
-  PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf,
+  PAGE_SIZES, MARGIN, canExportPdf, exportCoursePdf, pageDimsFor,
   checkFitForCourseObj, checkTilingForCourseObj, suggestFitScaleForCourseObj,
   checkFitForAllControls, ALL_CONTROLS_ID,
 } from '../../lib/pdfExport'
+import { NumericInput } from '../ui/NumericInput'
 import { exportCourseImages } from '../../lib/imageExport'
 import { defaultControlLabel, computeSubmaps, submapLayoutView, buildAllControlsCourse } from '../../lib/courseUtils'
 import { downloadBlob } from '../../lib/projectFile'
@@ -24,7 +25,7 @@ const DESC_OPTIONS: { value: DescMode; label: string }[] = [
 ]
 
 function ScaleInput({
-  value: externalValue,
+  value,
   onChange,
   disabled,
   className = '',
@@ -34,31 +35,13 @@ function ScaleInput({
   disabled?: boolean
   className?: string
 }) {
-  const [value, setValue] = useState(String(externalValue))
-  const prevScale = useRef(externalValue)
-  if (externalValue !== prevScale.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
-    prevScale.current = externalValue // eslint-disable-line react-hooks/refs
-    setValue(String(externalValue))
-  }
-  function commit() {
-    const v = parseInt(value)
-    if (v > 0 && isFinite(v) && v !== externalValue) {
-      onChange(v)
-    } else {
-      setValue(String(externalValue))
-    }
-  }
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>
       <span className="text-xs text-gray-500">1:</span>
-      <input
-        type="text"
-        inputMode="numeric"
+      <NumericInput
         value={value}
+        onCommit={onChange}
         disabled={disabled}
-        onChange={e => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:border-orange-400 focus:outline-none disabled:opacity-40"
       />
     </div>
@@ -66,7 +49,7 @@ function ScaleInput({
 }
 
 function MmInput({
-  value: externalValue,
+  value,
   onChange,
   disabled,
   max,
@@ -76,33 +59,18 @@ function MmInput({
   disabled?: boolean
   max: number
 }) {
-  const display = Math.round(externalValue * 10) / 10
-  const [text, setText] = useState(String(display))
-  const prevVal = useRef(externalValue)
-  if (externalValue !== prevVal.current) { // eslint-disable-line react-hooks/refs -- sync prop→state
-    prevVal.current = externalValue // eslint-disable-line react-hooks/refs
-    setText(String(Math.round(externalValue * 10) / 10))
-  }
-  function commit() {
-    const v = parseFloat(text)
-    if (isFinite(v) && v >= 0 && v <= max) {
-      const rounded = Math.round(v * 10) / 10
-      if (rounded !== display) onChange(rounded)
-      else setText(String(display))
-    } else {
-      setText(String(display))
-    }
-  }
   return (
     <div className="flex items-center gap-1">
-      <input
-        type="text"
+      <NumericInput
+        value={value}
+        onCommit={onChange}
         inputMode="decimal"
-        value={text}
+        parse={t => {
+          const v = parseFloat(t)
+          return isFinite(v) && v >= 0 && v <= max ? Math.round(v * 10) / 10 : null
+        }}
+        format={v => String(Math.round(v * 10) / 10)}
         disabled={disabled}
-        onChange={e => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         className="w-14 px-1.5 py-0.5 text-xs border border-gray-200 rounded focus:border-orange-400 focus:outline-none disabled:opacity-40 text-right tabular-nums"
       />
       <span className="text-[10px] text-gray-400">mm</span>
@@ -256,9 +224,7 @@ function GeneralSection() {
 
           {/* Map border */}
           {(() => {
-            const base = PAGE_SIZES[defaults.pageSize] ?? PAGE_SIZES.a4
-            const pw = defaults.orientation === 'landscape' ? base.h : base.w
-            const ph = defaults.orientation === 'landscape' ? base.w : base.h
+            const { w: pw, h: ph } = pageDimsFor(defaults.pageSize, defaults.orientation)
             const border = defaults.mapBorder
             return (
               <div>
@@ -550,9 +516,7 @@ function AllControlsCard({ allControls, setAllControls, acFit }: {
 
           {/* Map border */}
           {(() => {
-            const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
-            const pw = effectiveOrientation === 'landscape' ? base.h : base.w
-            const ph = effectiveOrientation === 'landscape' ? base.w : base.h
+            const { w: pw, h: ph } = pageDimsFor(effectivePageSize, effectiveOrientation)
             const cb = effectiveBorder
             return (
               <div>
@@ -852,9 +816,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
   // mirror that check here and warn instead of letting it vanish.
   const sheetOffPage = (() => {
     if (!sub || (descMode !== 'on-map' && descMode !== 'both')) return false
-    const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
-    const pw = effectiveOrientation === 'landscape' ? base.h : base.w
-    const ph = effectiveOrientation === 'landscape' ? base.w : base.h
+    const { w: pw, h: ph } = pageDimsFor(effectivePageSize, effectiveOrientation)
     const off = (p: { x: number; y: number }) => p.x < 0 || p.x > pw || p.y < 0 || p.y > ph
     const breaks = sub.clueSheetBreaks
     if (breaks && breaks.length > 0) {
@@ -1178,9 +1140,7 @@ function CourseCard({ courseId, includedOverride, onToggleIncluded }: { courseId
 
           {/* Map border */}
           {(() => {
-            const base = PAGE_SIZES[effectivePageSize] ?? PAGE_SIZES.a4
-            const pw = effectiveOrientation === 'landscape' ? base.h : base.w
-            const ph = effectiveOrientation === 'landscape' ? base.w : base.h
+            const { w: pw, h: ph } = pageDimsFor(effectivePageSize, effectiveOrientation)
             const cb = sub.mapBorder
             return (
               <div>

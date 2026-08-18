@@ -165,6 +165,19 @@ export const useStore = create<Store>((set, get) => {
   const h: StoreHelpers = { mutateProject, mutateProjectSilent, pushUndoSnapshot }
   const layoutH: StoreHelpers = { mutateProject: mutateProjectLayout, mutateProjectSilent: mutateProjectLayoutSilent, pushUndoSnapshot: pushUndoSnapshotLayout }
 
+  // Shared by syncProject/saveSnapshot: resolve the stored sync meta, creating
+  // the cloud project on first sync. Owned projects only — creating one for a
+  // shared project would silently fork it into this user's account. Returns
+  // null (with syncStatus already set to 'error') when that fails.
+  async function ensureSyncMeta(projectId: string, projectName: string, projectRole: string): Promise<SyncMeta | null> {
+    const syncMeta = await getSyncMeta(projectId)
+    if (syncMeta) return syncMeta
+    if (projectRole !== 'owner') { set({ syncStatus: 'error' }); return null }
+    const cloudId = await createCloudProject(projectName)
+    if (!cloudId) { set({ syncStatus: 'error' }); return null }
+    return { cloudId, syncVersion: 0, syncedAt: '', mapHash: null }
+  }
+
   return {
     projectId: null,
     project: null,
@@ -522,16 +535,8 @@ export const useStore = create<Store>((set, get) => {
 
       await flushSave()
       try {
-        let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
-
-        // First sync: create cloud project. Owned projects only — creating one
-        // for a shared project would silently fork it into this user's account.
-        if (!syncMeta) {
-          if (projectRole !== 'owner') { set({ syncStatus: 'error' }); return }
-          const cloudId = await createCloudProject(project.meta.name)
-          if (!cloudId) { set({ syncStatus: 'error' }); return }
-          syncMeta = { cloudId, syncVersion: 0, syncedAt: '', mapHash: null }
-        }
+        const syncMeta = await ensureSyncMeta(projectId, project.meta.name, projectRole)
+        if (!syncMeta) return
 
         const localMapHash = mapFileData ? await hashMap(mapFileData) : null
         const localProjectHash = await hashProject(project)
@@ -611,13 +616,8 @@ export const useStore = create<Store>((set, get) => {
 
       await flushSave()
       try {
-        let syncMeta: SyncMeta | null = await getSyncMeta(projectId)
-        if (!syncMeta) {
-          if (projectRole !== 'owner') { set({ syncStatus: 'error' }); return }
-          const cloudId = await createCloudProject(project.meta.name)
-          if (!cloudId) { set({ syncStatus: 'error' }); return }
-          syncMeta = { cloudId, syncVersion: 0, syncedAt: '', mapHash: null }
-        }
+        const syncMeta = await ensureSyncMeta(projectId, project.meta.name, projectRole)
+        if (!syncMeta) return
 
         const localMapHash = mapFileData ? await hashMap(mapFileData) : null
         const result = await uploadProject(

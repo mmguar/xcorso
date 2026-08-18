@@ -1,6 +1,6 @@
 import type { SubmapLayout, MapConfig, Viewport, Course, Control, EventSpec } from '../../types'
 import { useStore } from '../../store'
-import { PAGE_SIZES, MARGIN, mmToMap, courseBoundsMm, printableSize, tileCount, TILE_OVERLAP } from '../../lib/pdfExport'
+import { MARGIN, mmToMap, courseBoundsMm, printableSize, tileCount, TILE_OVERLAP, pageDimsFor } from '../../lib/pdfExport'
 import { descriptionSheetSize, descriptionSheetPartSizes } from '../../lib/pdfDescriptionSheet'
 
 interface Props {
@@ -33,9 +33,7 @@ export function PageOverlay({ layout, map, viewport, canvasW, canvasH, course, c
   // this component re-renders while dragging.
   const dragPreview = useStore(s => s.editor.layoutDragPreview)
 
-  const base = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.a4
-  const pageW = layout.orientation === 'landscape' ? base.h : base.w
-  const pageH = layout.orientation === 'landscape' ? base.w : base.h
+  const { w: pageW, h: pageH } = pageDimsFor(layout.pageSize, layout.orientation)
 
   const halfW = mmToMap({ x: pageW / 2, y: 0 }, map, layout.printScale).x
   const halfH = mmToMap({ x: 0, y: pageH / 2 }, map, layout.printScale).y
