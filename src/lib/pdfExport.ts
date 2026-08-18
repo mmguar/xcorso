@@ -6,7 +6,7 @@ import type { Project, Course, Control, CourseControl, MapPoint, MapConfig, Even
 import type { LoadedMap } from './mapLoader'
 import { applyMapOverprint, pruneSvgToColors } from './overprint'
 import { descriptionSheetSize, drawDescriptionSheet, drawDescriptionSheetOverlay, drawDescriptionSheetOverlayPart } from './pdfDescriptionSheet'
-import { defaultControlLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, IOF_PURPLE } from './courseUtils'
+import { defaultControlLabel, resolveVariation, computeSubmaps, submapLayoutView, controlsById, buildAllControlsCourse, IOF_PURPLE } from './courseUtils'
 import { computeCourseDistances, resolveCourseLength } from './distance'
 import { resolveSpec, getSymbolDims, dimsFor, symbolScaleFactor as specScaleFactor, controlSymbolRadiusMm, symbolLabelOffset } from './symbolSpec'
 import { distance } from './geometry'
@@ -564,25 +564,36 @@ export function checkTilingForCourseObj(
   return { courseId: course.id, courseName: course.name, cols, rows, totalPages: cols * rows }
 }
 
-/** Fit/tiling info for the all-controls page (no layout, no border, no map center). */
 export function checkFitForAllControls(
   controls: Control[],
   map: MapConfig,
   pageSize: string,
   orientation: 'portrait' | 'landscape',
   printScale: number,
+  border?: MapBorder,
+  mapCenter?: MapPoint,
   projectSpec?: EventSpec,
-): (CourseTileInfo & { fits: boolean; widthMm: number; heightMm: number }) | null {
+): (CourseTileInfo & { fits: boolean; widthMm: number; heightMm: number; fitsAtCenter?: boolean }) | null {
   const { w: pw, h: ph } = pageDimsFor(pageSize, orientation)
-  const { w: printableW, h: printableH } = printableSize(pw, ph)
+  const { w: printableW, h: printableH } = printableSize(pw, ph, border)
   const bounds = allControlsBoundsMm(controls, map, printScale, projectSpec)
   if (!bounds) return null
   const cols = tileCount(bounds.width, printableW)
   const rows = tileCount(bounds.height, printableH)
+  let fitsAtCenter: boolean | undefined
+  if (mapCenter && bounds) {
+    const c = mapToMm(mapCenter, map, printScale)
+    const winX = c.x - pw / 2 + (border ? border.x : MARGIN)
+    const winY = c.y - ph / 2 + (border ? border.y : MARGIN)
+    fitsAtCenter =
+      bounds.minX >= winX && bounds.maxX <= winX + printableW &&
+      bounds.minY >= winY && bounds.maxY <= winY + printableH
+  }
   return {
     courseId: ALL_CONTROLS_ID,
     courseName: '',
     fits: bounds.width <= printableW && bounds.height <= printableH,
+    fitsAtCenter,
     widthMm: bounds.width,
     heightMm: bounds.height,
     cols, rows, totalPages: cols * rows,
@@ -673,8 +684,6 @@ export async function exportCoursePdf(
 ): Promise<Blob> {
   const { w: pw, h: ph } = pageDims(options)
   const orient = options.orientation === 'landscape' ? 'l' : 'p'
-  const printableW = pw - 2 * MARGIN
-  const printableH = ph - 2 * MARGIN
 
   const useRaster = options.mapRendering === 'raster'
   const [{ jsPDF: JsPdf }] = await Promise.all([
@@ -860,37 +869,48 @@ export async function exportCoursePdf(
 
   // All controls page (no legs, just control symbols with codes)
   if (options.allControls && project.controls.length > 0) {
-    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const acL = project.allControlsLayout
+    const acPageBase = acL ? (PAGE_SIZES[acL.pageSize] ?? PAGE_SIZES.a4) : (PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4)
+    const acOrient = acL?.orientation ?? options.orientation
+    const acPw = acOrient === 'landscape' ? acPageBase.h : acPageBase.w
+    const acPh = acOrient === 'landscape' ? acPageBase.w : acPageBase.h
+    const acOrientFlag = acOrient === 'landscape' ? 'l' : 'p'
+    const acScale = acL?.printScale ?? options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const { w: acPrintableW, h: acPrintableH } = printableSize(acPw, acPh, acL?.mapBorder)
     const bounds = allControlsBoundsMm(project.controls, project.map, acScale, project.spec)
     if (bounds) {
-      const useTiling = options.tiling && (bounds.width > printableW || bounds.height > printableH)
-      const cols = useTiling ? tileCount(bounds.width, printableW) : 1
-      const rows = useTiling ? tileCount(bounds.height, printableH) : 1
+      const useTiling = options.tiling && (bounds.width > acPrintableW || bounds.height > acPrintableH)
+      const cols = useTiling ? tileCount(bounds.width, acPrintableW) : 1
+      const rows = useTiling ? tileCount(bounds.height, acPrintableH) : 1
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
-          if (pageIndex > 0) doc.addPage([pw, ph], orient)
+          if (pageIndex > 0) doc.addPage([acPw, acPh], acOrientFlag)
           pageIndex++
 
           const { x: ox, y: oy } = options.offsets?.[ALL_CONTROLS_ID] ?? { x: 0, y: 0 }
           let viewCenterX: number, viewCenterY: number
-          if (useTiling) {
-            viewCenterX = bounds.minX + ox + col * (printableW - TILE_OVERLAP) + printableW / 2
-            viewCenterY = bounds.minY + oy + row * (printableH - TILE_OVERLAP) + printableH / 2
+          if (acL && !useTiling) {
+            const mc = mapToMm(acL.mapCenter, project.map, acScale)
+            viewCenterX = mc.x + ox
+            viewCenterY = mc.y + oy
+          } else if (useTiling) {
+            viewCenterX = bounds.minX + ox + col * (acPrintableW - TILE_OVERLAP) + acPrintableW / 2
+            viewCenterY = bounds.minY + oy + row * (acPrintableH - TILE_OVERLAP) + acPrintableH / 2
           } else {
             viewCenterX = bounds.centerX + ox
             viewCenterY = bounds.centerY + oy
           }
 
-          const cx = pw / 2
-          const cy = ph / 2
+          const cx = acPw / 2
+          const cy = acPh / 2
 
           function toPage(pt: MapPoint): Pos {
             const mm = mapToMm(pt, project.map, acScale)
             return { x: cx + (mm.x - viewCenterX), y: cy + (mm.y - viewCenterY) }
           }
 
-          await embedMap(toPage, pw, ph)
+          await embedMap(toPage, acPw, acPh)
 
           const mapScale = acScale
           const ctrlColor = IOF_PURPLE
@@ -902,7 +922,6 @@ export async function exportCoursePdf(
 
           const colorMap = options.allControlsMulticolor ? assignControlColors(project.controls) : null
 
-          // Build course ink SVG
           const pageAnns = project.annotations.map(a => ({ ...a, points: a.points.map(p => toPage(p)) }))
           let inkSvg = renderAnnotationInk(pageAnns, mapScale, allCtrlSpec, annColor, 1, 'ac', elongScale)
 
@@ -921,23 +940,66 @@ export async function exportCoursePdf(
               inkSvg += `<line x1="${pos.x}" y1="${pos.y}" x2="${pos.x + off.x}" y2="${pos.y + off.y}" stroke="${cc}" stroke-width="${sw}"/>`
             }
           }
-          await overprintSvg(doc, courseOverprint, inkSvg, pw, ph)
-          await embedTopColors(toPage, pw, ph)
+          await overprintSvg(doc, courseOverprint, inkSvg, acPw, acPh)
+          await embedTopColors(toPage, acPw, acPh)
 
           const northSvg = renderNorthArrows(pageAnns, mapScale, allCtrlSpec, 1)
-          if (northSvg) await embedSvg(doc, northSvg, pw, ph)
+          if (northSvg) await embedSvg(doc, northSvg, acPw, acPh)
+
+          // Border
+          const acBorder = acL?.mapBorder
+          if (acBorder) {
+            doc.setFillColor(255, 255, 255)
+            doc.rect(0, 0, acPw, acBorder.y, 'F')
+            doc.rect(0, acBorder.y + acBorder.height, acPw, acPh - acBorder.y - acBorder.height, 'F')
+            doc.rect(0, acBorder.y, acBorder.x, acBorder.height, 'F')
+            doc.rect(acBorder.x + acBorder.width, acBorder.y, acPw - acBorder.x - acBorder.width, acBorder.height, 'F')
+            const [r, g, b] = hexToRgb(acBorder.color)
+            doc.setDrawColor(r, g, b)
+            doc.setLineWidth(acBorder.strokeWidth)
+            doc.rect(acBorder.x, acBorder.y, acBorder.width, acBorder.height, 'S')
+          }
 
           let overlaySvg = ''
-          for (const sb of project.scaleBars) overlaySvg += renderScaleBar({ ...sb, position: toPage(sb.position) }, acScale, 1)
-          for (const tl of project.textLabels) overlaySvg += renderTextLabel({ ...tl, position: toPage(tl.position) }, 1)
-          if (overlaySvg) await embedSvg(doc, overlaySvg, pw, ph)
+          for (const sb of project.scaleBars) {
+            const overridePos = acL?.overlayPositions?.[sb.id]
+            const effectiveSb = overridePos ? { ...sb, position: overridePos } : sb
+            overlaySvg += renderScaleBar({ ...effectiveSb, position: toPage(effectiveSb.position) }, acScale, 1)
+          }
+          for (const tl of project.textLabels) {
+            const overridePos = acL?.overlayPositions?.[tl.id]
+            const effectiveTl = overridePos ? { ...tl, position: overridePos } : tl
+            overlaySvg += renderTextLabel({ ...effectiveTl, position: toPage(effectiveTl.position) }, 1)
+          }
+          if (overlaySvg) await embedSvg(doc, overlaySvg, acPw, acPh)
           for (const img of project.imageOverlays) {
-            const pos = toPage(img.position)
-            if (img.widthMm > 0 && img.heightMm > 0) {
+            const overridePos = acL?.overlayPositions?.[img.id]
+            const effectiveImg = overridePos ? { ...img, position: overridePos } : img
+            const pos = toPage(effectiveImg.position)
+            if (effectiveImg.widthMm > 0 && effectiveImg.heightMm > 0) {
               try {
-                const { url, format } = await ensureJpegOrPng(img.dataUrl)
-                doc.addImage(url, format, pos.x, pos.y, img.widthMm, img.heightMm)
+                const { url, format } = await ensureJpegOrPng(effectiveImg.dataUrl)
+                doc.addImage(url, format, pos.x, pos.y, effectiveImg.widthMm, effectiveImg.heightMm)
               } catch { /* skip */ }
+            }
+          }
+
+          // Clue sheet on all-controls page
+          if (acL?.clueSheet.visible && project.controls.length > 0) {
+            const acCourse = buildAllControlsCourse(project.controls)
+            const acBreaks = acL.clueSheetBreaks
+            if (acBreaks && acBreaks.length > 0) {
+              const partPositions = [acL.clueSheet, ...(acL.clueSheetParts ?? [])]
+              for (let pi = 0; pi < acBreaks.length + 1; pi++) {
+                const partPos = partPositions[pi] ?? { x: MARGIN, y: MARGIN }
+                if (partPos.x < 0 || partPos.x > acPw || partPos.y < 0 || partPos.y > acPh) continue
+                drawDescriptionSheetOverlayPart(doc, acCourse, project.controls, partPos.x, partPos.y, pi, acBreaks, 0, undefined, undefined, false, project.meta.name, 0, undefined, project.clueSheetFontSize, project.clueSheetOverlayColor, false)
+              }
+            } else {
+              const sheetPos = acL.clueSheet
+              if (sheetPos.x >= 0 && sheetPos.x <= acPw && sheetPos.y >= 0 && sheetPos.y <= acPh) {
+                drawDescriptionSheetOverlay(doc, acCourse, project.controls, sheetPos.x, sheetPos.y, 0, undefined, undefined, false, project.meta.name, 0, undefined, project.clueSheetFontSize, project.clueSheetOverlayColor, false)
+              }
             }
           }
 

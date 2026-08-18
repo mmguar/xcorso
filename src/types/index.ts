@@ -319,6 +319,8 @@ export interface Project {
   allControlsLinkId?: boolean
   /** Tile the all-controls PDF page across multiple pages when it doesn't fit. */
   allControlsTiling?: boolean
+  /** Per-page layout for the all-controls map (page size, orientation, scale, border, etc.). */
+  allControlsLayout?: SubmapLayout
   locked?: boolean
 }
 

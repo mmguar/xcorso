@@ -211,27 +211,38 @@ export async function exportCourseImages(
   const results: { name: string; blob: Blob }[] = []
 
   const base = PAGE_SIZES[options.pageSize] ?? PAGE_SIZES.a4
-  const pw = options.orientation === 'landscape' ? base.h : base.w
-  const ph = options.orientation === 'landscape' ? base.w : base.h
   const pxPerMm = dpi / 25.4
 
   // ── All controls page ───────────────────────────────────────────────────
   if (options.allControls && project.controls.length > 0) {
-    const acScale = options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
+    const acL = project.allControlsLayout
+    const acBase = acL ? (PAGE_SIZES[acL.pageSize] ?? PAGE_SIZES.a4) : base
+    const acOrient = acL?.orientation ?? options.orientation
+    const acPw = acOrient === 'landscape' ? acBase.h : acBase.w
+    const acPh = acOrient === 'landscape' ? acBase.w : acBase.h
+    const acScale = acL?.printScale ?? options.scaleOverrides?.[ALL_CONTROLS_ID] ?? options.printScale
     const allCtrlSpec = resolveSpec(project.spec)
     const acSf = specScaleFactor(allCtrlSpec, acScale)
     const elongScale = project.map.scale > 0 ? project.map.scale / acScale : 1
 
-    const positions = project.controls.map(c => mapToMm(c.position, project.map, acScale))
-    const pad = 5 * acSf
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const p of positions) {
-      if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
-      if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
+    let viewCenterX: number, viewCenterY: number
+    if (acL) {
+      const mc = mapToMm(acL.mapCenter, project.map, acScale)
+      viewCenterX = mc.x
+      viewCenterY = mc.y
+    } else {
+      const positions = project.controls.map(c => mapToMm(c.position, project.map, acScale))
+      const pad = 5 * acSf
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const p of positions) {
+        if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
+      }
+      minX -= pad; minY -= pad; maxX += pad; maxY += pad
+      viewCenterX = (minX + maxX) / 2
+      viewCenterY = (minY + maxY) / 2
     }
-    minX -= pad; minY -= pad; maxX += pad; maxY += pad
-    const cx = pw / 2, cy = ph / 2
-    const viewCenterX = (minX + maxX) / 2, viewCenterY = (minY + maxY) / 2
+    const cx = acPw / 2, cy = acPh / 2
 
     function toPage(pt: MapPoint): Pos {
       const mm = mapToMm(pt, project.map, acScale)
@@ -239,7 +250,7 @@ export async function exportCourseImages(
     }
 
     const blob = await renderPage(
-      project, null, toPage, pw, ph, pxPerMm, acScale, allCtrlSpec, app, loadedMap,
+      project, null, toPage, acPw, acPh, pxPerMm, acScale, allCtrlSpec, app, loadedMap,
       mapOpacity, mapOverprint, courseOverprint, elongScale, controlMap, options,
     )
     results.push({ name: `${project.meta.name}_all_controls.png`, blob })
